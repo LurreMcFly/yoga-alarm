@@ -3,6 +3,7 @@ package com.yogaalarm.prototype.data
 import android.content.Context
 import android.net.Uri
 import com.yogaalarm.prototype.model.AlarmConfig
+import com.yogaalarm.prototype.model.AlarmSound
 import com.yogaalarm.prototype.model.PoseStep
 import com.yogaalarm.prototype.model.YogaPose
 
@@ -32,6 +33,7 @@ class AlarmStore(context: Context) {
         alarm.soundEnabled,
         alarm.vibrationEnabled,
         alarm.snoozeEnabled,
+        alarm.sound.name,
     ).joinToString("|")
 
     private fun decode(encoded: String): AlarmConfig? = runCatching {
@@ -50,6 +52,7 @@ class AlarmStore(context: Context) {
             soundEnabled = parts[7].toBooleanStrict(),
             vibrationEnabled = parts[8].toBooleanStrict(),
             snoozeEnabled = parts[9].toBooleanStrict(),
+            sound = parts.getOrNull(10)?.let { AlarmSound.valueOf(it) } ?: AlarmSound.MORNING_BELLS,
         )
     }.getOrNull()
 

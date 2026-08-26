@@ -48,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +60,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -66,7 +68,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yogaalarm.prototype.R
+import com.yogaalarm.prototype.audio.PrototypeAlarmAudio
 import com.yogaalarm.prototype.model.AlarmConfig
+import com.yogaalarm.prototype.model.AlarmSound
 import com.yogaalarm.prototype.model.PoseStep
 import com.yogaalarm.prototype.model.YogaPose
 import java.time.Duration
@@ -84,6 +88,14 @@ private val Hairline = Color(0xFFDDE4DE)
 @Composable
 fun AlarmHomeScreen(
     alarms: List<AlarmConfig>,
+    cameraReady: Boolean,
+    notificationsReady: Boolean,
+    fullScreenReady: Boolean,
+    exactAlarmsReady: Boolean,
+    onFixCamera: () -> Unit,
+    onFixNotifications: () -> Unit,
+    onFixFullScreen: () -> Unit,
+    onFixExactAlarms: () -> Unit,
     onAddAlarm: () -> Unit,
     onEditAlarm: (Long) -> Unit,
     onToggleAlarm: (Long, Boolean) -> Unit,
@@ -133,6 +145,21 @@ fun AlarmHomeScreen(
                 Spacer(Modifier.height(14.dp))
             }
 
+            if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
+                item {
+                    AlarmReadinessCard(
+                        cameraReady = cameraReady,
+                        notificationsReady = notificationsReady,
+                        fullScreenReady = fullScreenReady,
+                        exactAlarmsReady = exactAlarmsReady,
+                        onFixCamera = onFixCamera,
+                        onFixNotifications = onFixNotifications,
+                        onFixFullScreen = onFixFullScreen,
+                        onFixExactAlarms = onFixExactAlarms,
+                    )
+                }
+            }
+
             if (alarms.isEmpty()) {
                 item { EmptyAlarmCard(onAddAlarm) }
             } else {
@@ -144,6 +171,68 @@ fun AlarmHomeScreen(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AlarmReadinessCard(
+    cameraReady: Boolean,
+    notificationsReady: Boolean,
+    fullScreenReady: Boolean,
+    exactAlarmsReady: Boolean,
+    onFixCamera: () -> Unit,
+    onFixNotifications: () -> Unit,
+    onFixFullScreen: () -> Unit,
+    onFixExactAlarms: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = Forest),
+    ) {
+        Column(Modifier.padding(horizontal = 22.dp, vertical = 20.dp)) {
+            Text("Finish alarm setup", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Allow the essentials so your alarm can wake you reliably.",
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            if (!cameraReady) {
+                ReadinessRow("Camera", "Verifies your poses", "Allow", onFixCamera)
+            }
+            if (!notificationsReady) {
+                ReadinessRow("Notifications", "Shows a ringing alarm", "Allow", onFixNotifications)
+            }
+            if (!fullScreenReady) {
+                ReadinessRow("Full-screen alarms", "Opens over your lock screen", "Enable", onFixFullScreen)
+            }
+            if (!exactAlarmsReady) {
+                ReadinessRow("Exact alarms", "Keeps alarms on time", "Enable", onFixExactAlarms)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadinessRow(
+    title: String,
+    detail: String,
+    action: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(detail, color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
+        }
+        TextButton(onClick = onClick) {
+            Text(action, color = Lime, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -278,6 +367,7 @@ fun AlarmEditorScreen(
     var draft by remember(initialAlarm.id) { mutableStateOf(initialAlarm) }
     var poseSheetSlot by remember { mutableStateOf<Int?>(null) }
     var durationSheetSlot by remember { mutableStateOf<Int?>(null) }
+    var soundSheetOpen by remember { mutableStateOf(false) }
     var previewProDurations by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
@@ -375,7 +465,7 @@ fun AlarmEditorScreen(
                     }
                     Spacer(Modifier.height(26.dp))
                     HorizontalDivider(color = Hairline)
-                    SettingRow("Sound", "Morning chimes", draft.soundEnabled) {
+                    SettingRow("Sound", draft.sound.displayName, draft.soundEnabled, onClick = { soundSheetOpen = true }) {
                         draft = draft.copy(soundEnabled = it)
                     }
                     HorizontalDivider(color = Hairline)
@@ -419,6 +509,17 @@ fun AlarmEditorScreen(
                     },
                 )
                 durationSheetSlot = null
+            },
+        )
+    }
+
+    if (soundSheetOpen) {
+        SoundPickerSheet(
+            selectedSound = draft.sound,
+            onDismiss = { soundSheetOpen = false },
+            onSelect = { sound ->
+                draft = draft.copy(sound = sound, soundEnabled = true)
+                soundSheetOpen = false
             },
         )
     }
@@ -589,10 +690,17 @@ private fun PoseGlyph(pose: YogaPose, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SettingRow(title: String, detail: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingRow(
+    title: String,
+    detail: String,
+    checked: Boolean,
+    onClick: (() -> Unit)? = null,
+    onCheckedChange: (Boolean) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(enabled = onClick != null) { onClick?.invoke() }
             .padding(vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -601,6 +709,57 @@ private fun SettingRow(title: String, detail: String, checked: Boolean, onChecke
             Text(detail, color = MutedInk, fontSize = 14.sp)
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, colors = yogaSwitchColors())
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SoundPickerSheet(
+    selectedSound: AlarmSound,
+    onDismiss: () -> Unit,
+    onSelect: (AlarmSound) -> Unit,
+) {
+    val context = LocalContext.current
+    var previewPlayer by remember { mutableStateOf<PrototypeAlarmAudio?>(null) }
+    var previewing by remember { mutableStateOf<AlarmSound?>(null) }
+    DisposableEffect(Unit) {
+        onDispose { previewPlayer?.close() }
+    }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
+        Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 28.dp)) {
+            Text("Alarm sound", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            Text("Choose the sound used for this alarm.", color = MutedInk)
+            Spacer(Modifier.height(18.dp))
+            AlarmSound.entries.forEach { sound ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(sound) }
+                        .padding(vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(sound.displayName, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (sound == AlarmSound.MORNING_BELLS) "Bright and melodic" else "Calm birds and nature", color = MutedInk, fontSize = 13.sp)
+                    }
+                    TextButton(
+                        onClick = {
+                            previewPlayer?.close()
+                            previewPlayer = PrototypeAlarmAudio(context.applicationContext, sound).also {
+                                it.start()
+                                it.setLevel(0.7f)
+                            }
+                            previewing = sound
+                        },
+                    ) {
+                        Text(if (previewing == sound) "Playing" else "Preview", color = Forest)
+                    }
+                    if (sound == selectedSound) Text("✓", color = Forest, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                }
+                HorizontalDivider(color = Hairline)
+            }
+        }
     }
 }
 

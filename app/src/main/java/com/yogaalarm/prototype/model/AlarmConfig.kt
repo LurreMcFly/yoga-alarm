@@ -14,6 +14,11 @@ enum class YogaPose(
     WIDE_LEG_FOLD("Wide-Leg Fold", false),
 }
 
+enum class AlarmSound(val displayName: String) {
+    MORNING_BELLS("Morning bells"),
+    NATURE_BIRDS("Nature & birds"),
+}
+
 data class PoseStep(
     val pose: YogaPose,
     val durationSeconds: Int = 20,
@@ -27,6 +32,7 @@ data class AlarmConfig(
     val weekdays: Set<Int>,
     val enabled: Boolean,
     val routine: List<PoseStep>,
+    val sound: AlarmSound,
     val soundEnabled: Boolean,
     val vibrationEnabled: Boolean,
     val snoozeEnabled: Boolean,
@@ -44,6 +50,7 @@ data class AlarmConfig(
                 PoseStep(YogaPose.WARRIOR_TWO),
                 PoseStep(YogaPose.TREE),
             ),
+            sound = AlarmSound.MORNING_BELLS,
             soundEnabled = true,
             vibrationEnabled = true,
             snoozeEnabled = true,
