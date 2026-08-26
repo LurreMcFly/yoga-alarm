@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ fun CameraSpikeScreen(
     uiState: PoseDebugUiState,
     onPoseFrame: (PoseFrame) -> Unit,
     onCameraError: (String) -> Unit,
+    onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -91,6 +93,15 @@ fun CameraSpikeScreen(
                 .fillMaxWidth()
                 .padding(20.dp),
         )
+
+        TextButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 10.dp, top = 38.dp),
+        ) {
+            Text("‹ Back", color = Color.White, fontWeight = FontWeight.Bold)
+        }
     }
 }
 
