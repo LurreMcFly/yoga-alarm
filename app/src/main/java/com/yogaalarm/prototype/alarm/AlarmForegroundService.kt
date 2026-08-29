@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
@@ -23,19 +24,12 @@ class AlarmForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Active alarms", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Yoga Alarm wake-up alarms"
-                setSound(null, null)
-                enableVibration(false)
-                lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
-            },
-        )
+        ensureNotificationChannel(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val alarmId = intent?.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L) ?: -1L
-        val allowSnooze = intent?.getBooleanExtra(AlarmScheduler.EXTRA_ALLOW_SNOOZE, false) == true
+        val remainingSnoozes = intent?.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0) ?: 0
         val alarm = AlarmStore(this).load().firstOrNull { it.id == alarmId }
         if (alarm == null) {
             stopSelf(startId)
@@ -47,7 +41,7 @@ class AlarmForegroundService : Service() {
             alarmId.hashCode(),
             Intent(this, MainActivity::class.java)
                 .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
-                .putExtra(AlarmScheduler.EXTRA_ALLOW_SNOOZE, allowSnooze)
+                .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -60,17 +54,18 @@ class AlarmForegroundService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setSilent(true)
             .setFullScreenIntent(openAlarm, true)
             .setContentIntent(openAlarm)
-        if (allowSnooze) {
+        if (remainingSnoozes > 0) {
             val snooze = PendingIntent.getBroadcast(
                 this,
                 alarmId.hashCode(),
-                Intent(this, SnoozeReceiver::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
+                Intent(this, SnoozeReceiver::class.java)
+                    .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+                    .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            notificationBuilder.addAction(0, "Snooze ${AlarmScheduler.SNOOZE_MINUTES} min", snooze)
+            notificationBuilder.addAction(0, "Snooze ${alarm.snoozeMinutes} min", snooze)
         }
         val notification = notificationBuilder.build()
         startForeground(AlarmScheduler.NOTIFICATION_ID, notification)
@@ -113,8 +108,20 @@ class AlarmForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private companion object {
-        const val CHANNEL_ID = "active_alarm_v1"
-        const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1000L
+    companion object {
+        const val CHANNEL_ID = "active_alarm_v2"
+
+        fun ensureNotificationChannel(context: Context) {
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Active alarms", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Yoga Alarm wake-up alarms"
+                    setSound(null, null)
+                    enableVibration(false)
+                    lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                },
+            )
+        }
+
+        private const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1000L
     }
 }

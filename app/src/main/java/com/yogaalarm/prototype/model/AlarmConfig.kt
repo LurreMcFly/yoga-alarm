@@ -36,6 +36,8 @@ data class AlarmConfig(
     val soundEnabled: Boolean,
     val vibrationEnabled: Boolean,
     val snoozeEnabled: Boolean,
+    val snoozeMinutes: Int,
+    val snoozeCount: Int,
 ) {
     companion object {
         fun create(id: Long = System.currentTimeMillis()) = AlarmConfig(
@@ -54,6 +56,8 @@ data class AlarmConfig(
             soundEnabled = true,
             vibrationEnabled = true,
             snoozeEnabled = true,
+            snoozeMinutes = 5,
+            snoozeCount = 1,
         )
     }
 }

@@ -12,11 +12,18 @@ class AlarmReceiver : BroadcastReceiver() {
         val isSnooze = intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false)
         val store = AlarmStore(context)
         val alarm = store.load().firstOrNull { it.id == alarmId } ?: return
+        val remainingSnoozes = if (isSnooze) {
+            intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
+        } else if (alarm.snoozeEnabled) {
+            alarm.snoozeCount
+        } else {
+            0
+        }
         ContextCompat.startForegroundService(
             context,
             Intent(context, AlarmForegroundService::class.java)
                 .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
-                .putExtra(AlarmScheduler.EXTRA_ALLOW_SNOOZE, alarm.snoozeEnabled && !isSnooze),
+                .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes),
         )
 
         if (isSnooze) return

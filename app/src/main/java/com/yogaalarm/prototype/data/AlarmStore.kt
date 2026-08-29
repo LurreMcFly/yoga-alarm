@@ -34,6 +34,8 @@ class AlarmStore(context: Context) {
         alarm.vibrationEnabled,
         alarm.snoozeEnabled,
         alarm.sound.name,
+        alarm.snoozeMinutes,
+        alarm.snoozeCount,
     ).joinToString("|")
 
     private fun decode(encoded: String): AlarmConfig? = runCatching {
@@ -53,6 +55,8 @@ class AlarmStore(context: Context) {
             vibrationEnabled = parts[8].toBooleanStrict(),
             snoozeEnabled = parts[9].toBooleanStrict(),
             sound = parts.getOrNull(10)?.let { AlarmSound.valueOf(it) } ?: AlarmSound.MORNING_BELLS,
+            snoozeMinutes = parts.getOrNull(11)?.toIntOrNull() ?: 5,
+            snoozeCount = parts.getOrNull(12)?.toIntOrNull() ?: 1,
         )
     }.getOrNull()
 

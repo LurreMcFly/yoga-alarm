@@ -31,14 +31,14 @@ object AlarmScheduler {
         context.getSystemService(AlarmManager::class.java).cancel(receiverIntent(context, alarmId))
     }
 
-    fun scheduleSnooze(context: Context, alarmId: Long) {
-        val triggerAt = Instant.now().plusSeconds(SNOOZE_MINUTES * 60L).toEpochMilli()
+    fun scheduleSnooze(context: Context, alarmId: Long, minutes: Int, remainingSnoozes: Int) {
+        val triggerAt = Instant.now().plusSeconds(minutes * 60L).toEpochMilli()
         val showIntent = PendingIntent.getActivity(
             context,
             alarmId.hashCode(),
             Intent(context, MainActivity::class.java)
                 .putExtra(EXTRA_ALARM_ID, alarmId)
-                .putExtra(EXTRA_ALLOW_SNOOZE, false),
+                .putExtra(EXTRA_REMAINING_SNOOZES, remainingSnoozes),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         context.getSystemService(AlarmManager::class.java).setAlarmClock(
@@ -48,7 +48,8 @@ object AlarmScheduler {
                 alarmId.hashCode() xor SNOOZE_REQUEST_MASK,
                 Intent(context, AlarmReceiver::class.java)
                     .putExtra(EXTRA_ALARM_ID, alarmId)
-                    .putExtra(EXTRA_IS_SNOOZE, true),
+                    .putExtra(EXTRA_IS_SNOOZE, true)
+                    .putExtra(EXTRA_REMAINING_SNOOZES, remainingSnoozes),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             ),
         )
@@ -72,10 +73,9 @@ object AlarmScheduler {
     }
 
     const val EXTRA_ALARM_ID = "alarm_id"
-    const val EXTRA_ALLOW_SNOOZE = "allow_snooze"
+    const val EXTRA_REMAINING_SNOOZES = "remaining_snoozes"
     const val EXTRA_IS_SNOOZE = "is_snooze"
     const val NOTIFICATION_ID = 7001
-    const val SNOOZE_MINUTES = 5
 
     private const val SNOOZE_REQUEST_MASK = 0x51F00E
 }

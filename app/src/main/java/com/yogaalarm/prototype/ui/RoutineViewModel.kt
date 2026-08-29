@@ -56,6 +56,7 @@ class RoutineViewModel : ViewModel() {
     private var lostSinceMs: Long? = null
     private var transitionEndsAtMs = 0L
     private var previousTickAtMs = 0L
+    private var alarmLevel = 1f
 
     init {
         viewModelScope.launch {
@@ -76,6 +77,7 @@ class RoutineViewModel : ViewModel() {
         latestFramed = false
         foundSinceMs = null
         lostSinceMs = null
+        alarmLevel = 1f
         previousTickAtMs = SystemClock.elapsedRealtime()
         publish()
     }
@@ -151,6 +153,7 @@ class RoutineViewModel : ViewModel() {
             }
             RoutinePhase.COMPLETE -> Unit
         }
+        updateAlarmLevel(deltaMs)
         publish(now)
     }
 
@@ -158,12 +161,6 @@ class RoutineViewModel : ViewModel() {
         val durationMs = currentDurationMs().coerceAtLeast(1L)
         val holdProgress = (holdMs.toFloat() / durationMs).coerceIn(0f, 1f)
         val routineProgress = ((poseIndex + holdProgress) / alarm.routine.size.coerceAtLeast(1)).coerceIn(0f, 1f)
-        val alarmLevel = when (phase) {
-            RoutinePhase.COMPLETE -> 0f
-            RoutinePhase.TRANSITION -> 0.35f
-            RoutinePhase.HOLDING -> (1f - holdProgress * 0.85f).coerceAtLeast(0.15f)
-            else -> 1f
-        }
         mutableUiState.update {
             it.copy(
                 phase = phase,
@@ -187,11 +184,36 @@ class RoutineViewModel : ViewModel() {
     private fun currentStep() = alarm.routine.getOrElse(poseIndex) { alarm.routine.first() }
     private fun currentDurationMs() = currentStep().durationSeconds * 1_000L
 
+    private fun updateAlarmLevel(deltaMs: Long) {
+        if (phase == RoutinePhase.COMPLETE) {
+            alarmLevel = 0f
+            return
+        }
+        val holdProgress = (holdMs.toFloat() / currentDurationMs().coerceAtLeast(1L)).coerceIn(0f, 1f)
+        val routineProgress = ((poseIndex + holdProgress) / alarm.routine.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+        val target = when (phase) {
+            RoutinePhase.TRANSITION -> alarmLevel
+            RoutinePhase.HOLDING -> (1f - routineProgress * 0.85f).coerceAtLeast(0.15f)
+            RoutinePhase.PAUSED -> 1f
+            RoutinePhase.FINDING -> alarmLevel
+            RoutinePhase.COMPLETE -> 0f
+        }
+        val ratePerSecond = if (target > alarmLevel) VOLUME_RISE_PER_SECOND else VOLUME_FALL_PER_SECOND
+        val step = ratePerSecond * deltaMs / 1_000f
+        alarmLevel = if (target > alarmLevel) {
+            (alarmLevel + step).coerceAtMost(target)
+        } else {
+            (alarmLevel - step).coerceAtLeast(target)
+        }
+    }
+
     private companion object {
         const val ENTER_SCORE = 0.74f
         const val EXIT_SCORE = 0.50f
         const val ENTER_DELAY_MS = 450L
         const val EXIT_DELAY_MS = 900L
         const val TRANSITION_MS = 3_000L
+        const val VOLUME_RISE_PER_SECOND = 0.14f
+        const val VOLUME_FALL_PER_SECOND = 0.75f
     }
 }

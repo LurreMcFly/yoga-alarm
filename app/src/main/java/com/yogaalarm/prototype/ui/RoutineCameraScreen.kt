@@ -124,12 +124,14 @@ fun RoutineCameraScreen(
             .padding(horizontal = 18.dp, vertical = 14.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showBack) {
-                    TextButton(onClick = onBack) {
-                        Text("‹ Alarm", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.width(10.dp))
+                TextButton(onClick = onBack) {
+                    Text(
+                        if (showBack) "‹ Alarm" else "Stop",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = "${uiState.poseIndex + 1} / ${uiState.poseCount}",
                     color = Color.White.copy(alpha = 0.8f),
@@ -275,7 +277,7 @@ private fun RoutinePoseGuide(
         fun guidePoint(point: Pair<Float, Float>) = Offset(shoulderMid.x + point.first * shoulderWidth, shoulderMid.y + point.second * torsoHeight)
         val bodyWidth = maxOf(42.dp.toPx(), shoulderWidth * 0.72f)
 
-        drawRect(Color.Black.copy(alpha = 0.2f))
+        drawRect(Color.Black.copy(alpha = 0.27f))
         geometry.segments.forEach { (from, to) ->
             drawLine(Color.Transparent, guidePoint(from), guidePoint(to), bodyWidth * 1.12f, StrokeCap.Round, blendMode = BlendMode.Clear)
         }

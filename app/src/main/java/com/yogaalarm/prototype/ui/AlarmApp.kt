@@ -1,12 +1,11 @@
 package com.yogaalarm.prototype.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.rememberScrollableState
-import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
@@ -28,6 +28,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.foundation.pager.PagerSnapDistance
+import androidx.compose.foundation.pager.VerticalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -49,16 +55,21 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -73,10 +84,8 @@ import com.yogaalarm.prototype.model.AlarmConfig
 import com.yogaalarm.prototype.model.AlarmSound
 import com.yogaalarm.prototype.model.PoseStep
 import com.yogaalarm.prototype.model.YogaPose
-import java.time.Duration
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val Ink = Color(0xFF142018)
 private val MutedInk = Color(0xFF647069)
@@ -100,7 +109,6 @@ fun AlarmHomeScreen(
     onEditAlarm: (Long) -> Unit,
     onToggleAlarm: (Long, Boolean) -> Unit,
 ) {
-    val nextAlarm = remember(alarms) { findNextAlarm(alarms) }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -122,27 +130,29 @@ fun AlarmHomeScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             item {
-                NextAlarmHero(nextAlarm)
-                Spacer(Modifier.height(48.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Surface(
+                    Column {
+                        Text("Your alarms", color = Ink, fontSize = 38.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Wake up moving.", color = MutedInk, fontSize = 17.sp)
+                    }
+                    Box(
                         modifier = Modifier
                             .size(56.dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                            .border(1.dp, Hairline, CircleShape)
                             .clickable(onClick = onAddAlarm),
-                        shape = CircleShape,
-                        color = Color.White.copy(alpha = 0.82f),
-                        shadowElevation = 3.dp,
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text("+", color = Ink, fontSize = 36.sp, fontWeight = FontWeight.Light)
-                        }
+                        Text("+", color = Ink, fontSize = 36.sp, fontWeight = FontWeight.Light)
                     }
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(24.dp))
             }
 
             if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
@@ -186,16 +196,17 @@ private fun AlarmReadinessCard(
     onFixFullScreen: () -> Unit,
     onFixExactAlarms: () -> Unit,
 ) {
+    val readyCount = listOf(cameraReady, notificationsReady, fullScreenReady, exactAlarmsReady).count { it }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = Forest),
     ) {
         Column(Modifier.padding(horizontal = 22.dp, vertical = 20.dp)) {
-            Text("Finish alarm setup", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("Finish alarm setup · $readyCount/4", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Allow the essentials so your alarm can wake you reliably.",
+                "Tap every green button below so your alarm can wake you reliably.",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp,
             )
@@ -223,60 +234,31 @@ private fun ReadinessRow(
     action: String,
     onClick: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White.copy(alpha = 0.08f),
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(detail, color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
-        }
-        TextButton(onClick = onClick) {
-            Text(action, color = Lime, fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun NextAlarmHero(nextAlarm: Pair<AlarmConfig, ZonedDateTime>?) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        if (nextAlarm == null) {
-            Text(
-                text = "Wake up moving.",
-                color = Ink,
-                fontSize = 42.sp,
-                lineHeight = 46.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text("Set your first movement alarm", color = MutedInk, fontSize = 17.sp)
-        } else {
-            val minutes = Duration.between(ZonedDateTime.now(), nextAlarm.second).toMinutes().coerceAtLeast(0)
-            val hoursPart = minutes / 60
-            val minutePart = minutes % 60
-            val countdown = when {
-                hoursPart > 0 -> "Alarm in $hoursPart ${if (hoursPart == 1L) "hour" else "hours"} $minutePart ${if (minutePart == 1L) "minute" else "minutes"}"
-                else -> "Alarm in $minutePart ${if (minutePart == 1L) "minute" else "minutes"}"
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(detail, color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
             }
-            Text(
-                text = countdown,
-                color = Ink,
-                fontSize = 40.sp,
-                lineHeight = 44.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = nextAlarm.second.format(DateTimeFormatter.ofPattern("EEE, MMM d, HH:mm", Locale.getDefault())),
-                color = MutedInk,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Surface(shape = RoundedCornerShape(999.dp), color = Lime) {
+                Text(
+                    "$action  →",
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    color = Forest,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
         }
     }
 }
@@ -306,15 +288,14 @@ private fun AlarmSummaryCard(
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
 ) {
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(34.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.86f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+            .clip(RoundedCornerShape(34.dp))
+            .background(Color.White)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 22.dp),
     ) {
-        Column(Modifier.padding(horizontal = 24.dp, vertical = 22.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
@@ -351,7 +332,6 @@ private fun AlarmSummaryCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
     }
 }
 
@@ -362,13 +342,15 @@ fun AlarmEditorScreen(
     onCancel: () -> Unit,
     onSave: (AlarmConfig) -> Unit,
     onTestRoutine: (AlarmConfig) -> Unit,
+    onTestPose: (AlarmConfig, PoseStep) -> Unit,
 ) {
     BackHandler(onBack = onCancel)
     var draft by remember(initialAlarm.id) { mutableStateOf(initialAlarm) }
-    var poseSheetSlot by remember { mutableStateOf<Int?>(null) }
     var durationSheetSlot by remember { mutableStateOf<Int?>(null) }
     var soundSheetOpen by remember { mutableStateOf(false) }
+    var snoozeSheetOpen by remember { mutableStateOf(false) }
     var previewProDurations by rememberSaveable { mutableStateOf(false) }
+    val editorScrollState = rememberScrollState()
 
     Scaffold(
         containerColor = Color.Transparent,
@@ -393,7 +375,7 @@ fun AlarmEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(editorScrollState)
                 .padding(bottom = 22.dp),
         ) {
             AlarmTimePicker(
@@ -401,17 +383,19 @@ fun AlarmEditorScreen(
                 minute = draft.minute,
                 onHourChange = { draft = draft.copy(hour = it) },
                 onMinuteChange = { draft = draft.copy(minute = it) },
+                modifier = Modifier.graphicsLayer {
+                    translationY = editorScrollState.value.toFloat()
+                },
             )
 
-            Surface(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp),
-                shape = RoundedCornerShape(38.dp),
-                color = Color.White.copy(alpha = 0.94f),
-                shadowElevation = 2.dp,
+                    .padding(horizontal = 18.dp)
+                    .clip(RoundedCornerShape(38.dp))
+                    .background(Color.White)
+                    .padding(horizontal = 22.dp, vertical = 22.dp),
             ) {
-                Column(Modifier.padding(horizontal = 22.dp, vertical = 22.dp)) {
                     TextField(
                         value = draft.name,
                         onValueChange = { draft = draft.copy(name = it.take(40)) },
@@ -432,38 +416,14 @@ fun AlarmEditorScreen(
                         onSelectionChange = { draft = draft.copy(weekdays = it) },
                     )
                     Spacer(Modifier.height(30.dp))
-                    Text("MORNING ROUTINE", color = MutedInk, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    SettingRow(
+                        "Snooze",
+                        "${draft.snoozeMinutes} minutes, ${draft.snoozeCount} ${if (draft.snoozeCount == 1) "time" else "times"}",
+                        draft.snoozeEnabled,
+                        onClick = { snoozeSheetOpen = true },
                     ) {
-                        draft.routine.take(3).forEachIndexed { index, step ->
-                            PoseSlotCard(
-                                index = index,
-                                step = step,
-                                modifier = Modifier.weight(1f),
-                                onSelectPose = { poseSheetSlot = index },
-                                onSelectDuration = { durationSheetSlot = index },
-                            )
-                        }
+                        draft = draft.copy(snoozeEnabled = it)
                     }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = "${draft.routine.sumOf { it.durationSeconds }} seconds of movement",
-                        color = MutedInk,
-                        fontSize = 13.sp,
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    Button(
-                        onClick = { onTestRoutine(draft) },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
-                        shape = RoundedCornerShape(18.dp),
-                    ) {
-                        Text("Test routine", modifier = Modifier.padding(vertical = 6.dp), fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(Modifier.height(26.dp))
                     HorizontalDivider(color = Hairline)
                     SettingRow("Sound", draft.sound.displayName, draft.soundEnabled, onClick = { soundSheetOpen = true }) {
                         draft = draft.copy(soundEnabled = it)
@@ -472,28 +432,60 @@ fun AlarmEditorScreen(
                     SettingRow("Vibration", "Gentle pulse", draft.vibrationEnabled) {
                         draft = draft.copy(vibrationEnabled = it)
                     }
-                    HorizontalDivider(color = Hairline)
-                    SettingRow("Snooze", "5 minutes, once", draft.snoozeEnabled) {
-                        draft = draft.copy(snoozeEnabled = it)
+                    Spacer(Modifier.height(28.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Bottom,
+                    ) {
+                        Text("MORNING ROUTINE", color = MutedInk, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text(
+                            "${draft.routine.size} poses · ${draft.routine.sumOf { it.durationSeconds }} seconds",
+                            color = MutedInk,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     }
-                }
+                    Spacer(Modifier.height(12.dp))
+                    draft.routine.forEachIndexed { index, step ->
+                        PoseCarouselCard(
+                            index = index,
+                            step = step,
+                            onSelectPose = { pose ->
+                                draft = draft.copy(
+                                    routine = draft.routine.mapIndexed { slot, candidate ->
+                                        if (slot == index) candidate.copy(pose = pose) else candidate
+                                    },
+                                )
+                            },
+                            onSelectDuration = { durationSheetSlot = index },
+                            onTryPose = { onTestPose(draft, step) },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    Button(
+                        onClick = { },
+                        enabled = false,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            disabledContainerColor = Color(0xFFF1F6F1),
+                            disabledContentColor = MutedInk,
+                        ),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text("+ Add another pose   PRO", modifier = Modifier.padding(vertical = 4.dp), fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                        onClick = { onTestRoutine(draft) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
+                        shape = RoundedCornerShape(18.dp),
+                    ) {
+                        Text("Test complete routine", modifier = Modifier.padding(vertical = 6.dp), fontWeight = FontWeight.Bold)
+                    }
             }
         }
-    }
-
-    poseSheetSlot?.let { slotIndex ->
-        PosePickerSheet(
-            selectedPose = draft.routine[slotIndex].pose,
-            onDismiss = { poseSheetSlot = null },
-            onSelect = { pose ->
-                draft = draft.copy(
-                    routine = draft.routine.mapIndexed { index, step ->
-                        if (index == slotIndex) step.copy(pose = pose) else step
-                    },
-                )
-                poseSheetSlot = null
-            },
-        )
     }
 
     durationSheetSlot?.let { slotIndex ->
@@ -510,6 +502,16 @@ fun AlarmEditorScreen(
                 )
                 durationSheetSlot = null
             },
+        )
+    }
+
+    if (snoozeSheetOpen) {
+        SnoozePickerSheet(
+            selectedMinutes = draft.snoozeMinutes,
+            selectedCount = draft.snoozeCount,
+            onDismiss = { snoozeSheetOpen = false },
+            onSelectMinutes = { draft = draft.copy(snoozeMinutes = it, snoozeEnabled = true) },
+            onSelectCount = { draft = draft.copy(snoozeCount = it, snoozeEnabled = true) },
         )
     }
 
@@ -531,11 +533,12 @@ private fun AlarmTimePicker(
     minute: Int,
     onHourChange: (Int) -> Unit,
     onMinuteChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .height(320.dp)
+            .height(216.dp)
             .padding(horizontal = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -546,6 +549,7 @@ private fun AlarmTimePicker(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NumberWheel(
     value: Int,
@@ -553,45 +557,42 @@ private fun NumberWheel(
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var accumulatedScroll by remember { mutableStateOf(0f) }
-    val scrollState = rememberScrollableState { delta ->
-        accumulatedScroll += delta
-        if (accumulatedScroll > 52f) {
-            onValueChange((value - 1 + valueCount) % valueCount)
-            accumulatedScroll = 0f
-        } else if (accumulatedScroll < -52f) {
-            onValueChange((value + 1) % valueCount)
-            accumulatedScroll = 0f
+    val pageCount = valueCount * 200
+    val initialPage = valueCount * 100 + value
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pageCount })
+    val coroutineScope = rememberCoroutineScope()
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            onValueChange(((page % valueCount) + valueCount) % valueCount)
         }
-        delta
     }
-    val previous = (value - 1 + valueCount) % valueCount
-    val next = (value + 1) % valueCount
-    Column(
-        modifier = modifier.scrollable(scrollState, Orientation.Vertical),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(22.dp),
-    ) {
-        Text(
-            text = String.format(Locale.US, "%02d", previous),
-            modifier = Modifier.clickable { onValueChange(previous) },
-            color = Ink.copy(alpha = 0.18f),
-            fontSize = 45.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            text = String.format(Locale.US, "%02d", value),
-            color = Ink,
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Text(
-            text = String.format(Locale.US, "%02d", next),
-            modifier = Modifier.clickable { onValueChange(next) },
-            color = Ink.copy(alpha = 0.18f),
-            fontSize = 45.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
+    VerticalPager(
+        state = pagerState,
+        modifier = modifier.fillMaxHeight(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 72.dp),
+        pageSize = PageSize.Fixed(72.dp),
+        flingBehavior = PagerDefaults.flingBehavior(
+            state = pagerState,
+            pagerSnapDistance = PagerSnapDistance.atMost(8),
+        ),
+    ) { page ->
+        val centered = page == pagerState.currentPage
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clickable {
+                    coroutineScope.launch { pagerState.animateScrollToPage(page) }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = String.format(Locale.US, "%02d", page % valueCount),
+                color = Ink.copy(alpha = if (centered) 1f else 0.18f),
+                fontSize = if (centered) 64.sp else 45.sp,
+                fontWeight = if (centered) FontWeight.Bold else FontWeight.SemiBold,
+            )
+        }
     }
 }
 
@@ -600,7 +601,7 @@ private fun WeekdayPicker(
     selectedDays: Set<Int>,
     onSelectionChange: (Set<Int>) -> Unit,
 ) {
-    val days = listOf(7 to "S", 1 to "M", 2 to "T", 3 to "W", 4 to "T", 5 to "F", 6 to "S")
+    val days = listOf(1 to "M", 2 to "T", 3 to "W", 4 to "T", 5 to "F", 6 to "S", 7 to "S")
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         days.forEach { (day, label) ->
             val selected = day in selectedDays
@@ -621,49 +622,123 @@ private fun WeekdayPicker(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PoseSlotCard(
+private fun PoseCarouselCard(
     index: Int,
     step: PoseStep,
-    modifier: Modifier,
-    onSelectPose: () -> Unit,
+    onSelectPose: (YogaPose) -> Unit,
     onSelectDuration: () -> Unit,
+    onTryPose: () -> Unit,
 ) {
+    val poses = YogaPose.entries
+    val pagerState = rememberPagerState(
+        initialPage = poses.indexOf(step.pose).coerceAtLeast(0),
+        pageCount = { poses.size },
+    )
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            poses.getOrNull(page)?.takeIf { it.isFree && it != step.pose }?.let(onSelectPose)
+        }
+    }
     Surface(
-        modifier = modifier
-            .height(194.dp)
-            .clickable(onClick = onSelectPose),
-        shape = RoundedCornerShape(22.dp),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
         color = Color(0xFFF1F6F1),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("${index + 1}", color = MutedInk, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            PoseGlyph(step.pose, Modifier.size(92.dp))
+        Column(Modifier.padding(vertical = 14.dp)) {
             Text(
-                text = step.pose.displayName,
-                color = Ink,
-                fontSize = 12.sp,
-                lineHeight = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                textAlign = TextAlign.Center,
+                "POSE ${index + 1}",
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                color = MutedInk,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
             )
-            Spacer(Modifier.height(6.dp))
-            Surface(
-                modifier = Modifier.clickable(onClick = onSelectDuration),
-                shape = RoundedCornerShape(50),
-                color = Color.White,
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(252.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 18.dp),
+                pageSpacing = 10.dp,
+            ) { page ->
+                val pose = poses[page]
+                val selected = page == pagerState.currentPage && pose.isFree
+                Surface(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .alpha(if (pose.isFree) 1f else 0.62f),
+                    shape = RoundedCornerShape(22.dp),
+                    color = if (selected) Color(0xFFF5FFE6) else Color.White.copy(alpha = 0.82f),
+                    border = if (selected) androidx.compose.foundation.BorderStroke(1.dp, Lime) else null,
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            if (!pose.isFree) "PRO · LOCKED" else if (selected) "SELECTED" else "FREE",
+                            color = if (selected) Forest else MutedInk,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp,
+                        )
+                        PoseGlyph(pose, Modifier.size(132.dp))
+                        Text(pose.displayName, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        when {
+                            !pose.isFree -> Text("Unlock Pro", color = MutedInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            selected -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Surface(
+                                    modifier = Modifier.clickable(onClick = onSelectDuration),
+                                    shape = RoundedCornerShape(50),
+                                    color = Color.White,
+                                ) {
+                                    Text(
+                                        "${step.durationSeconds} sec",
+                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                                        color = Forest,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                                Surface(
+                                    modifier = Modifier.clickable(onClick = onTryPose),
+                                    shape = RoundedCornerShape(50),
+                                    color = Forest,
+                                ) {
+                                    Text(
+                                        "Try pose",
+                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                            else -> Text("Swipe to select", color = MutedInk, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 10.dp),
+                horizontalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    text = "${step.durationSeconds} sec",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    color = Forest,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                poses.forEachIndexed { page, _ ->
+                    Box(
+                        Modifier
+                            .padding(horizontal = 2.dp)
+                            .size(if (page == pagerState.currentPage) 7.dp else 5.dp)
+                            .background(
+                                if (page == pagerState.currentPage) Forest else Hairline,
+                                CircleShape,
+                            ),
+                    )
+                }
             }
         }
     }
@@ -837,6 +912,82 @@ private fun PosePickerSheet(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun SnoozePickerSheet(
+    selectedMinutes: Int,
+    selectedCount: Int,
+    onDismiss: () -> Unit,
+    onSelectMinutes: (Int) -> Unit,
+    onSelectCount: (Int) -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = SoftSurface) {
+        Column(Modifier.padding(horizontal = 22.dp, vertical = 8.dp)) {
+            Text("Snooze", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("Choose how long and how many times.", color = MutedInk, fontSize = 14.sp)
+            Spacer(Modifier.height(24.dp))
+            Text("SNOOZE TIME", color = MutedInk, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(Modifier.height(10.dp))
+            SnoozeChoiceRow(
+                options = listOf(5, 10, 15, 20),
+                selected = selectedMinutes,
+                suffix = "min",
+                onSelect = onSelectMinutes,
+            )
+            Spacer(Modifier.height(24.dp))
+            Text("NUMBER OF SNOOZES", color = MutedInk, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(Modifier.height(10.dp))
+            SnoozeChoiceRow(
+                options = listOf(1, 2, 3, 5),
+                selected = selectedCount,
+                suffix = "×",
+                onSelect = onSelectCount,
+            )
+            Spacer(Modifier.height(28.dp))
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Text("Done", modifier = Modifier.padding(vertical = 5.dp), fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+@Composable
+private fun SnoozeChoiceRow(
+    options: List<Int>,
+    selected: Int,
+    suffix: String,
+    onSelect: (Int) -> Unit,
+) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { option ->
+            val isSelected = option == selected
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable { onSelect(option) },
+                shape = RoundedCornerShape(18.dp),
+                color = if (isSelected) Lime.copy(alpha = 0.55f) else Color.White,
+                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, Forest) else null,
+            ) {
+                Text(
+                    "$option $suffix",
+                    modifier = Modifier.padding(vertical = 15.dp),
+                    color = Ink,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun DurationPickerSheet(
     selectedDuration: Int,
     previewProDurations: Boolean,
@@ -905,23 +1056,4 @@ private fun weekdaySummary(days: Set<Int>): String = when {
     else -> listOf(1 to "Mon", 2 to "Tue", 3 to "Wed", 4 to "Thu", 5 to "Fri", 6 to "Sat", 7 to "Sun")
         .filter { it.first in days }
         .joinToString(", ") { it.second }
-}
-
-private fun findNextAlarm(alarms: List<AlarmConfig>): Pair<AlarmConfig, ZonedDateTime>? {
-    val now = ZonedDateTime.now()
-    return alarms
-        .asSequence()
-        .filter(AlarmConfig::enabled)
-        .map { alarm -> alarm to nextOccurrence(alarm, now) }
-        .minByOrNull { it.second }
-}
-
-private fun nextOccurrence(alarm: AlarmConfig, now: ZonedDateTime): ZonedDateTime {
-    for (daysAhead in 0..7) {
-        val date = now.toLocalDate().plusDays(daysAhead.toLong())
-        val candidate = date.atTime(alarm.hour, alarm.minute).atZone(now.zone)
-        val scheduledToday = alarm.weekdays.isEmpty() || date.dayOfWeek.value in alarm.weekdays
-        if (scheduledToday && candidate.isAfter(now)) return candidate
-    }
-    return now.toLocalDate().plusDays(1).atTime(alarm.hour, alarm.minute).atZone(now.zone)
 }

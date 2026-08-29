@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,12 +62,14 @@ import com.yogaalarm.prototype.ui.RoutineViewModel
 
 class MainActivity : ComponentActivity() {
     private val firedAlarmId = mutableStateOf<Long?>(null)
-    private val firedAlarmCanSnooze = mutableStateOf(true)
+    private val firedAlarmRemainingSnoozes = mutableStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AlarmForegroundService.ensureNotificationChannel(this)
+        updateAlarmWindowState(intent)
         firedAlarmId.value = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L).takeIf { it >= 0L }
-        firedAlarmCanSnooze.value = intent.getBooleanExtra(AlarmScheduler.EXTRA_ALLOW_SNOOZE, true)
+        firedAlarmRemainingSnoozes.value = intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
         enableEdgeToEdge()
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = true
@@ -75,8 +79,9 @@ class MainActivity : ComponentActivity() {
             YogaAlarmTheme {
                 YogaAlarmRoot(
                     firedAlarmId = firedAlarmId.value,
-                    firedAlarmCanSnooze = firedAlarmCanSnooze.value,
+                    firedAlarmRemainingSnoozes = firedAlarmRemainingSnoozes.value,
                     onFiredAlarmHandled = { firedAlarmId.value = null },
+                    onAlarmPresentationFinished = ::clearAlarmWindowState,
                 )
             }
         }
@@ -85,16 +90,29 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        updateAlarmWindowState(intent)
         firedAlarmId.value = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L).takeIf { it >= 0L }
-        firedAlarmCanSnooze.value = intent.getBooleanExtra(AlarmScheduler.EXTRA_ALLOW_SNOOZE, true)
+        firedAlarmRemainingSnoozes.value = intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
+    }
+
+    private fun updateAlarmWindowState(intent: Intent) {
+        val isAlarm = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L) >= 0L
+        setShowWhenLocked(isAlarm)
+        setTurnScreenOn(isAlarm)
+    }
+
+    private fun clearAlarmWindowState() {
+        setShowWhenLocked(false)
+        setTurnScreenOn(false)
     }
 }
 
 @Composable
 private fun YogaAlarmRoot(
     firedAlarmId: Long?,
-    firedAlarmCanSnooze: Boolean,
+    firedAlarmRemainingSnoozes: Int,
     onFiredAlarmHandled: () -> Unit,
+    onAlarmPresentationFinished: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val store = remember { AlarmStore(context.applicationContext) }
@@ -102,8 +120,9 @@ private fun YogaAlarmRoot(
     var route by rememberSaveable { mutableStateOf("home") }
     var editingAlarmId by rememberSaveable { mutableStateOf(-1L) }
     var pendingEditorAlarm by remember { mutableStateOf<AlarmConfig?>(null) }
+    var cameraAlarm by remember { mutableStateOf<AlarmConfig?>(null) }
     var firedRoutine by rememberSaveable { mutableStateOf(false) }
-    var snoozeAvailable by rememberSaveable { mutableStateOf(false) }
+    var remainingSnoozes by rememberSaveable { mutableStateOf(0) }
     var readinessRefresh by remember { mutableStateOf(0) }
     val permissionPreferences = remember {
         context.getSharedPreferences("alarm_readiness", android.content.Context.MODE_PRIVATE)
@@ -120,9 +139,14 @@ private fun YogaAlarmRoot(
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
     val notificationsReady = remember(readinessRefresh) {
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED &&
-                NotificationManagerCompat.from(context).areNotificationsEnabled())
+        val channelEnabled = context.getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(AlarmForegroundService.CHANNEL_ID)
+            ?.importance
+            ?.let { it != NotificationManager.IMPORTANCE_NONE }
+            ?: false
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+            NotificationManagerCompat.from(context).areNotificationsEnabled() && channelEnabled
     }
     val fullScreenReady = remember(readinessRefresh) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
@@ -142,8 +166,13 @@ private fun YogaAlarmRoot(
         val fired = alarms.firstOrNull { it.id == alarmId } ?: return@LaunchedEffect
         editingAlarmId = fired.id
         pendingEditorAlarm = fired
+        cameraAlarm = fired
         firedRoutine = true
-        snoozeAvailable = firedAlarmCanSnooze && fired.snoozeEnabled
+        remainingSnoozes = if (fired.snoozeEnabled) {
+            firedAlarmRemainingSnoozes.coerceIn(0, fired.snoozeCount)
+        } else {
+            0
+        }
         route = "camera"
         onFiredAlarmHandled()
     }
@@ -172,13 +201,20 @@ private fun YogaAlarmRoot(
                 },
                 onTestRoutine = { draft ->
                     pendingEditorAlarm = draft
+                    cameraAlarm = draft
+                    firedRoutine = false
+                    route = "camera"
+                },
+                onTestPose = { draft, step ->
+                    pendingEditorAlarm = draft
+                    cameraAlarm = draft.copy(routine = listOf(step))
                     firedRoutine = false
                     route = "camera"
                 },
             )
         }
         "camera" -> {
-            val testAlarm = pendingEditorAlarm ?: AlarmConfig.create(editingAlarmId)
+            val testAlarm = cameraAlarm ?: pendingEditorAlarm ?: AlarmConfig.create(editingAlarmId)
             val viewModel: RoutineViewModel = viewModel()
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             CameraPermissionRoute(
@@ -188,21 +224,30 @@ private fun YogaAlarmRoot(
                 onCameraError = viewModel::onCameraError,
                 onStartRoutine = viewModel::start,
                 isFiredAlarm = firedRoutine,
-                snoozeAvailable = snoozeAvailable,
+                remainingSnoozes = remainingSnoozes,
                 onSnooze = {
                     context.stopService(Intent(context, AlarmForegroundService::class.java))
-                    AlarmScheduler.scheduleSnooze(context, testAlarm.id)
+                    AlarmScheduler.scheduleSnooze(
+                        context = context,
+                        alarmId = testAlarm.id,
+                        minutes = testAlarm.snoozeMinutes,
+                        remainingSnoozes = (remainingSnoozes - 1).coerceAtLeast(0),
+                    )
+                    onAlarmPresentationFinished()
                     firedRoutine = false
-                    snoozeAvailable = false
+                    remainingSnoozes = 0
                     pendingEditorAlarm = null
+                    cameraAlarm = null
                     route = "home"
                 },
                 onBack = {
                     if (firedRoutine) {
                         context.stopService(Intent(context, AlarmForegroundService::class.java))
+                        onAlarmPresentationFinished()
                         firedRoutine = false
-                        snoozeAvailable = false
+                        remainingSnoozes = 0
                         pendingEditorAlarm = null
+                        cameraAlarm = null
                         route = "home"
                     } else {
                         route = "editor"
@@ -231,7 +276,16 @@ private fun YogaAlarmRoot(
             onFixNotifications = {
                 val activity = context as? Activity
                 val requested = permissionPreferences.getBoolean("notifications_requested", false)
-                if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !requested) ||
+                val channelBlocked = context.getSystemService(NotificationManager::class.java)
+                    .getNotificationChannel(AlarmForegroundService.CHANNEL_ID)
+                    ?.importance == NotificationManager.IMPORTANCE_NONE
+                if (channelBlocked) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            .putExtra(Settings.EXTRA_CHANNEL_ID, AlarmForegroundService.CHANNEL_ID),
+                    )
+                } else if ((Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !requested) ||
                     activity?.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) == true
                 ) {
                     permissionPreferences.edit().putBoolean("notifications_requested", true).apply()
@@ -290,11 +344,18 @@ private fun CameraPermissionRoute(
     onCameraError: (String) -> Unit,
     onStartRoutine: (AlarmConfig) -> Unit,
     isFiredAlarm: Boolean,
-    snoozeAvailable: Boolean,
+    remainingSnoozes: Int,
     onSnooze: () -> Unit,
     onBack: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = context as? Activity
+    DisposableEffect(activity) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     var cameraStarted by rememberSaveable { mutableStateOf(false) }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
     val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -324,7 +385,8 @@ private fun CameraPermissionRoute(
         CameraReadyScreen(
             permissionDenied = permissionDenied,
             showBack = !isFiredAlarm,
-            showSnooze = isFiredAlarm && snoozeAvailable,
+            snoozeMinutes = alarm.snoozeMinutes,
+            showSnooze = isFiredAlarm && remainingSnoozes > 0,
             showEmergencyStop = isFiredAlarm && permissionDenied,
             onSnooze = onSnooze,
             onStartCamera = {
@@ -348,6 +410,7 @@ private fun CameraReadyScreen(
     permissionDenied: Boolean,
     showBack: Boolean,
     showSnooze: Boolean,
+    snoozeMinutes: Int,
     showEmergencyStop: Boolean,
     onSnooze: () -> Unit,
     onStartCamera: () -> Unit,
@@ -385,7 +448,7 @@ private fun CameraReadyScreen(
                 text = if (permissionDenied) {
                     "Allow camera access to validate your poses."
                 } else {
-                    "Get dressed and place your phone before starting the camera."
+                    "Place your phone before starting the camera."
                 },
                 color = Color.White.copy(alpha = 0.72f),
                 style = MaterialTheme.typography.bodyLarge,
@@ -398,7 +461,7 @@ private fun CameraReadyScreen(
             if (showSnooze) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = onSnooze) {
-                    Text("Snooze ${AlarmScheduler.SNOOZE_MINUTES} minutes", color = Color.White)
+                    Text("Snooze $snoozeMinutes minutes", color = Color.White)
                 }
             }
             if (showEmergencyStop) {
