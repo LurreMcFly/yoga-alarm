@@ -1,6 +1,8 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -18,8 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -31,13 +34,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.core.view.doOnLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,11 +49,10 @@ import androidx.lifecycle.Observer
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.StateFlow
 import com.lurremcfly.yogaalarm.camera.PoseCameraController
-import com.lurremcfly.yogaalarm.model.BodyLandmarks
 import com.lurremcfly.yogaalarm.model.BodyPoint
+import com.lurremcfly.yogaalarm.model.PreviewProjection
 import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.model.YogaPose
-import kotlin.math.min
 import kotlin.math.hypot
 
 @Composable
@@ -82,22 +81,20 @@ fun RoutineCameraScreen(
             }
         }
 
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.14f)),
-        )
-
         if (uiState.phase != RoutinePhase.COMPLETE) {
-            RoutineOverlays(frames, guidePose, uiState.detected && uiState.phase != RoutinePhase.TRANSITION)
+            RoutineOverlays(frames, guidePose, uiState)
         }
+        Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(210.dp)
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.3f), Color.Transparent))))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(300.dp)
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)))))
 
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 18.dp, vertical = 8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = onBack) {
@@ -107,16 +104,15 @@ fun RoutineCameraScreen(
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = "${uiState.poseIndex + 1} / ${uiState.poseCount}",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 12.sp,
-                )
-                Spacer(Modifier.width(12.dp))
-                RoutineOverallProgress(progress, Modifier.weight(1f))
-                Spacer(Modifier.width(12.dp))
-                Text(guidePose.displayName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.weight(1f))
+                if (uiState.phase != RoutinePhase.COMPLETE) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        PoseGlyph(guidePose, Modifier.size(96.dp))
+                        Text(guidePose.displayName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(64.dp))
             }
         }
 
@@ -128,25 +124,33 @@ fun RoutineCameraScreen(
                 .padding(horizontal = 28.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (uiState.phase == RoutinePhase.HOLDING || uiState.phase == RoutinePhase.PAUSED) {
-                RoutineCountdown(progress, uiState.remainingSeconds, uiState.phase == RoutinePhase.PAUSED)
-                Spacer(Modifier.height(14.dp))
+            when (uiState.phase) {
+                RoutinePhase.HOLDING -> {
+                    RoutineCountdown(progress, uiState.remainingSeconds)
+                    Spacer(Modifier.height(48.dp))
+                }
+                RoutinePhase.PAUSED -> {
+                    Surface(shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = 0.45f)) {
+                        Text("↶ Return to pose", modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("${uiState.remainingSeconds} sec remaining", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                    if (!uiState.framed || uiState.error != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(uiState.error ?: uiState.framingHint, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, textAlign = TextAlign.Center)
+                    }
+                    Spacer(Modifier.height(36.dp))
+                }
+                else -> {
+                    Text(statusTitle(uiState, previewReady), color = Color.White,
+                        fontSize = if (uiState.phase == RoutinePhase.COMPLETE) 32.sp else 20.sp,
+                        fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(7.dp))
+                    Text(statusDetail(uiState), color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 14.sp, textAlign = TextAlign.Center)
+                }
             }
-
-            Text(
-                text = statusTitle(uiState, previewReady),
-                color = Color.White,
-                fontSize = if (uiState.phase == RoutinePhase.COMPLETE) 38.sp else 30.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(7.dp))
-            Text(
-                text = statusDetail(uiState),
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-            )
 
             if (uiState.phase == RoutinePhase.COMPLETE) {
                 Spacer(Modifier.height(24.dp))
@@ -187,15 +191,15 @@ private fun SelfiePreview(onPoseFrame: (PoseFrame) -> Unit, onCameraError: (Stri
     val controller = remember { PoseCameraController(context, onPoseFrame, onCameraError) }
     val preview = remember {
         PreviewView(context).apply {
-            scaleType = PreviewView.ScaleType.FIT_CENTER
-            // Keep TextureView compatibility and the existing selfie overlay alignment.
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            // The shared CameraX viewport also supplies the overlay crop.
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
     DisposableEffect(controller, lifecycleOwner) {
         val observer = Observer<PreviewView.StreamState> { onPreviewReady(it == PreviewView.StreamState.STREAMING) }
         preview.previewStreamState.observe(lifecycleOwner, observer)
-        controller.bind(lifecycleOwner, preview)
+        preview.doOnLayout { controller.bind(lifecycleOwner, preview) }
         onDispose {
             preview.previewStreamState.removeObserver(observer)
             controller.close()
@@ -205,37 +209,45 @@ private fun SelfiePreview(onPoseFrame: (PoseFrame) -> Unit, onCameraError: (Stri
 }
 
 @Composable
-private fun RoutineOverlays(frames: StateFlow<PoseFrame?>, pose: YogaPose, detected: Boolean) {
+private fun RoutineOverlays(frames: StateFlow<PoseFrame?>, pose: YogaPose, state: RoutineUiState) {
     val frame by frames.collectAsStateWithLifecycle()
-    RoutinePoseGuide(pose, frame?.landmarks, frame?.imageWidth ?: 0, frame?.imageHeight ?: 0, detected)
-    RoutineSkeletonOverlay(frame?.landmarks, frame?.imageWidth ?: 0, frame?.imageHeight ?: 0, detected)
+    val locked = state.detected && state.phase != RoutinePhase.TRANSITION
+    val targetAlpha by animateFloatAsState(
+        targetValue = when {
+            locked || !state.cameraReady || state.error != null -> 0f
+            state.almostThere && state.phase != RoutinePhase.TRANSITION -> 0.2f
+            else -> 1f
+        },
+        animationSpec = tween(220), label = "Target visibility",
+    )
+    if (targetAlpha > 0.01f) RoutinePoseGuide(pose, frame, targetAlpha)
+    RoutineSkeletonOverlay(frame, locked)
 }
 
 @Composable
-private fun RoutineOverallProgress(progress: StateFlow<RoutineProgress>, modifier: Modifier) {
-    val value by progress.collectAsStateWithLifecycle()
-    LinearProgressIndicator(progress = { value.routine }, modifier = modifier, color = Lime, trackColor = Color.White.copy(alpha = 0.2f))
-}
-
-@Composable
-private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int, paused: Boolean) {
+private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int) {
     val value by progress.collectAsStateWithLifecycle()
     Box(contentAlignment = Alignment.Center) {
         CircularProgressIndicator(
             progress = { value.hold },
-            modifier = Modifier.width(118.dp).height(118.dp),
-            color = if (paused) Color.White.copy(alpha = 0.55f) else Lime,
-            trackColor = Color.White.copy(alpha = 0.18f),
-            strokeWidth = 5.dp,
+            modifier = Modifier.size(144.dp),
+            color = Lime.copy(alpha = 0.55f),
+            trackColor = Color.White.copy(alpha = 0.12f),
+            strokeWidth = 2.dp,
             strokeCap = StrokeCap.Round,
         )
-        Text(seconds.toString(), color = Color.White, fontSize = 58.sp, fontWeight = FontWeight.Medium)
+        Text(seconds.toString(), color = Color.White, fontSize = 84.sp, fontWeight = FontWeight.Medium)
     }
 }
 
 private fun statusTitle(state: RoutineUiState, previewReady: Boolean): String = when {
     state.error != null -> "Camera unavailable"
-    state.phase == RoutinePhase.COMPLETE -> "Good morning ☀️"
+    state.phase == RoutinePhase.COMPLETE -> when (state.alarmHour) {
+        in 5..11 -> "Good morning ☀️"
+        in 12..16 -> "Good afternoon ☀️"
+        in 17..21 -> "Good evening 🌅"
+        else -> "Good night 🌙"
+    }
     state.phase == RoutinePhase.TRANSITION -> "Next: ${state.nextPose?.displayName ?: state.pose.displayName}"
     !state.cameraReady && state.phase != RoutinePhase.PAUSED -> if (previewReady) "Preparing pose detection…" else "Starting camera…"
     state.phase == RoutinePhase.HOLDING -> "Hold"
@@ -260,58 +272,56 @@ private fun poseInstruction(pose: YogaPose): String = when (pose) {
         YogaPose.MOUNTAIN -> "Stand tall with your arms relaxed"
         YogaPose.WARRIOR_TWO -> "Reach wide and bend either front knee"
         YogaPose.TREE -> "Balance with one foot lifted"
-        YogaPose.CHAIR -> "Sit your hips back and reach both arms up"
-        YogaPose.FORWARD_FOLD -> "Sit, extend both legs and reach forward"
+        YogaPose.CHAIR -> "Face sideways, sit your hips back and reach both arms up"
+        YogaPose.FORWARD_FOLD -> "Face sideways, sit with straight legs and reach forward"
         YogaPose.TRIANGLE -> "Reach one hand down and the other straight up"
         YogaPose.GODDESS -> "Bend both knees wide and lift your hands"
         YogaPose.WIDE_LEG_FOLD -> "Fold between wide, straight legs"
 }
 
 @Composable
-private fun RoutinePoseGuide(
-    pose: YogaPose,
-    landmarks: BodyLandmarks?,
-    imageWidth: Int,
-    imageHeight: Int,
-    detected: Boolean,
-) {
+private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
     val geometry = remember(pose) { guideGeometry(pose) }
-    Canvas(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen },
-    ) {
-        val scale = if (imageWidth > 0 && imageHeight > 0) min(size.width / imageWidth, size.height / imageHeight) else 1f
-        val offsetX = if (imageWidth > 0) (size.width - imageWidth * scale) / 2f else 0f
-        val offsetY = if (imageHeight > 0) (size.height - imageHeight * scale) / 2f else 0f
-        fun mapped(index: Int): Offset? = landmarks?.get(index)?.takeIf { it.isDrawable() }?.let {
-            Offset(offsetX + it.x * imageWidth * scale, offsetY + it.y * imageHeight * scale)
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val projection = frame?.let { PreviewProjection(it, size.width, size.height) }
+        fun mapped(index: Int): Offset? = frame?.landmarks?.get(index)?.takeIf { it.isDrawable() }?.let {
+            Offset(projection!!.x(it.x), projection.y(it.y))
         }
-
+        val sidePose = pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD
+        val side = if ((frame?.landmarks?.get(11)?.visibility ?: 0f) >= (frame?.landmarks?.get(12)?.visibility ?: 0f)) 0 else 1
         val leftShoulder = mapped(11)
         val rightShoulder = mapped(12)
-        val leftHip = mapped(23)
-        val rightHip = mapped(24)
-        val shoulderMid = if (leftShoulder != null && rightShoulder != null) midpoint(leftShoulder, rightShoulder) else Offset(size.width / 2f, size.height * 0.3f)
-        val hipMid = if (leftHip != null && rightHip != null) midpoint(leftHip, rightHip) else Offset(shoulderMid.x, shoulderMid.y + size.height * 0.2f)
-        val shoulderWidth = if (leftShoulder != null && rightShoulder != null) distance(leftShoulder, rightShoulder).coerceAtLeast(size.width * 0.12f) else min(size.width * 0.2f, size.height * 0.15f)
+        val shoulderMid = if (sidePose) mapped(11 + side) ?: Offset(size.width / 2f, size.height * 0.4f)
+            else if (leftShoulder != null && rightShoulder != null) midpoint(leftShoulder, rightShoulder)
+            else Offset(size.width / 2f, size.height * 0.4f)
+        val hipMid = if (sidePose) mapped(23 + side) ?: Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
+            else if (mapped(23) != null && mapped(24) != null) midpoint(mapped(23)!!, mapped(24)!!)
+            else Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
+        val shoulderWidth = if (leftShoulder != null && rightShoulder != null)
+            distance(leftShoulder, rightShoulder).coerceAtLeast(size.width * 0.12f) else size.width * 0.2f
         val torsoHeight = distance(shoulderMid, hipMid).coerceAtLeast(shoulderWidth * 0.8f)
-        fun guidePoint(point: Pair<Float, Float>) = Offset(shoulderMid.x + point.first * shoulderWidth, shoulderMid.y + point.second * torsoHeight)
-        val bodyWidth = maxOf(42.dp.toPx(), shoulderWidth * 0.72f)
-
-        drawRect(Color.Black.copy(alpha = 0.27f))
-        geometry.segments.forEach { (from, to) ->
-            drawLine(Color.Transparent, guidePoint(from), guidePoint(to), bodyWidth * 1.12f, StrokeCap.Round, blendMode = BlendMode.Clear)
+        var origin = shoulderMid
+        var xScale = if (sidePose) torsoHeight else shoulderWidth
+        var yScale = torsoHeight
+        if (sidePose) {
+            val forwardPoint = mapped(if (pose == YogaPose.CHAIR) 25 + side else 27 + side)
+            if (forwardPoint != null && forwardPoint.x < hipMid.x) xScale = -xScale
         }
-        val head = guidePoint(geometry.head)
-        drawCircle(Color.Transparent, bodyWidth * 0.62f, head, blendMode = BlendMode.Clear)
-
-        val guideColor = if (detected) Lime.copy(alpha = 0.82f) else Color.White.copy(alpha = 0.5f)
-        val dash = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 10.dp.toPx()))
-        geometry.segments.forEach { (from, to) ->
-            drawLine(guideColor, guidePoint(from), guidePoint(to), 2.dp.toPx(), StrokeCap.Round, pathEffect = dash)
+        if (pose == YogaPose.WIDE_LEG_FOLD) {
+            origin = hipMid
+            val leftFoot = mapped(27)
+            val rightFoot = mapped(28)
+            xScale = if (leftFoot != null && rightFoot != null) distance(leftFoot, rightFoot) / 2.5f else shoulderWidth
+            yScale = if (leftFoot != null && rightFoot != null)
+                ((midpoint(leftFoot, rightFoot).y - hipMid.y) / 1.8f).coerceAtLeast(shoulderWidth * 0.4f) else torsoHeight
         }
-        drawCircle(guideColor, bodyWidth * 0.38f, head, style = Stroke(2.dp.toPx(), pathEffect = dash))
+        fun guidePoint(point: Pair<Float, Float>) = Offset(origin.x + point.first * xScale, origin.y + point.second * yScale)
+        val bodyWidth = maxOf(26.dp.toPx(), shoulderWidth * 0.5f)
+        val guideColor = Color(0xFFB7BDB8).copy(alpha = 0.32f * alpha)
+        geometry.segments.forEach { (from, to) ->
+            drawLine(guideColor, guidePoint(from), guidePoint(to), bodyWidth, StrokeCap.Round)
+        }
+        drawCircle(guideColor, bodyWidth * 0.52f, guidePoint(geometry.head))
     }
 }
 
@@ -342,23 +352,19 @@ private fun guideGeometry(pose: YogaPose): GuideGeometry = when (pose) {
         ),
     )
     YogaPose.CHAIR -> GuideGeometry(
-        0f to -0.55f,
+        0.02f to -0.28f,
         listOf(
-            (0f to 0f) to (0f to 1f),
-            (-0.5f to 0f) to (-0.72f to -0.72f), (-0.72f to -0.72f) to (-0.28f to -1.5f),
-            (0.5f to 0f) to (0.72f to -0.72f), (0.72f to -0.72f) to (0.28f to -1.5f),
-            (-0.24f to 1f) to (-0.82f to 1.55f), (-0.82f to 1.55f) to (-0.62f to 2.45f),
-            (0.24f to 1f) to (0.82f to 1.55f), (0.82f to 1.55f) to (0.62f to 2.45f),
+            (0f to 0f) to (-0.35f to 0.92f),
+            (0f to 0f) to (0.38f to -0.48f), (0.38f to -0.48f) to (0.75f to -0.95f),
+            (-0.35f to 0.92f) to (0.2f to 1.45f), (0.2f to 1.45f) to (-0.15f to 2.2f),
         ),
     )
     YogaPose.FORWARD_FOLD -> GuideGeometry(
-        0.2f to -0.35f,
+        0.12f to -0.25f,
         listOf(
-            (0f to 0f) to (-1.05f to 0.55f),
-            (-0.25f to 0f) to (0.7f to 0.18f), (0.7f to 0.18f) to (1.65f to 0.35f),
-            (0.25f to 0f) to (0.78f to 0.35f), (0.78f to 0.35f) to (1.7f to 0.48f),
-            (-1.05f to 0.55f) to (0.25f to 0.68f), (0.25f to 0.68f) to (1.68f to 0.72f),
-            (-0.9f to 0.82f) to (0.3f to 0.92f), (0.3f to 0.92f) to (1.68f to 0.9f),
+            (0f to 0f) to (-0.55f to 0.8f),
+            (0f to 0f) to (0.65f to 0.15f), (0.65f to 0.15f) to (1.1f to 0.23f),
+            (-0.55f to 0.8f) to (0.35f to 0.85f), (0.35f to 0.85f) to (1.25f to 0.9f),
         ),
     )
     YogaPose.TRIANGLE -> GuideGeometry(
@@ -382,13 +388,13 @@ private fun guideGeometry(pose: YogaPose): GuideGeometry = when (pose) {
         ),
     )
     YogaPose.WIDE_LEG_FOLD -> GuideGeometry(
-        0f to 0.58f,
+        0f to 0.8f,
         listOf(
-            (0f to 0f) to (0f to -1f),
-            (-0.5f to 0f) to (-0.68f to 0.7f), (-0.68f to 0.7f) to (-0.9f to 1.45f),
-            (0.5f to 0f) to (0.68f to 0.7f), (0.68f to 0.7f) to (0.9f to 1.45f),
-            (-0.24f to -1f) to (-1.05f to 0.1f), (-1.05f to 0.1f) to (-1.58f to 1.45f),
-            (0.24f to -1f) to (1.05f to 0.1f), (1.05f to 0.1f) to (1.58f to 1.45f),
+            (0f to 0f) to (0f to 0.5f),
+            (-0.5f to 0.5f) to (-0.5f to 1.1f), (-0.5f to 1.1f) to (-0.5f to 1.7f),
+            (0.5f to 0.5f) to (0.5f to 1.1f), (0.5f to 1.1f) to (0.5f to 1.7f),
+            (-0.2f to 0f) to (-0.75f to 0.9f), (-0.75f to 0.9f) to (-1.25f to 1.8f),
+            (0.2f to 0f) to (0.75f to 0.9f), (0.75f to 0.9f) to (1.25f to 1.8f),
         ),
     )
     YogaPose.MOUNTAIN -> GuideGeometry(
@@ -406,26 +412,18 @@ private fun midpoint(a: Offset, b: Offset) = Offset((a.x + b.x) / 2f, (a.y + b.y
 private fun distance(a: Offset, b: Offset) = hypot(a.x - b.x, a.y - b.y)
 
 @Composable
-private fun RoutineSkeletonOverlay(
-    landmarks: BodyLandmarks?,
-    imageWidth: Int,
-    imageHeight: Int,
-    detected: Boolean,
-) {
-    if (landmarks == null || imageWidth == 0 || imageHeight == 0) return
-    val color = if (detected) Lime else Color.White.copy(alpha = 0.82f)
+private fun RoutineSkeletonOverlay(frame: PoseFrame?, detected: Boolean) {
+    val landmarks = frame?.landmarks ?: return
+    if (frame.imageWidth == 0 || frame.imageHeight == 0) return
     Canvas(modifier = Modifier.fillMaxSize()) {
-        val scale = min(size.width / imageWidth, size.height / imageHeight)
-        val offsetX = (size.width - imageWidth * scale) / 2f
-        val offsetY = (size.height - imageHeight * scale) / 2f
-        fun BodyPoint.toCanvasOffset() = Offset(offsetX + x * imageWidth * scale, offsetY + y * imageHeight * scale)
-
+        val projection = PreviewProjection(frame, size.width, size.height)
+        fun BodyPoint.toCanvasOffset() = Offset(projection.x(x), projection.y(y))
+        val color = if (detected) Lime else Color.White.copy(alpha = 0.75f)
         routineSkeletonConnections.forEach { (startIndex, endIndex) ->
             val start = landmarks[startIndex]
             val end = landmarks[endIndex]
             if (start != null && end != null && start.isDrawable() && end.isDrawable()) {
-                drawLine(color.copy(alpha = 0.18f), start.toCanvasOffset(), end.toCanvasOffset(), 13.dp.toPx(), StrokeCap.Round)
-                drawLine(color, start.toCanvasOffset(), end.toCanvasOffset(), 4.dp.toPx(), StrokeCap.Round)
+                drawLine(color, start.toCanvasOffset(), end.toCanvasOffset(), 2.5.dp.toPx(), StrokeCap.Round)
             }
         }
     }

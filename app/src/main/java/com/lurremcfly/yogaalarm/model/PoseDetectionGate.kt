@@ -2,9 +2,9 @@ package com.lurremcfly.yogaalarm.model
 
 class PoseDetectionGate(
     private val enterScore: Float = 0.68f,
-    private val exitScore: Float = 0.36f,
+    private val exitScore: Float = 0.58f,
     private val enterDelayMs: Long = 300L,
-    private val exitDelayMs: Long = 1_800L,
+    private val exitDelayMs: Long = 450L,
 ) {
     var detected: Boolean = false
         private set
@@ -23,6 +23,10 @@ class PoseDetectionGate(
                 foundSinceMs = null
                 if (lostSinceMs == null) lostSinceMs = nowMs
                 if (nowMs - (lostSinceMs ?: nowMs) >= exitDelayMs) detected = false
+            }
+            else -> {
+                foundSinceMs = null
+                lostSinceMs = null
             }
         }
         return detected

@@ -63,6 +63,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.app.NotificationManagerCompat
@@ -100,6 +102,17 @@ class MainActivity : ComponentActivity() {
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                AlarmForegroundService.ringingAlarm.collect { ringing ->
+                    if (ringing != null) {
+                        setAlarmPresentation(true)
+                        firedAlarmRemainingSnoozes.value = ringing.second
+                        firedAlarmId.value = ringing.first
+                    }
+                }
+            }
         }
         setContent {
             YogaAlarmTheme {
@@ -235,6 +248,8 @@ private fun YogaAlarmRoot(
         if (!firedRoutine || cameraAlarm?.id != alarmId) routineViewModel.stop()
         alarms = store.load()
         val fired = alarms.firstOrNull { it.id == alarmId } ?: return@LaunchedEffect
+        proPaywallOpen = false
+        privacySheetOpen = false
         editingAlarmId = fired.id
         pendingEditorAlarm = fired
         cameraAlarm = fired
@@ -266,17 +281,6 @@ private fun YogaAlarmRoot(
                         saveAlarm(saved)
                         pendingEditorAlarm = null
                         route = "home"
-                    },
-                    onDelete = if (alarms.any { it.id == initial.id }) {
-                        {
-                            AlarmScheduler.cancel(context, initial.id)
-                            alarms = alarms.filterNot { it.id == initial.id }
-                            store.save(alarms)
-                            pendingEditorAlarm = null
-                            route = "home"
-                        }
-                    } else {
-                        null
                     },
                     onTestRoutine = { draft ->
                         pendingEditorAlarm = draft
@@ -539,12 +543,47 @@ private fun CameraPermissionRoute(
         }
     }
     DisposableEffect(activity) {
-        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        val window = activity?.window
+        val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        val lightStatusBars = insets?.isAppearanceLightStatusBars
+        val lightNavigationBars = insets?.isAppearanceLightNavigationBars
+        @Suppress("DEPRECATION")
+        val navigationColor = window?.navigationBarColor
+        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        insets?.isAppearanceLightStatusBars = false
+        insets?.isAppearanceLightNavigationBars = false
+        @Suppress("DEPRECATION")
+        window?.navigationBarColor = android.graphics.Color.rgb(7, 16, 10)
         onDispose {
-            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            lightStatusBars?.let { insets?.isAppearanceLightStatusBars = it }
+            lightNavigationBars?.let { insets?.isAppearanceLightNavigationBars = it }
+            @Suppress("DEPRECATION")
+            navigationColor?.let { window.navigationBarColor = it }
         }
     }
-    var cameraStarted by rememberSaveable { mutableStateOf(false) }
+    var cameraStarted by rememberSaveable(alarm.id, isFiredAlarm) { mutableStateOf(false) }
+    var lastCuedPoseIndex by rememberSaveable(alarm) { mutableStateOf(-1) }
+    DisposableEffect(uiState.phase, uiState.poseIndex, cameraStarted, foreground) {
+        val cueDue = uiState.phase == RoutinePhase.TRANSITION || uiState.phase == RoutinePhase.COMPLETE
+        val cue = if (cameraStarted && foreground && cueDue && lastCuedPoseIndex != uiState.poseIndex) {
+            lastCuedPoseIndex = uiState.poseIndex
+            runCatching {
+                android.media.MediaPlayer.create(
+                    context,
+                    R.raw.pose_transition_ding,
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build(),
+                    0,
+                )
+            }.getOrNull()
+        } else null
+        cue?.setVolume(0.6f, 0.6f)
+        cue?.start()
+        onDispose { cue?.release() }
+    }
     val previewAudio = remember(alarm.id, alarm.sound) {
         AlarmAudio(context.applicationContext, alarm.sound, onCameraError)
     }

@@ -8,6 +8,7 @@ import com.lurremcfly.yogaalarm.model.AlarmSound
 import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.model.PoseDetectionGate
 import com.lurremcfly.yogaalarm.model.PoseScoring
+import com.lurremcfly.yogaalarm.model.SkeletonSmoother
 import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
@@ -38,6 +39,7 @@ data class RoutineUiState(
     val transitionSeconds: Int = 3,
     val soundEnabled: Boolean = true,
     val alarmSound: AlarmSound = AlarmSound.SUNBIRD_MORNING_CALL,
+    val alarmHour: Int = 7,
     val error: String? = null,
 )
 
@@ -65,6 +67,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     private var holdMs = 0L
     private var detected = false
     private val detectionGate = PoseDetectionGate()
+    private val skeletonSmoother = SkeletonSmoother()
     private var latestScore = 0f
     private var latestFramed = false
     private var framingLostSinceMs: Long? = null
@@ -78,6 +81,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
             return
         }
         ticker?.cancel()
+        skeletonSmoother.reset()
         alarm = config
         started = true
         poseIndex = 0
@@ -142,7 +146,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
             if (now - capturedAt > FRAME_TIMEOUT_MS) return
             lastFrameAtMs = capturedAt
             cameraReady = true
-            mutableFrames.value = frame
+            mutableFrames.value = skeletonSmoother.smooth(frame.copy(capturedAtMs = capturedAt))
             mutableUiState.update { it.copy(error = null) }
             if (phase == RoutinePhase.TRANSITION) return
             val evaluation = PoseScoring.evaluate(currentStep().pose, frame.landmarks)
@@ -179,6 +183,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     }
 
     private fun resetTracking() {
+        skeletonSmoother.reset()
         detected = false
         detectionGate.reset()
         latestScore = 0f
@@ -192,6 +197,11 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     }
 
     private fun updateDetection(now: Long) {
+        if (!latestFramed) {
+            detectionGate.reset()
+            detected = false
+            return
+        }
         detected = detectionGate.update(latestScore, now)
     }
 
@@ -263,6 +273,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
                 transitionSeconds = ceil((transitionEndsAtMs - now).coerceAtLeast(0L) / 1_000f).toInt().coerceAtLeast(1),
                 soundEnabled = alarm.soundEnabled,
                 alarmSound = alarm.sound,
+                alarmHour = alarm.hour,
             )
         }
     }
@@ -299,9 +310,9 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     private companion object {
         const val FRAME_TIMEOUT_MS = 900L
         const val CAMERA_START_TIMEOUT_MS = 10_000L
-        const val FRAMING_GRACE_MS = 900L
+        const val FRAMING_GRACE_MS = 350L
         const val SCORE_RISE_SMOOTHING = 0.28f
-        const val SCORE_FALL_SMOOTHING = 0.08f
+        const val SCORE_FALL_SMOOTHING = 0.3f
         const val TRANSITION_MS = 3_000L
         const val MIN_HOLDING_VOLUME = 0.05f
         const val VOLUME_FADE_CURVE = 2.5f

@@ -44,6 +44,7 @@ class AlarmForegroundService : Service() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
         activeAlarmId = null
+        mutableRingingAlarm.value = null
         mutableFinishedAlarmId.value = alarmId
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -129,10 +130,12 @@ class AlarmForegroundService : Service() {
             vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 350, 500), 0))
         }
 
+        mutableRingingAlarm.value = alarmId to remainingSnoozes
         return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
+        mutableRingingAlarm.value = null
         audio?.close()
         audio = null
         vibrator?.cancel()
@@ -145,6 +148,9 @@ class AlarmForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
 
     companion object {
+        private val mutableRingingAlarm = MutableStateFlow<Pair<Long, Int>?>(null)
+        val ringingAlarm = mutableRingingAlarm.asStateFlow()
+
         const val ACTION_STOP_ALARM = "com.lurremcfly.yogaalarm.STOP_ALARM"
         const val CHANNEL_ID = "active_alarm_v2"
 

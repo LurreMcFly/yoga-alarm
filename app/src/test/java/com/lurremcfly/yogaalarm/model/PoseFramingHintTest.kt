@@ -21,10 +21,23 @@ class PoseFramingHintTest {
 
     @Test
     fun optionalAnklesNeverPromptSteppingBack() {
-        YogaPose.entries.forEach { pose ->
+        YogaPose.entries.filterNot { it in listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD, YogaPose.WIDE_LEG_FOLD) }.forEach { pose ->
             val hint = PoseScoring.framingHint(pose, bodyWithout(27, 28))
             assertFalse(hint.contains("ankle"))
             assertFalse(hint.contains("back"))
         }
+    }
+
+    @Test
+    fun sidePosesDoNotAskForTheOccludedSide() {
+        listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD).forEach { pose ->
+            assertEquals("Keep your side facing the camera", PoseScoring.framingHint(pose, bodyWithout(0, 12, 14, 16, 24, 26, 28)))
+        }
+    }
+
+    @Test
+    fun sidePosesAskForOneCompleteSideWhenFeetAreMissing() {
+        assertEquals("Turn sideways and include one full arm and leg, including your foot",
+            PoseScoring.framingHint(YogaPose.CHAIR, bodyWithout(27, 28)))
     }
 }

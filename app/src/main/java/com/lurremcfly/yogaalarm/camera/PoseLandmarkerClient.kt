@@ -3,6 +3,7 @@ package com.lurremcfly.yogaalarm.camera
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.RectF
 import android.os.SystemClock
 import androidx.camera.core.ImageProxy
 import com.google.mediapipe.framework.image.BitmapImageBuilder
@@ -53,6 +54,7 @@ class PoseLandmarkerClient(
         val width = imageProxy.width
         val height = imageProxy.height
         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+        val crop = RectF(imageProxy.cropRect)
         try {
             val bitmap = imageProxy.use {
                 val target = bitmapBuffer?.takeIf { it.width == width && it.height == height }
@@ -87,9 +89,13 @@ class PoseLandmarkerClient(
                 postScale(-1f, 1f, width / 2f, height / 2f)
             }
             val transformed = Bitmap.createBitmap(bitmap, 0, 0, width, height, transform, true)
+            val fullBounds = RectF(0f, 0f, width.toFloat(), height.toFloat())
+            transform.mapRect(fullBounds)
+            transform.mapRect(crop)
+            crop.offset(-fullBounds.left, -fullBounds.top)
             val image = BitmapImageBuilder(transformed).build()
             try {
-                handleResult(landmarker.detectForVideo(image, timestampMs), image.width, image.height, timestampMs)
+                handleResult(landmarker.detectForVideo(image, timestampMs), image.width, image.height, timestampMs, crop)
             } finally {
                 image.close() // Releases the transformed bitmap after synchronous inference.
             }
@@ -105,7 +111,7 @@ class PoseLandmarkerClient(
         packedPixels = null
     }
 
-    private fun handleResult(result: PoseLandmarkerResult, width: Int, height: Int, timestampMs: Long) {
+    private fun handleResult(result: PoseLandmarkerResult, width: Int, height: Int, timestampMs: Long, crop: RectF) {
         val landmarks = result.landmarks().firstOrNull()?.map { landmark ->
             BodyPoint(
                 x = landmark.x(),
@@ -123,6 +129,10 @@ class PoseLandmarkerClient(
                 imageWidth = width,
                 imageHeight = height,
                 capturedAtMs = timestampMs,
+                cropLeft = crop.left / width,
+                cropTop = crop.top / height,
+                cropRight = crop.right / width,
+                cropBottom = crop.bottom / height,
             ),
         )
     }

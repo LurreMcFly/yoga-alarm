@@ -5,6 +5,7 @@ import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -62,8 +63,11 @@ class PoseCameraController(
                     provider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_FRONT_CAMERA,
-                        preview,
-                        analysis,
+                        UseCaseGroup.Builder()
+                            .addUseCase(preview)
+                            .addUseCase(analysis)
+                            .apply { previewView.viewPort?.let { setViewPort(it) } }
+                            .build(),
                     )
                     // Preview starts independently; loading the model must not block the UI.
                     analysisExecutor.execute {

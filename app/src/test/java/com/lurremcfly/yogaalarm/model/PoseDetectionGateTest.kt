@@ -19,8 +19,8 @@ class PoseDetectionGateTest {
         val gate = enteredGate()
 
         assertTrue(gate.update(score = 0.2f, nowMs = 2_000L))
-        assertTrue(gate.update(score = 0.2f, nowMs = 3_799L))
-        assertTrue(gate.update(score = 0.8f, nowMs = 3_800L))
+        assertTrue(gate.update(score = 0.2f, nowMs = 2_300L))
+        assertTrue(gate.update(score = 0.8f, nowMs = 2_400L))
     }
 
     @Test
@@ -28,14 +28,40 @@ class PoseDetectionGateTest {
         val gate = enteredGate()
 
         assertTrue(gate.update(score = 0.2f, nowMs = 2_000L))
-        assertFalse(gate.update(score = 0.2f, nowMs = 3_800L))
+        assertFalse(gate.update(score = 0.2f, nowMs = 2_450L))
     }
 
     @Test
     fun hysteresisBandPreservesCurrentState() {
         val gate = enteredGate()
 
-        assertTrue(gate.update(score = 0.5f, nowMs = 10_000L))
+        assertTrue(gate.update(score = 0.62f, nowMs = 10_000L))
+        assertFalse(PoseDetectionGate().update(score = 0.62f, nowMs = 10_000L))
+    }
+
+    @Test
+    fun partialPoseNoLongerKeepsHoldAccepted() {
+        val gate = enteredGate()
+        assertTrue(gate.update(score = 0.5f, nowMs = 2_000L))
+        assertFalse(gate.update(score = 0.5f, nowMs = 2_450L))
+    }
+
+    @Test
+    fun entryRequiresConsecutiveHighScores() {
+        val gate = PoseDetectionGate()
+        assertFalse(gate.update(score = 0.8f, nowMs = 1_000L))
+        assertFalse(gate.update(score = 0.62f, nowMs = 1_200L))
+        assertFalse(gate.update(score = 0.8f, nowMs = 1_300L))
+        assertTrue(gate.update(score = 0.8f, nowMs = 1_600L))
+    }
+
+    @Test
+    fun recoveryIntoHysteresisBandRestartsLossDelay() {
+        val gate = enteredGate()
+        assertTrue(gate.update(score = 0.2f, nowMs = 2_000L))
+        assertTrue(gate.update(score = 0.62f, nowMs = 2_300L))
+        assertTrue(gate.update(score = 0.2f, nowMs = 2_500L))
+        assertFalse(gate.update(score = 0.2f, nowMs = 2_950L))
     }
 
     private fun enteredGate() = PoseDetectionGate().apply {

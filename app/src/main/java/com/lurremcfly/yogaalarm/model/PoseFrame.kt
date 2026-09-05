@@ -6,4 +6,8 @@ data class PoseFrame(
     val imageWidth: Int,
     val imageHeight: Int,
     val capturedAtMs: Long = 0L,
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 1f,
+    val cropBottom: Float = 1f,
 )

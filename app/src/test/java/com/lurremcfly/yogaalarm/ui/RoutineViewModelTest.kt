@@ -179,6 +179,32 @@ class RoutineViewModelTest {
         viewModel.stop()
     }
 
+    @Test
+    fun walkingOutOfFramePausesHoldWithinHalfASecond() = routineTest {
+        viewModel.start(alarm())
+        feedFor(2_000)
+        assertEquals(RoutinePhase.HOLDING, viewModel.uiState.value.phase)
+        val closeUp = BodyLandmarks(mountain().points.mapIndexed { index, point ->
+            if (index >= 23) point.copy(y = 1.5f, visibility = 0.1f) else point
+        })
+        feedFor(500, body = closeUp)
+        assertFalse(viewModel.uiState.value.detected)
+        assertEquals(RoutinePhase.PAUSED, viewModel.uiState.value.phase)
+        val pausedAt = viewModel.progress.value.hold
+        feedFor(2_000, body = closeUp)
+        assertEquals(pausedAt, viewModel.progress.value.hold)
+        feedFor(1_000)
+        assertEquals(RoutinePhase.HOLDING, viewModel.uiState.value.phase)
+    }
+
+    @Test
+    fun scheduledHourIsAvailableForCompletionGreeting() = routineTest {
+        viewModel.start(alarm().copy(hour = 15, routine = listOf(PoseStep(YogaPose.MOUNTAIN, 1))))
+        feedFor(3_000)
+        assertEquals(RoutinePhase.COMPLETE, viewModel.uiState.value.phase)
+        assertEquals(15, viewModel.uiState.value.alarmHour)
+    }
+
     private fun routineTest(block: suspend TestScope.() -> Unit) = runTest(scheduler) {
         try {
             block()
@@ -187,10 +213,10 @@ class RoutineViewModelTest {
         }
     }
 
-    private fun feedFor(duration: Long, interval: Long = 67) {
+    private fun feedFor(duration: Long, interval: Long = 67, body: BodyLandmarks = mountain()) {
         val end = scheduler.currentTime + duration
         while (scheduler.currentTime < end) {
-            viewModel.onPoseFrame(PoseFrame(mountain(), 10, 480, 640, scheduler.currentTime + 1_000))
+            viewModel.onPoseFrame(PoseFrame(body, 10, 480, 640, scheduler.currentTime + 1_000))
             scheduler.advanceTimeBy(minOf(interval, end - scheduler.currentTime))
             scheduler.runCurrent()
         }
