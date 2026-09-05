@@ -5,20 +5,21 @@ plugins {
 }
 
 android {
-    namespace = "com.yogaalarm.prototype"
-    compileSdk = 35
+    namespace = "com.lurremcfly.yogaalarm"
+    compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.yogaalarm.prototype"
+        applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -37,6 +38,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     androidResources {
@@ -64,7 +66,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycleVersion")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleVersion")
+    implementation("com.android.billingclient:billing:9.1.0")
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
