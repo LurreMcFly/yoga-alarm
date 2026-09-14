@@ -21,7 +21,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +38,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.SnackbarHost
@@ -53,6 +59,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -71,6 +80,7 @@ import androidx.core.app.NotificationManagerCompat
 import com.lurremcfly.yogaalarm.billing.PlayBillingManager
 import com.lurremcfly.yogaalarm.data.AlarmStore
 import com.lurremcfly.yogaalarm.data.ProAccessStore
+import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.alarm.AlarmForegroundService
 import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
 import com.lurremcfly.yogaalarm.model.AlarmConfig
@@ -87,6 +97,7 @@ import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
     private val firedAlarmId = mutableStateOf<Long?>(null)
@@ -166,10 +177,12 @@ private fun YogaAlarmRoot(
     val context = androidx.compose.ui.platform.LocalContext.current
     val routineViewModel: RoutineViewModel = viewModel()
     val store = remember { AlarmStore(context.applicationContext) }
+    val wakeProgressStore = remember { WakeProgressStore(context.applicationContext) }
     val proAccessStore = remember { ProAccessStore(context.applicationContext) }
     val billingManager = remember { PlayBillingManager(context.applicationContext) }
     val billingState by billingManager.state.collectAsStateWithLifecycle()
     var alarms by remember { mutableStateOf(store.load()) }
+    var wakeProgress by remember { mutableStateOf(wakeProgressStore.load()) }
     var debugProPlan by remember { mutableStateOf(proAccessStore.load()) }
     val proPlan = debugProPlan ?: billingState.activePlan
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
@@ -199,6 +212,15 @@ private fun YogaAlarmRoot(
     }
     var firedRoutine by rememberSaveable { mutableStateOf(false) }
     var remainingSnoozes by rememberSaveable { mutableStateOf(0) }
+    fun closeFiredAlarm() {
+        context.stopService(Intent(context, AlarmForegroundService::class.java))
+        onAlarmPresentationFinished()
+        firedRoutine = false
+        remainingSnoozes = 0
+        pendingEditorAlarm = null
+        cameraAlarm = null
+        route = "home"
+    }
     var readinessRefresh by remember { mutableStateOf(0) }
     val permissionPreferences = remember {
         context.getSharedPreferences("alarm_readiness", android.content.Context.MODE_PRIVATE)
@@ -215,7 +237,10 @@ private fun YogaAlarmRoot(
         onDispose { billingManager.close() }
     }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { readinessRefresh += 1 }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        readinessRefresh += 1
+        wakeProgress = wakeProgressStore.load()
+    }
     val cameraReady = remember(readinessRefresh) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
@@ -312,9 +337,14 @@ private fun YogaAlarmRoot(
                     onPauseRoutine = viewModel::pause,
                     onResumeRoutine = viewModel::resume,
                     onStopRoutine = viewModel::stop,
-                    onRoutineComplete = onAlarmPresentationFinished,
+                    onRoutineComplete = {
+                        if (firedRoutine) wakeProgress = wakeProgressStore.recordCompletion()
+                        onAlarmPresentationFinished()
+                    },
                     isFiredAlarm = firedRoutine,
                     remainingSnoozes = remainingSnoozes,
+                    emergencyPassesRemaining = wakeProgress.emergencyPassesRemaining,
+                    streakDays = wakeProgress.streakDays,
                     onSnooze = {
                         val scheduled = AlarmScheduler.scheduleSnooze(
                             context = context,
@@ -334,21 +364,25 @@ private fun YogaAlarmRoot(
                     },
                     onBack = {
                         if (firedRoutine) {
-                            context.stopService(Intent(context, AlarmForegroundService::class.java))
-                            onAlarmPresentationFinished()
-                            firedRoutine = false
-                            remainingSnoozes = 0
-                            pendingEditorAlarm = null
-                            cameraAlarm = null
-                            route = "home"
+                            closeFiredAlarm()
                         } else {
                             route = "editor"
                         }
                     },
+                    onStopAlarm = {
+                        wakeProgress = wakeProgressStore.recordStop(consumeEmergencyPass = false)
+                        closeFiredAlarm()
+                    },
+                    onEmergencyStopAlarm = {
+                        wakeProgress = wakeProgressStore.recordStop(consumeEmergencyPass = true)
+                        closeFiredAlarm()
+                    },
+                    onTechnicalStopAlarm = { closeFiredAlarm() },
                 )
             }
             else -> AlarmHomeScreen(
                 alarms = alarms,
+                streakDays = wakeProgress.streakDays,
                 isPro = proPlan != null,
                 onOpenPro = { proPaywallOpen = true },
                 onOpenPrivacy = { privacySheetOpen = true },
@@ -487,13 +521,19 @@ private fun CameraPermissionRoute(
     onRoutineComplete: () -> Unit,
     isFiredAlarm: Boolean,
     remainingSnoozes: Int,
+    emergencyPassesRemaining: Int,
+    streakDays: Int,
     onSnooze: () -> Unit,
     onBack: () -> Unit,
+    onStopAlarm: () -> Unit,
+    onEmergencyStopAlarm: () -> Unit,
+    onTechnicalStopAlarm: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? Activity
     val lifecycleOwner = LocalLifecycleOwner.current
     var alarmService by remember { mutableStateOf<AlarmForegroundService?>(null) }
+    var emergencyStopOpen by rememberSaveable { mutableStateOf(false) }
     val currentService by rememberUpdatedState(alarmService)
     var foreground by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
     val currentState by rememberUpdatedState(uiState)
@@ -639,15 +679,24 @@ private fun CameraPermissionRoute(
             onCameraError = onCameraError,
             onCameraRetry = onCameraRetry,
             showBack = !isFiredAlarm,
+            showStop = isFiredAlarm && !alarm.stopButtonDisabled,
+            showEmergencyStop = isFiredAlarm && alarm.stopButtonDisabled,
+            showTechnicalStop = isFiredAlarm,
+            completionStreakDays = streakDays,
             onBack = onBack,
+            onStop = onStopAlarm,
+            onEmergencyStop = { emergencyStopOpen = true },
+            onTechnicalStop = onTechnicalStopAlarm,
         )
     } else {
         CameraReadyScreen(
             permissionDenied = permissionDenied,
             showBack = !isFiredAlarm,
+            showStop = isFiredAlarm && !alarm.stopButtonDisabled,
             snoozeMinutes = alarm.snoozeMinutes,
             showSnooze = isFiredAlarm && remainingSnoozes > 0,
-            showEmergencyStop = isFiredAlarm && permissionDenied,
+            showEmergencyStop = isFiredAlarm && alarm.stopButtonDisabled && !permissionDenied,
+            showTechnicalStop = isFiredAlarm && permissionDenied,
             onSnooze = onSnooze,
             onStartCamera = {
                 if (hasPermission) {
@@ -657,6 +706,21 @@ private fun CameraPermissionRoute(
                 }
             },
             onBack = onBack,
+            onStop = onStopAlarm,
+            onEmergencyStop = { emergencyStopOpen = true },
+            onTechnicalStop = onTechnicalStopAlarm,
+        )
+    }
+
+    if (emergencyStopOpen) {
+        EmergencyStopDialog(
+            streakDays = streakDays,
+            passesRemaining = emergencyPassesRemaining,
+            onDismiss = { emergencyStopOpen = false },
+            onConfirm = {
+                emergencyStopOpen = false
+                onEmergencyStopAlarm()
+            },
         )
     }
 }
@@ -665,12 +729,17 @@ private fun CameraPermissionRoute(
 private fun CameraReadyScreen(
     permissionDenied: Boolean,
     showBack: Boolean,
+    showStop: Boolean,
     showSnooze: Boolean,
     snoozeMinutes: Int,
     showEmergencyStop: Boolean,
+    showTechnicalStop: Boolean,
     onSnooze: () -> Unit,
     onStartCamera: () -> Unit,
     onBack: () -> Unit,
+    onStop: () -> Unit,
+    onEmergencyStop: () -> Unit,
+    onTechnicalStop: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -757,9 +826,17 @@ private fun CameraReadyScreen(
                 }
                 Spacer(Modifier.height(14.dp))
             }
-            if (showEmergencyStop) {
-                TextButton(onClick = onBack) {
+            if (showTechnicalStop) {
+                TextButton(onClick = onTechnicalStop) {
                     Text("Stop alarm", color = Color.White.copy(alpha = 0.72f))
+                }
+            } else if (showStop) {
+                TextButton(onClick = onStop) {
+                    Text("Stop alarm", color = Color.White.copy(alpha = 0.72f))
+                }
+            } else if (showEmergencyStop) {
+                TextButton(onClick = onEmergencyStop) {
+                    Text("Emergency stop", color = Color.White.copy(alpha = 0.58f))
                 }
             }
             Text(
@@ -770,6 +847,85 @@ private fun CameraReadyScreen(
             )
         }
     }
+}
+
+@Composable
+private fun EmergencyStopDialog(
+    streakDays: Int,
+    passesRemaining: Int,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val holdSeconds = if (passesRemaining > 0) 5 else 15
+    val holdMillis = holdSeconds * 1_000L
+    var holding by remember { mutableStateOf(false) }
+    val currentOnConfirm by rememberUpdatedState(onConfirm)
+    val holdProgress by animateFloatAsState(
+        targetValue = if (holding) 1f else 0f,
+        animationSpec = tween(if (holding) holdSeconds * 1_000 else 150),
+        label = "Emergency stop hold",
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Emergency stop") },
+        text = {
+            Column {
+                Text(
+                    if (streakDays > 0) "Stopping now will end your $streakDays-day yoga streak."
+                    else "Use this only when you cannot complete your yoga routine.",
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    if (passesRemaining > 0) "$passesRemaining of 3 emergency passes remaining this month."
+                    else "No emergency passes remain this month.",
+                    color = Color(0xFF647069),
+                )
+            }
+        },
+        confirmButton = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Surface(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .pointerInput(holdMillis) {
+                            detectTapGestures(
+                                onPress = {
+                                    holding = true
+                                    val heldLongEnough = try {
+                                        withTimeoutOrNull(holdMillis) { tryAwaitRelease() } == null
+                                    } finally {
+                                        holding = false
+                                    }
+                                    if (heldLongEnough) currentOnConfirm()
+                                },
+                            )
+                        }
+                        .semantics {
+                            onClick(label = "Stop alarm") {
+                                currentOnConfirm()
+                                true
+                            }
+                        },
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xFF8C2530),
+                ) {
+                    Text(
+                        "Hold $holdSeconds seconds to stop",
+                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 13.dp),
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { holdProgress },
+                    modifier = Modifier.width(190.dp).padding(top = 6.dp),
+                    color = Color(0xFF8C2530),
+                )
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Keep going") } },
+    )
 }
 
 @Composable

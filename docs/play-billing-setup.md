@@ -25,6 +25,9 @@ Package name: `com.lurremcfly.yogaalarm`
 | Yearly | Subscription | `yoga_alarm_pro` | Base plan `yearly` | USD 19.99/year |
 | Lifetime | One-time product, non-consumable | `yoga_alarm_pro_lifetime` | None | USD 29.99 once |
 
+The lifetime product uses a `buy` purchase option with permanent purchase-option ID
+`buy`. It is not consumable, rentable, quantity-enabled, or time-limited.
+
 Monthly and yearly are base plans of one subscription because they provide the same
 benefits. Lifetime is a separate non-consumable product. Play Console controls regional
 availability and localized prices.

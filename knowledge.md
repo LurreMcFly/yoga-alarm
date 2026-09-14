@@ -258,15 +258,26 @@ cd web-tester
 pnpm run dev
 ```
 
-`privacy-site/` contains the dedicated public privacy-policy site. The intended URL is:
+`privacy-site/` is the earlier dedicated privacy-policy prototype. It must remain available
+until its replacement is public. The planned canonical website is now the separate GitHub
+repository `LurreMcFly/yoga-alarm-web`, deployed on PythonAnywhere at:
 
 ```text
-https://yoga-alarm.polite-eel-9991.chatgpt.site/privacy
+https://yogaalarm.com/
+https://yogaalarm.com/privacy
+https://yogaalarm.com/terms
+https://yogaalarm.com/support
+https://yogaalarm.com/download
 ```
 
-At the latest known checkpoint, the site had been deployed privately but still required
-explicit public publication approval and a real public support email before release.
-Verify its current deployment state rather than assuming it is public.
+The website should be a minimal Flask application sharing the Android design language and
+reusing the pose PNGs in `web-tester/public/poses/`. The first implementation prompt is in
+[`docs/yoga-alarm-web-handoff-prompt.md`](docs/yoga-alarm-web-handoff-prompt.md).
+
+Do not change Play Console or in-app links from the currently hosted policy until the new
+domain is publicly reachable over HTTPS and its legal pages contain a real support email and
+confirmed developer identity. Once verified, use `https://yogaalarm.com/privacy` as the
+single privacy-policy source of truth for Android and the future iOS app.
 
 ## 9. Billing status and approved direction
 
@@ -380,7 +391,10 @@ financial reports rather than assuming purchase callbacks equal settled net reve
 - Produce and inspect a signed release AAB.
 - Complete store listing, screenshots, icon, descriptions, countries, content rating,
   health declaration, Data Safety, exact-alarm, and full-screen-intent declarations.
-- Make the privacy policy public and add a support email.
+- Deploy `yogaalarm.com` over HTTPS and verify `/privacy`, `/terms`, `/support`, and
+  `/download` without login or redirects to private environments.
+- Add a real public support email and confirmed developer/legal identity to the site.
+- Replace the old policy URL in Play Console and the app only after the new URL is live.
 - Retain private proof of commercial rights for Suno audio and generated illustrations.
 - Run internal testing with real Play test transactions.
 - Complete any closed-testing requirement applied to the developer account.
@@ -440,8 +454,9 @@ Some documents are historical rather than current:
 
 - `docs/prototype-baseline.md` accurately records an old baseline, not today's app.
 - `README.md` still describes the early camera spike and should be rewritten.
-- `docs/google-play-policy-declarations.md` still lists the old billing product IDs and says
-  no backend/network collection. Update it when billing/backend implementation begins.
+- `docs/google-play-policy-declarations.md` describes the current no-backend build. Re-audit
+  Data Safety and the privacy policy when the billing-verification backend or any network SDK
+  is introduced.
 - This `knowledge.md` and `docs/play-billing-setup.md` are the current product/billing sources
   of truth.
 

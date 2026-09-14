@@ -64,7 +64,14 @@ fun RoutineCameraScreen(
     onCameraError: (String) -> Unit,
     onCameraRetry: () -> Unit,
     showBack: Boolean,
+    showStop: Boolean,
+    showEmergencyStop: Boolean,
+    showTechnicalStop: Boolean,
+    completionStreakDays: Int,
     onBack: () -> Unit,
+    onStop: () -> Unit,
+    onEmergencyStop: () -> Unit,
+    onTechnicalStop: () -> Unit,
 ) {
     var cameraAttempt by remember { mutableStateOf(0) }
     var previewReady by remember { mutableStateOf(false) }
@@ -97,12 +104,16 @@ fun RoutineCameraScreen(
             .padding(horizontal = 18.dp, vertical = 8.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onBack) {
-                    Text(
-                        if (showBack) "‹ Alarm" else "Stop",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                    )
+                if (showBack || (showStop && uiState.phase != RoutinePhase.COMPLETE)) {
+                    TextButton(onClick = if (showBack) onBack else onStop) {
+                        Text(
+                            if (showBack) "‹ Alarm" else "Stop",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.width(64.dp))
                 }
                 Spacer(Modifier.weight(1f))
                 if (uiState.phase != RoutinePhase.COMPLETE) {
@@ -149,6 +160,15 @@ fun RoutineCameraScreen(
                     Spacer(Modifier.height(7.dp))
                     Text(statusDetail(uiState), color = Color.White.copy(alpha = 0.75f),
                         fontSize = 14.sp, textAlign = TextAlign.Center)
+                    if (uiState.phase == RoutinePhase.COMPLETE && completionStreakDays > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "🔥 $completionStreakDays-day yoga streak",
+                            color = Lime,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
 
@@ -177,6 +197,17 @@ fun RoutineCameraScreen(
                         modifier = Modifier.padding(horizontal = 36.dp, vertical = 5.dp),
                         fontWeight = FontWeight.Bold,
                     )
+                }
+                if (showTechnicalStop) {
+                    Spacer(Modifier.height(10.dp))
+                    TextButton(onClick = onTechnicalStop) {
+                        Text("Stop alarm", color = Color.White.copy(alpha = 0.75f))
+                    }
+                }
+            } else if (showEmergencyStop) {
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onEmergencyStop) {
+                    Text("Emergency stop", color = Color.White.copy(alpha = 0.6f))
                 }
             }
         }

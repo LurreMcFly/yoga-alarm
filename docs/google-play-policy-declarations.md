@@ -10,7 +10,11 @@ Prepared for package `com.lurremcfly.yogaalarm` on September 3, 2026. Re-check t
 - The app has no account system, backend, ads, analytics, or crash-reporting SDK.
 - Google Play handles purchase transactions. The app reads purchase and entitlement status through Play Billing and never receives payment-card information.
 - Data deletion: users can delete individual alarms, clear app storage, or uninstall the app. There is no Yoga Alarm account to delete.
-- Privacy policy URL: `https://yoga-alarm.polite-eel-9991.chatgpt.site/privacy`
+- Planned canonical privacy policy URL: `https://yogaalarm.com/privacy`
+
+Do not enter the planned URL in Play Console until it is publicly reachable over HTTPS,
+contains the final support email and developer identity, and has been checked on mobile.
+Until then, retain the currently working hosted policy URL.
 
 Confirm the final merged release manifest still has no `INTERNET` or `ACCESS_NETWORK_STATE` permission before submitting this answer.
 
@@ -50,7 +54,22 @@ Store-listing disclaimer:
 - Products: monthly, yearly, and lifetime Pro.
 - Show Play-localized price, billing period, auto-renewal behavior, and restore/manage-purchase actions before purchase.
 - Monthly and yearly subscriptions renew until canceled through Google Play. Lifetime is a one-time purchase.
-- Play Console product IDs must match the app: `pro_monthly`, `pro_yearly`, and `pro_lifetime`.
+- Subscription product: `yoga_alarm_pro`, with base plans `monthly` and `yearly`.
+- One-time product: `yoga_alarm_pro_lifetime`, with purchase option `buy`.
+
+## Public website and support
+
+- Canonical domain: `https://yogaalarm.com`
+- Privacy policy: `https://yogaalarm.com/privacy`
+- Terms: `https://yogaalarm.com/terms`
+- Support: `https://yogaalarm.com/support`
+- Download/store redirect: `https://yogaalarm.com/download`
+- Publish a real monitored support email on the Support and Privacy pages and use the same
+  address in Play Console.
+- Pages must be accessible without login, render well on mobile, and remain stable during
+  review.
+- Re-check the public policy against the release build and the final Play Data Safety answers
+  before each production submission.
 
 ## Asset evidence
 

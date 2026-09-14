@@ -5,16 +5,22 @@ import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class AlarmDraftTest {
+    @Test
+    fun stopButtonIsVisibleByDefault() {
+        assertFalse(AlarmConfig.create().stopButtonDisabled)
+    }
+
     @Test
     fun editedAlarmCanBeRestoredFromSavedInstanceState() {
         val draft = AlarmConfig.create(42).copy(
             name = "Early workout", hour = 5, minute = 42,
             weekdays = setOf(2, 4, 7), sound = AlarmSound.RICE_PAPER_DAWN,
             routine = listOf(PoseStep(YogaPose.TREE, 45), PoseStep(YogaPose.CHAIR, 10)),
-            snoozeMinutes = 10, snoozeCount = 3, soundEnabled = false,
+            snoozeMinutes = 10, snoozeCount = 3, soundEnabled = false, stopButtonDisabled = true,
         )
         val bytes = ByteArrayOutputStream().also { buffer ->
             ObjectOutputStream(buffer).use { it.writeObject(draft) }

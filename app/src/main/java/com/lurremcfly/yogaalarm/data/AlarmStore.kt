@@ -36,6 +36,7 @@ class AlarmStore(context: Context) {
         alarm.sound.name,
         alarm.snoozeMinutes,
         alarm.snoozeCount,
+        alarm.stopButtonDisabled,
     ).joinToString("|")
 
     private fun decode(encoded: String): AlarmConfig? = runCatching {
@@ -57,6 +58,7 @@ class AlarmStore(context: Context) {
             sound = AlarmSound.fromStoredName(parts.getOrNull(10)),
             snoozeMinutes = parts.getOrNull(11)?.toIntOrNull() ?: 5,
             snoozeCount = parts.getOrNull(12)?.toIntOrNull() ?: 1,
+            stopButtonDisabled = parts.getOrNull(13)?.toBooleanStrictOrNull() ?: false,
         )
     }.getOrNull()
 

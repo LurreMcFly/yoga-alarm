@@ -112,6 +112,7 @@ private val Hairline = Color(0xFFDDE4DE)
 @Composable
 fun AlarmHomeScreen(
     alarms: List<AlarmConfig>,
+    streakDays: Int,
     isPro: Boolean,
     onOpenPro: () -> Unit,
     onOpenPrivacy: () -> Unit,
@@ -215,6 +216,8 @@ fun AlarmHomeScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
+            item { StreakCard(streakDays) }
+
             if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
                 item {
                     AlarmReadinessCard(
@@ -293,6 +296,31 @@ fun AlarmHomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StreakCard(streakDays: Int) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White.copy(alpha = 0.82f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
+    ) {
+        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+            Text(
+                if (streakDays > 0) "🔥 $streakDays-day yoga streak" else "Start your yoga streak",
+                color = Ink,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                if (streakDays > 0) "Complete tomorrow’s alarm to keep it going."
+                else "Complete a fired alarm with yoga to begin.",
+                color = MutedInk,
+                fontSize = 13.sp,
+            )
         }
     }
 }
@@ -572,6 +600,10 @@ fun AlarmEditorScreen(
                         onSelectionChange = { draft = draft.copy(weekdays = it) },
                     )
                     Spacer(Modifier.height(30.dp))
+                    SettingRow("Sound", draft.sound.displayName, draft.soundEnabled, onClick = { soundSheetOpen = true }) {
+                        draft = draft.copy(soundEnabled = it)
+                    }
+                    HorizontalDivider(color = Hairline)
                     SettingRow(
                         "Snooze",
                         "${draft.snoozeMinutes} minutes, ${draft.snoozeCount} ${if (draft.snoozeCount == 1) "time" else "times"}",
@@ -581,12 +613,12 @@ fun AlarmEditorScreen(
                         draft = draft.copy(snoozeEnabled = it)
                     }
                     HorizontalDivider(color = Hairline)
-                    SettingRow("Sound", draft.sound.displayName, draft.soundEnabled, onClick = { soundSheetOpen = true }) {
-                        draft = draft.copy(soundEnabled = it)
-                    }
-                    HorizontalDivider(color = Hairline)
-                    SettingRow("Vibration", "Gentle pulse", draft.vibrationEnabled) {
-                        draft = draft.copy(vibrationEnabled = it)
+                    SettingRow(
+                        "Stop button",
+                        "Allow manual alarm stop",
+                        !draft.stopButtonDisabled,
+                    ) {
+                        draft = draft.copy(stopButtonDisabled = !it)
                     }
                     Spacer(Modifier.height(28.dp))
                     Row(
@@ -727,6 +759,7 @@ fun AlarmEditorScreen(
     if (soundSheetOpen) {
         SoundPickerSheet(
             selectedSound = draft.sound,
+            vibrationEnabled = draft.vibrationEnabled,
             isPro = isPro,
             onUpgrade = {
                 soundSheetOpen = false
@@ -736,6 +769,7 @@ fun AlarmEditorScreen(
             onSelect = { sound ->
                 draft = draft.copy(sound = sound, soundEnabled = true)
             },
+            onVibrationChange = { draft = draft.copy(vibrationEnabled = it) },
         )
     }
 
@@ -1017,10 +1051,12 @@ private fun SettingRow(
 @Composable
 private fun SoundPickerSheet(
     selectedSound: AlarmSound,
+    vibrationEnabled: Boolean,
     isPro: Boolean,
     onUpgrade: () -> Unit,
     onDismiss: () -> Unit,
     onSelect: (AlarmSound) -> Unit,
+    onVibrationChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     var previewPlayer by remember { mutableStateOf<AlarmAudio?>(null) }
@@ -1044,10 +1080,13 @@ private fun SoundPickerSheet(
     }
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
         Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 28.dp)) {
-            Text("Alarm sound", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("Sound & vibration", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(if (isPro) "Choose your alarm sound." else "Upgrade to Pro to unlock the dimmed sounds.", color = MutedInk, fontSize = 13.sp)
             previewError?.let { Text(it, color = Color(0xFFB4232C)) }
+            Spacer(Modifier.height(12.dp))
+            SettingRow("Vibration", "Gentle pulse", vibrationEnabled, onCheckedChange = onVibrationChange)
+            HorizontalDivider(color = Hairline)
             Spacer(Modifier.height(18.dp))
             LazyColumn(
                 Modifier.fillMaxWidth().heightIn(max = 480.dp),

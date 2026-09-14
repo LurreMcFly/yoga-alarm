@@ -71,6 +71,53 @@ Patch the narrow failing path first.
 Avoid unrelated cleanup.
 Do not add helpers, wrappers, maps, files, abstractions, or validation layers unless they clearly reduce complexity.
 
+## Android → iOS synchronization
+
+Android is the canonical/reference implementation for the parallel iOS app.
+
+Whenever making a change that affects functionality shared by Android and iOS, create or update an entry in `IOS_SYNC.md` in the same change. If a pending entry already covers the behavior, update it instead of creating a duplicate.
+
+Changes that normally require an iOS sync entry include:
+
+- User-facing features
+- UI/UX behavior
+- Navigation or app flows
+- Alarm behavior
+- Pose detection behavior or thresholds
+- Timers/countdowns
+- Settings and defaults
+- Data models or persisted user data
+- Subscription/paywall behavior
+- In-app purchases
+- Analytics events
+- Notifications
+- Permissions where equivalent behavior exists on iOS
+- Sounds/assets/content
+- Business logic
+- Validation rules
+- Important bug fixes that affect shared app behavior
+
+Changes that normally do not require a sync entry include:
+
+- Kotlin-only refactors
+- Internal class/file renaming
+- Android build/Gradle changes
+- Android-only dependency updates
+- Android SDK-specific work
+- Android-specific fixes with no iOS equivalent
+
+When adding an entry:
+
+1. Assign the next sequential `SYNC-XXX` ID; never reuse an ID.
+2. Explain what changed and the expected observable behavior.
+3. Include defaults, limits, important edge cases, and relevant UX details.
+4. Reference the important Android files using repository-relative paths.
+5. Add the Android commit hash when it is available. If the change is not committed yet, leave the placeholder and update it later rather than guessing.
+6. Avoid describing only implementation details. The entry must be understandable to an iOS agent recreating the behavior natively without auditing unrelated history.
+7. Keep active work under `Pending`. Once implemented and verified on iOS, move the entire entry to `Completed` and change its status to `completed`.
+
+Do not directly modify the iOS repository from this repository. The Android repository owns the sync queue, and the iOS agent reads `IOS_SYNC.md` and may inspect the referenced Android files and commits for deeper context.
+
 ## Patterns to Avoid
 
 Avoid single-use abstractions.
