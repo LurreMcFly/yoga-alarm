@@ -44,7 +44,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
@@ -112,7 +111,6 @@ private val Hairline = Color(0xFFDDE4DE)
 
 @Composable
 fun AlarmHomeScreen(
-    allowInitialSetup: Boolean,
     alarms: List<AlarmConfig>,
     streakDays: Int,
     isPro: Boolean,
@@ -132,46 +130,6 @@ fun AlarmHomeScreen(
     onDeleteAlarm: (Long) -> Unit,
 ) {
     var selectedAlarmId by remember { mutableStateOf<Long?>(null) }
-    val context = LocalContext.current
-    val setupPreferences = remember {
-        context.getSharedPreferences("alarm_readiness", android.content.Context.MODE_PRIVATE)
-    }
-    var setupOpen by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(allowInitialSetup) {
-        if (allowInitialSetup && !setupPreferences.getBoolean("initial_setup_shown", false)) {
-            setupOpen = true
-            setupPreferences.edit().putBoolean("initial_setup_shown", true).apply()
-        }
-    }
-    if (setupOpen && allowInitialSetup) {
-        val allReady = cameraReady && notificationsReady && fullScreenReady && exactAlarmsReady
-        AlertDialog(
-            onDismissRequest = { setupOpen = false },
-            containerColor = Forest,
-            titleContentColor = Color.White,
-            textContentColor = Color.White,
-            title = { Text("Set up your yoga alarm") },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Allow access below so your alarm can ring reliably and recognize your yoga poses.")
-                    Spacer(Modifier.height(12.dp))
-                    ReadinessRow("Camera", "Recognizes your yoga poses", if (cameraReady) "Allowed" else "Allow", onFixCamera, !cameraReady)
-                    ReadinessRow("Notifications", "Shows alarm alerts and controls", if (notificationsReady) "Allowed" else "Allow", onFixNotifications, !notificationsReady)
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-                        ReadinessRow("Exact alarms", "Rings at the scheduled time", if (exactAlarmsReady) "Enabled" else "Enable", onFixExactAlarms, !exactAlarmsReady)
-                    }
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                        ReadinessRow("Full-screen alarms", "Shows alarms over your lock screen", if (fullScreenReady) "Enabled" else "Enable", onFixFullScreen, !fullScreenReady)
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { setupOpen = false }) {
-                    Text(if (allReady) "Done" else "Not now", color = Lime)
-                }
-            },
-        )
-    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -462,13 +420,12 @@ private fun ReadinessRow(
     detail: String,
     action: String,
     onClick: () -> Unit,
-    enabled: Boolean = true,
 ) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Color.White.copy(alpha = 0.08f),
     ) {

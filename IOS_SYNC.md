@@ -6,6 +6,21 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+### SYNC-005 — Privacy policy website
+
+Status: pending
+Date: 2026-09-16
+Android commit: <pending>
+
+Changes:
+- The Privacy & safety policy link opens https://www.yogaalarm.com/privacy.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+
+iOS notes:
+- Use the same public policy URL.
+
 ### SYNC-004 — Completion screen stays awake for ten seconds
 
 Status: pending
@@ -24,26 +39,23 @@ Relevant Android files:
 iOS notes:
 - Use native idle-timer and supported alarm presentation behavior to keep the completed routine visible briefly.
 
-### SYNC-003 — First-launch permission setup popup
+### SYNC-003 — Permission setup stays on the home screen (popup reverted)
 
 Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
 Changes:
-- On the first normal home-screen launch, show "Set up your yoga alarm" with explanations and individual access buttons. Never overlay a ringing alarm.
-- Explain camera access for recognizing poses, notifications for alarm alerts and controls, and applicable platform access for timely and lock-screen alarms.
-- Request access only after the user taps an action. Reflect current grants and refresh after returning from system settings; granted rows are noninteractive.
-- Allow "Not now" ("Done" when ready). Persist that setup has been shown, retain the popup through screen recreation, and keep missing-access reminders on the home screen after dismissal.
-- Existing installs without the setup flag also see the popup once on a normal home-screen visit.
-- Show only applicable platform permissions; reuse existing denial and settings recovery behavior.
+- The first-launch setup popup was reverted. Do not show an automatic permission popup on first launch or subsequent launches.
+- Keep the existing home-screen readiness card with actions for missing permissions, including the existing denial and settings recovery behavior.
+- Request access after the user taps an existing setup action or starts the camera. Previously stored initial_setup_shown values are ignored.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
 
 iOS notes:
-- Explain and request only equivalent supported iOS permissions; do not copy Android settings categories literally.
+- If the earlier popup was implemented, remove it. Preserve existing permission controls and supported platform permissions.
 
 ### SYNC-002 — Launcher icon safe-area spacing
 

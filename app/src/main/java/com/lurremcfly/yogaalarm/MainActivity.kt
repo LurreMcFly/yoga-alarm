@@ -383,7 +383,6 @@ private fun YogaAlarmRoot(
                 )
             }
             else -> AlarmHomeScreen(
-                allowInitialSetup = firedAlarmId == null && !firedRoutine,
                 alarms = alarms,
                 streakDays = wakeProgress.streakDays,
                 isPro = proPlan != null,
@@ -506,7 +505,7 @@ private fun YogaAlarmRoot(
 }
 
 private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
-private const val PRIVACY_POLICY_URL = "https://yoga-alarm.polite-eel-9991.chatgpt.site/privacy"
+private const val PRIVACY_POLICY_URL = "https://www.yogaalarm.com/privacy"
 
 @Composable
 private fun CameraPermissionRoute(
