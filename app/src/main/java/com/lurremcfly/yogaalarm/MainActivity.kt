@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -97,6 +98,7 @@ import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
 class MainActivity : ComponentActivity() {
@@ -339,8 +341,8 @@ private fun YogaAlarmRoot(
                     onStopRoutine = viewModel::stop,
                     onRoutineComplete = {
                         if (firedRoutine) wakeProgress = wakeProgressStore.recordCompletion()
-                        onAlarmPresentationFinished()
                     },
+                    onCompletionPresentationFinished = onAlarmPresentationFinished,
                     isFiredAlarm = firedRoutine,
                     remainingSnoozes = remainingSnoozes,
                     emergencyPassesRemaining = wakeProgress.emergencyPassesRemaining,
@@ -381,6 +383,7 @@ private fun YogaAlarmRoot(
                 )
             }
             else -> AlarmHomeScreen(
+                allowInitialSetup = firedAlarmId == null && !firedRoutine,
                 alarms = alarms,
                 streakDays = wakeProgress.streakDays,
                 isPro = proPlan != null,
@@ -519,6 +522,7 @@ private fun CameraPermissionRoute(
     onResumeRoutine: () -> Unit,
     onStopRoutine: () -> Unit,
     onRoutineComplete: () -> Unit,
+    onCompletionPresentationFinished: () -> Unit,
     isFiredAlarm: Boolean,
     remainingSnoozes: Int,
     emergencyPassesRemaining: Int,
@@ -538,6 +542,9 @@ private fun CameraPermissionRoute(
     var foreground by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
     val currentState by rememberUpdatedState(uiState)
     val currentOnBack by rememberUpdatedState(onBack)
+    val currentOnRoutineComplete by rememberUpdatedState(onRoutineComplete)
+    val currentOnCompletionPresentationFinished by rememberUpdatedState(onCompletionPresentationFinished)
+    var completionDeadline by rememberSaveable(alarm.id, isFiredAlarm) { mutableStateOf<Long?>(null) }
     LaunchedEffect(alarmService, alarm.id) {
         alarmService?.finishedAlarmId?.collect { finishedId ->
             if (finishedId == alarm.id && currentState.phase != RoutinePhase.COMPLETE) currentOnBack()
@@ -589,18 +596,30 @@ private fun CameraPermissionRoute(
         val lightNavigationBars = insets?.isAppearanceLightNavigationBars
         @Suppress("DEPRECATION")
         val navigationColor = window?.navigationBarColor
-        window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         insets?.isAppearanceLightStatusBars = false
         insets?.isAppearanceLightNavigationBars = false
         @Suppress("DEPRECATION")
         window?.navigationBarColor = android.graphics.Color.rgb(7, 16, 10)
         onDispose {
-            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             lightStatusBars?.let { insets?.isAppearanceLightStatusBars = it }
             lightNavigationBars?.let { insets?.isAppearanceLightNavigationBars = it }
             @Suppress("DEPRECATION")
             navigationColor?.let { window.navigationBarColor = it }
         }
+    }
+    DisposableEffect(activity, alarm.id, isFiredAlarm, uiState.phase == RoutinePhase.COMPLETE) {
+        activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+    LaunchedEffect(completionDeadline, alarm.id, isFiredAlarm, uiState.phase) {
+        if (uiState.phase != RoutinePhase.COMPLETE) {
+            completionDeadline = null
+            return@LaunchedEffect
+        }
+        val deadline = completionDeadline ?: return@LaunchedEffect
+        delay((deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0L))
+        activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (isFiredAlarm) currentOnCompletionPresentationFinished()
     }
     var cameraStarted by rememberSaveable(alarm.id, isFiredAlarm) { mutableStateOf(false) }
     var lastCuedPoseIndex by rememberSaveable(alarm) { mutableStateOf(-1) }
@@ -647,7 +666,10 @@ private fun CameraPermissionRoute(
         if (uiState.phase == RoutinePhase.COMPLETE) {
             previewAudio.close()
             alarmService?.finishRoutine(alarm.id)
-            onRoutineComplete()
+            if (completionDeadline == null) {
+                completionDeadline = SystemClock.elapsedRealtime() + 10_000L
+                currentOnRoutineComplete()
+            }
         }
     }
     var permissionDenied by rememberSaveable { mutableStateOf(false) }
