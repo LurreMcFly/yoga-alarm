@@ -91,6 +91,17 @@ class AlarmForegroundService : Service() {
             .setAutoCancel(false)
             .setFullScreenIntent(openAlarm, true)
             .setContentIntent(openAlarm)
+            .addAction(0, "Start movement", openAlarm)
+        if (!alarm.stopButtonDisabled) {
+            val stopAlarm = PendingIntent.getBroadcast(
+                this,
+                alarmId.hashCode(),
+                Intent(this, StopAlarmReceiver::class.java)
+                    .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            notificationBuilder.addAction(0, "Stop alarm", stopAlarm)
+        }
         if (remainingSnoozes > 0) {
             val snooze = PendingIntent.getBroadcast(
                 this,

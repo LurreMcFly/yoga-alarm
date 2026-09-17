@@ -49,6 +49,9 @@
         <receiver
             android:name=".alarm.SnoozeReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".alarm.StopAlarmReceiver"
+            android:exported="false" />
         <service
             android:name=".alarm.AlarmForegroundService"
             android:exported="false"

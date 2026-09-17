@@ -13,7 +13,7 @@ Date: 2026-09-17
 Android commit: <pending>
 
 Changes:
-- When the routine first displays a pose or advances to a new one, show that pose's existing illustration large and prominent, then smoothly scale and move the same image into its existing small header slot.
+- When the routine first displays a pose or advances to a new one, show that pose's existing illustration centered on screen at about 3.75 times its final size. Hold it there for 0.5 seconds, then smoothly scale and move the same image into its existing small header slot over about 0.65 seconds.
 - Render only one copy of the illustration during the transition so it appears to travel into place without flashing or overlapping a duplicate.
 - The animation is visual only: it must not delay pose order, transition or hold timers, scoring, camera-based detection, controls, or other routine behavior. A rapid pose change should replace and restart the visual transition for the newest pose cleanly.
 - Keep the existing routine layout, wording, illustration accessibility description, and final 96-point-equivalent image slot unchanged.
@@ -123,6 +123,7 @@ Changes:
 - Alarm editing has three primary rows in this order: Sound, Snooze, and "Stop button." The Stop button option defaults to on for new and existing alarms, uses the supporting text "Allow manual alarm stop," and shows the manual Stop action when enabled. Turning it off hides the normal Stop action.
 - Vibration remains independently configurable but has moved into the Sound sheet. Sound-only, vibration-only, both, and neither are supported.
 - When "Stop button" is off for a fired alarm, the normal Stop action is hidden and Android Back remains blocked. Snooze remains available. Test routines always retain normal navigation.
+- While an alarm is ringing, its system notification offers a clear Start movement action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
 - A subtle Emergency stop remains available. It warns that the streak will end and requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled.
 - Camera permission denial or a camera failure provides an immediate technical Stop action. Technical exits do not consume a pass or break the streak.
 - The app tracks one global daily yoga streak. Completing at least one genuinely fired alarm through yoga starts or extends it; multiple completions on one day count once. Snoozing preserves it. A normal or emergency stop breaks it. Test routines do not affect it.
@@ -137,6 +138,8 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmForegroundService.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/alarm/StopAlarmReceiver.kt
 
 iOS notes:
 - Match the observable rules and copy using idiomatic iOS persistence and alarm presentation APIs.

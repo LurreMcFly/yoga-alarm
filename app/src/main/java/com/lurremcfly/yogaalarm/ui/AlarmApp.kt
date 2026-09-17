@@ -397,9 +397,9 @@ private fun AlarmReadinessCard(
         pointerOffset.snapTo(0f)
         if (nextIncompleteIndex >= 0 && pressedPointerIndex != nextIncompleteIndex) {
             while (true) {
-                pointerOffset.animateTo(nudgeDistance, tween(durationMillis = 110))
-                pointerOffset.animateTo(0f, tween(durationMillis = 110))
-                delay(450)
+                pointerOffset.animateTo(nudgeDistance, tween(durationMillis = 160))
+                pointerOffset.animateTo(0f, tween(durationMillis = 160))
+                delay(600)
             }
         }
     }

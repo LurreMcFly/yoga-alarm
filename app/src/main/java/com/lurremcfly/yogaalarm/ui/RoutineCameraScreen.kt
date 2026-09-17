@@ -7,15 +7,18 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,7 +85,7 @@ fun RoutineCameraScreen(
     var previewReady by remember { mutableStateOf(false) }
     val guidePose = if (uiState.phase == RoutinePhase.TRANSITION) uiState.nextPose ?: uiState.pose else uiState.pose
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF07100A)),
@@ -104,9 +107,12 @@ fun RoutineCameraScreen(
         if (uiState.phase != RoutinePhase.COMPLETE) {
             key(guidePose) {
                 val arrival = remember { Animatable(0f) }
-                val startTranslation = with(LocalDensity.current) { 180.dp.toPx() }
+                val density = LocalDensity.current
+                val startTranslation = with(density) {
+                    maxHeight.toPx() / 2f - WindowInsets.statusBars.getTop(density) - 56.dp.toPx()
+                }
                 LaunchedEffect(Unit) {
-                    delay(180)
+                    delay(500)
                     arrival.animateTo(1f, tween(durationMillis = 650))
                 }
                 PoseGlyph(
@@ -118,7 +124,7 @@ fun RoutineCameraScreen(
                         .size(96.dp)
                         .graphicsLayer {
                             val remaining = 1f - arrival.value
-                            val scale = 1f + remaining * 1.5f
+                            val scale = 1f + remaining * 2.75f
                             scaleX = scale
                             scaleY = scale
                             translationY = remaining * startTranslation
