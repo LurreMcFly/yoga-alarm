@@ -1,6 +1,7 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -26,6 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -37,8 +39,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.core.view.doOnLayout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -53,6 +57,7 @@ import com.lurremcfly.yogaalarm.model.BodyPoint
 import com.lurremcfly.yogaalarm.model.PreviewProjection
 import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.model.YogaPose
+import kotlinx.coroutines.delay
 import kotlin.math.hypot
 
 @Composable
@@ -96,6 +101,32 @@ fun RoutineCameraScreen(
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(300.dp)
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)))))
 
+        if (uiState.phase != RoutinePhase.COMPLETE) {
+            key(guidePose) {
+                val arrival = remember { Animatable(0f) }
+                val startTranslation = with(LocalDensity.current) { 180.dp.toPx() }
+                LaunchedEffect(Unit) {
+                    delay(180)
+                    arrival.animateTo(1f, tween(durationMillis = 650))
+                }
+                PoseGlyph(
+                    guidePose,
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .statusBarsPadding()
+                        .padding(top = 8.dp)
+                        .size(96.dp)
+                        .graphicsLayer {
+                            val remaining = 1f - arrival.value
+                            val scale = 1f + remaining * 1.5f
+                            scaleX = scale
+                            scaleY = scale
+                            translationY = remaining * startTranslation
+                        },
+                )
+            }
+        }
+
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -118,7 +149,7 @@ fun RoutineCameraScreen(
                 Spacer(Modifier.weight(1f))
                 if (uiState.phase != RoutinePhase.COMPLETE) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        PoseGlyph(guidePose, Modifier.size(96.dp))
+                        Spacer(Modifier.size(96.dp))
                         Text(guidePose.displayName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                 }

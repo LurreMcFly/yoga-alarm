@@ -6,6 +6,44 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+### SYNC-007 — Pose illustration travels into the routine header
+
+Status: pending
+Date: 2026-09-17
+Android commit: <pending>
+
+Changes:
+- When the routine first displays a pose or advances to a new one, show that pose's existing illustration large and prominent, then smoothly scale and move the same image into its existing small header slot.
+- Render only one copy of the illustration during the transition so it appears to travel into place without flashing or overlapping a duplicate.
+- The animation is visual only: it must not delay pose order, transition or hold timers, scoring, camera-based detection, controls, or other routine behavior. A rapid pose change should replace and restart the visual transition for the newest pose cleanly.
+- Keep the existing routine layout, wording, illustration accessibility description, and final 96-point-equivalent image slot unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
+
+iOS notes:
+- Implement this as a presentation-only animation driven by the currently displayed guide pose, without coupling it to routine timing or detection state.
+
+### SYNC-006 — Alarm setup card highlights the next step
+
+Status: pending
+Date: 2026-09-16
+Android commit: <pending>
+
+Changes:
+- While any alarm readiness requirement is incomplete, keep all four setup rows visible in this order: Camera, Notifications, Full-screen alarms, and Exact alarms.
+- Show a checkmark for each completed requirement. Keep the existing Allow or Enable action for incomplete requirements, including the existing title, detail text, permission behavior, and tap feedback.
+- Show one decorative 👉 beside only the first incomplete action. Keep nudging it with short, gently spaced bounces until that row is tapped, then stop. When that requirement becomes ready, move the pointer to the next incomplete row and resume nudging until its row is tapped.
+- Keep the pointer decorative for accessibility and never use it or color as the only indication that an action is tappable.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+
+iOS notes:
+- Reuse the app's existing readiness refresh lifecycle and permission state; do not add parallel permission tracking.
+
 ### SYNC-005 — Privacy policy website
 
 Status: pending

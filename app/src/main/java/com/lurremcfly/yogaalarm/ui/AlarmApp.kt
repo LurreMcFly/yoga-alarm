@@ -1,6 +1,8 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -83,6 +85,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -383,7 +386,24 @@ private fun AlarmReadinessCard(
     onFixFullScreen: () -> Unit,
     onFixExactAlarms: () -> Unit,
 ) {
-    val readyCount = listOf(cameraReady, notificationsReady, fullScreenReady, exactAlarmsReady).count { it }
+    val readiness = listOf(cameraReady, notificationsReady, fullScreenReady, exactAlarmsReady)
+    val readyCount = readiness.count { it }
+    val nextIncompleteIndex = readiness.indexOfFirst { !it }
+    val pointerOffset = remember { Animatable(0f) }
+    var pressedPointerIndex by remember { mutableStateOf<Int?>(null) }
+    val nudgeDistance = with(LocalDensity.current) { 6.dp.toPx() }
+
+    LaunchedEffect(nextIncompleteIndex, pressedPointerIndex) {
+        pointerOffset.snapTo(0f)
+        if (nextIncompleteIndex >= 0 && pressedPointerIndex != nextIncompleteIndex) {
+            while (true) {
+                pointerOffset.animateTo(nudgeDistance, tween(durationMillis = 110))
+                pointerOffset.animateTo(0f, tween(durationMillis = 110))
+                delay(450)
+            }
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
@@ -398,17 +418,21 @@ private fun AlarmReadinessCard(
                 fontSize = 14.sp,
             )
             Spacer(Modifier.height(12.dp))
-            if (!cameraReady) {
-                ReadinessRow("Camera", "Verifies your poses", "Allow", onFixCamera)
+            ReadinessRow("Camera", "Verifies your poses", "Allow", cameraReady, nextIncompleteIndex == 0, pointerOffset.value) {
+                if (nextIncompleteIndex == 0) pressedPointerIndex = 0
+                onFixCamera()
             }
-            if (!notificationsReady) {
-                ReadinessRow("Notifications", "Shows a ringing alarm", "Allow", onFixNotifications)
+            ReadinessRow("Notifications", "Shows a ringing alarm", "Allow", notificationsReady, nextIncompleteIndex == 1, pointerOffset.value) {
+                if (nextIncompleteIndex == 1) pressedPointerIndex = 1
+                onFixNotifications()
             }
-            if (!fullScreenReady) {
-                ReadinessRow("Full-screen alarms", "Opens over your lock screen", "Enable", onFixFullScreen)
+            ReadinessRow("Full-screen alarms", "Opens over your lock screen", "Enable", fullScreenReady, nextIncompleteIndex == 2, pointerOffset.value) {
+                if (nextIncompleteIndex == 2) pressedPointerIndex = 2
+                onFixFullScreen()
             }
-            if (!exactAlarmsReady) {
-                ReadinessRow("Exact alarms", "Keeps alarms on time", "Enable", onFixExactAlarms)
+            ReadinessRow("Exact alarms", "Keeps alarms on time", "Enable", exactAlarmsReady, nextIncompleteIndex == 3, pointerOffset.value) {
+                if (nextIncompleteIndex == 3) pressedPointerIndex = 3
+                onFixExactAlarms()
             }
         }
     }
@@ -419,13 +443,17 @@ private fun ReadinessRow(
     title: String,
     detail: String,
     action: String,
+    completed: Boolean,
+    showPointer: Boolean,
+    pointerOffset: Float,
     onClick: () -> Unit,
 ) {
+    val rowModifier = Modifier
+        .fillMaxWidth()
+        .padding(vertical = 4.dp)
+
     Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable(onClick = onClick),
+        modifier = if (completed) rowModifier else rowModifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Color.White.copy(alpha = 0.08f),
     ) {
@@ -437,14 +465,28 @@ private fun ReadinessRow(
                 Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(detail, color = Color.White.copy(alpha = 0.62f), fontSize = 12.sp)
             }
-            Surface(shape = RoundedCornerShape(999.dp), color = Lime) {
-                Text(
-                    "$action  →",
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    color = Forest,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+            if (completed) {
+                Text("✓", color = Lime, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            } else {
+                if (showPointer) {
+                    Text(
+                        "👉",
+                        modifier = Modifier
+                            .padding(end = 6.dp)
+                            .graphicsLayer { translationX = pointerOffset }
+                            .clearAndSetSemantics { },
+                        fontSize = 18.sp,
+                    )
+                }
+                Surface(shape = RoundedCornerShape(999.dp), color = Lime) {
+                    Text(
+                        "$action  →",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        color = Forest,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
