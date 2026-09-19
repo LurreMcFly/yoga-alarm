@@ -147,6 +147,32 @@ class RoutineViewModelTest {
     }
 
     @Test
+    fun startingDifferentAlarmClearsPriorTransitionAndCameraError() = routineTest {
+        viewModel.start(alarm().copy(routine = listOf(
+            PoseStep(YogaPose.MOUNTAIN, 1),
+            PoseStep(YogaPose.TREE, 20),
+        )))
+        feedFor(2_000)
+        assertEquals(RoutinePhase.TRANSITION, viewModel.uiState.value.phase)
+        viewModel.onCameraError("Previous camera failed")
+
+        viewModel.start(alarm().copy(id = 2))
+        assertNull(viewModel.uiState.value.error)
+        assertNull(viewModel.frames.value)
+        assertFalse(viewModel.uiState.value.cameraReady)
+        assertFalse(viewModel.uiState.value.detected)
+        assertEquals(0f, viewModel.progress.value.hold)
+        assertEquals(1f, viewModel.progress.value.alarmLevel)
+
+        advanceTimeBy(4_000)
+        assertEquals(RoutinePhase.FINDING, viewModel.uiState.value.phase)
+        assertEquals(YogaPose.MOUNTAIN, viewModel.uiState.value.pose)
+        assertEquals(0f, viewModel.progress.value.hold)
+        feedFor(1_000)
+        assertEquals(RoutinePhase.HOLDING, viewModel.uiState.value.phase)
+    }
+
+    @Test
     fun delayedResultsCannotResumeProgress() = routineTest {
         viewModel.start(alarm())
         feedFor(2_000)

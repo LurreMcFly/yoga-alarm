@@ -175,8 +175,12 @@ Important source areas:
 
 | Area | Main files |
 |---|---|
-| App coordination | `app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt` |
-| Alarm UI/editor/paywall | `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt` |
+| Activity and alarm intents | `app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt` |
+| App coordination | `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt` |
+| Alarm home/editor | `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt` and `AlarmEditorScreen.kt` |
+| Paywall/privacy sheets | `app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt` |
+| Shared theme and pose illustrations | `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmTheme.kt` |
+| Routine lifecycle and permissions | `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt` |
 | Routine state machine | `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineViewModel.kt` |
 | Full-screen camera routine | `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt` |
 | Camera and landmarks | `app/src/main/java/com/lurremcfly/yogaalarm/camera/` |
@@ -453,7 +457,7 @@ working product is not lost or confused with the old `com.yogaalarm.prototype` t
 Some documents are historical rather than current:
 
 - `docs/prototype-baseline.md` accurately records an old baseline, not today's app.
-- `README.md` still describes the early camera spike and should be rewritten.
+- `README.md` now provides the current Android overview and build/device-check instructions.
 - `docs/google-play-policy-declarations.md` describes the current no-backend build. Re-audit
   Data Safety and the privacy policy when the billing-verification backend or any network SDK
   is introduced.

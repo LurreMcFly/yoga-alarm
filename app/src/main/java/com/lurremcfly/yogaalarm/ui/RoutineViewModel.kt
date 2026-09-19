@@ -81,23 +81,13 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
             return
         }
         ticker?.cancel()
-        skeletonSmoother.reset()
         alarm = config
         started = true
         poseIndex = 0
         phase = RoutinePhase.FINDING
         holdMs = 0L
-        detected = false
-        latestScore = 0f
-        latestFramed = false
-        framingLostSinceMs = null
-        detectionGate.reset()
         alarmLevel = 1f
-        lastFrameAtMs = null
-        lastScoreAtMs = null
-        cameraReady = false
-        waitingForCameraSinceMs = nowMs()
-        mutableFrames.value = null
+        resetTracking()
         mutableUiState.value = RoutineUiState()
         previousTickAtMs = nowMs()
         publish()
@@ -140,31 +130,30 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     }
 
     fun onPoseFrame(frame: PoseFrame) {
-        if (sessionActive && phase != RoutinePhase.COMPLETE) {
-            val now = nowMs()
-            val capturedAt = frame.capturedAtMs.takeIf { it > 0 } ?: now
-            if (now - capturedAt > FRAME_TIMEOUT_MS) return
-            lastFrameAtMs = capturedAt
-            cameraReady = true
-            mutableFrames.value = skeletonSmoother.smooth(frame.copy(capturedAtMs = capturedAt))
-            mutableUiState.update { it.copy(error = null) }
-            if (phase == RoutinePhase.TRANSITION) return
-            val evaluation = PoseScoring.evaluate(currentStep().pose, frame.landmarks)
-            val elapsed = (now - (lastScoreAtMs ?: (now - 33L))).coerceIn(1L, FRAME_TIMEOUT_MS)
-            lastScoreAtMs = now
-            val base = if (evaluation.score >= latestScore) SCORE_RISE_SMOOTHING else SCORE_FALL_SMOOTHING
-            val smoothing = 1f - (1f - base).pow(elapsed / (1_000f / 30f))
-            latestScore += (evaluation.score - latestScore) * smoothing
-            if (evaluation.framed) {
-                latestFramed = true
-                framingLostSinceMs = null
-            } else {
-                if (framingLostSinceMs == null) framingLostSinceMs = now
-                if (now - (framingLostSinceMs ?: now) >= FRAMING_GRACE_MS) latestFramed = false
-            }
-            framingHint = PoseScoring.framingHint(currentStep().pose, frame.landmarks)
-            updateDetection(now)
+        if (!sessionActive || phase == RoutinePhase.COMPLETE) return
+        val now = nowMs()
+        val capturedAt = frame.capturedAtMs.takeIf { it > 0 } ?: now
+        if (now - capturedAt > FRAME_TIMEOUT_MS) return
+        lastFrameAtMs = capturedAt
+        cameraReady = true
+        mutableFrames.value = skeletonSmoother.smooth(frame.copy(capturedAtMs = capturedAt))
+        mutableUiState.update { it.copy(error = null) }
+        if (phase == RoutinePhase.TRANSITION) return
+        val evaluation = PoseScoring.evaluate(currentStep().pose, frame.landmarks)
+        val elapsed = (now - (lastScoreAtMs ?: (now - 33L))).coerceIn(1L, FRAME_TIMEOUT_MS)
+        lastScoreAtMs = now
+        val base = if (evaluation.score >= latestScore) SCORE_RISE_SMOOTHING else SCORE_FALL_SMOOTHING
+        val smoothing = 1f - (1f - base).pow(elapsed / (1_000f / 30f))
+        latestScore += (evaluation.score - latestScore) * smoothing
+        if (evaluation.framed) {
+            latestFramed = true
+            framingLostSinceMs = null
+        } else {
+            if (framingLostSinceMs == null) framingLostSinceMs = now
+            if (now - (framingLostSinceMs ?: now) >= FRAMING_GRACE_MS) latestFramed = false
         }
+        framingHint = PoseScoring.framingHint(currentStep().pose, frame.landmarks)
+        updateDetection(now)
     }
 
     fun onCameraError(message: String) {

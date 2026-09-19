@@ -1,10 +1,33 @@
-# Yoga Alarm — Pose Lab
+# Yoga Alarm
 
-Android camera and body-landmark spike for the Yoga Alarm prototype.
+Native Android alarm clock that asks the user to complete a short yoga or mobility
+routine to stop the alarm. Camera frames are processed on-device; alarms and settings
+are stored locally.
+
+## Current Android scope
+
+- Alarm creation, editing, weekday recurrence, sounds, vibration, and limited snooze.
+- Exact scheduling, lock-screen presentation, foreground alarm audio, and rescheduling
+  after reboot or clock changes.
+- User-started front-camera preview, on-device MediaPipe landmarks, and pose guides.
+- Eight poses with partial-body-friendly scoring, stabilized detection, hold timers,
+  transitions, and routine-wide audio fading.
+- Free/Pro customization, paywall, purchase/restore paths, and debug-only Pro activation.
+
+Billing remains a client-side prototype; the approved production catalog and purchase
+verification still require implementation. See [the project handoff](knowledge.md),
+[billing setup](docs/play-billing-setup.md), and the
+[Android reliability checklist](docs/android-reliability-checklist.md) for current
+decisions and remaining release work.
+
+The original camera spike is recorded in the
+[historical prototype baseline](docs/prototype-baseline.md).
 
 ## Browser tester
 
-The temporary browser companion lives in `web-tester/`. It mirrors the three-pose interaction and supports both a live webcam and a no-camera simulation mode.
+The browser design harness lives in `web-tester/`. See the
+[project handoff](knowledge.md#8-browser-tester-and-privacy-site) for its role and the
+separate privacy website work.
 
 ```bash
 cd web-tester
@@ -15,24 +38,16 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
-## Current scope
-
-- Mirrored front-camera preview
-- On-device MediaPipe Pose Landmarker (Full model, CPU)
-- Live skeleton overlay
-- Full-body framing status
-- Result-rate and inference-latency instrumentation
-
-Pose classification, hold timing, audio fading, and scheduled alarms are intentionally not included yet.
-
 ## Run
 
-Open the project in Android Studio, select a physical Android device, and run the `app` configuration.
+Use JDK 17 and Android SDK 36. The app supports Android 8.0/API 26 and later.
+Open the project in Android Studio, select a physical Android device, and run the `app`
+configuration.
 
-Command-line build:
+Command-line build, with `JAVA_HOME` pointing to your JDK 17 installation:
 
 ```bash
-./gradlew assembleDebug
+./gradlew :app:assembleDebug
 ```
 
 Install an existing build:
@@ -41,20 +56,14 @@ Install an existing build:
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Galaxy S25 test checkpoint
+## Physical-device checks
 
-Record result FPS, latency, framing behavior, and any visible skeleton lag for each case.
+Use the [Android reliability checklist](docs/android-reliability-checklist.md) for alarm
+delivery, camera recovery, audio, and device coverage. Samsung Galaxy S25 is the primary
+test device; include other manufacturers and an older supported Android version.
 
-| Condition | Distance | Full body found? | FPS | Latency | Notes |
-|---|---:|---|---:|---:|---|
-| Bright room | 1.5 m | | | | |
-| Bright room | 2 m | | | | |
-| Bright room | 3 m | | | | |
-| Typical bedroom light | 2 m | | | | |
-| Dim bedroom light | 2 m | | | | |
-| Loose clothing | 2 m | | | | |
-| Side-facing body | 2 m | | | | |
-| Head partly outside frame | 2 m | | | | |
-| Ankles outside frame | 2 m | | | | |
-
-Also verify that backgrounding and reopening the app restores the camera, and that ten minutes of continuous use does not freeze or crash.
+Check all eight poses at a distance where the phone is readable, in bright and dim
+bedroom lighting, with loose clothing, side-facing poses, and partially visible bodies.
+Record recognition stability and visible overlay lag. Also verify that backgrounding
+and reopening restores the camera, and that ten minutes of continuous use does not
+freeze or crash.

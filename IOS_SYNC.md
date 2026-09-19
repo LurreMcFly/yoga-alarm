@@ -13,14 +13,14 @@ Date: 2026-09-17
 Android commit: <pending>
 
 Changes:
-- When the routine first displays a pose or advances to a new one, show that pose's existing illustration centered on screen at about 3.75 times its final size. Hold it there for 0.5 seconds, then smoothly scale and move the same image into its existing small header slot over about 0.65 seconds.
+- When the routine first displays a pose or advances to a new one, show that pose's existing illustration centered on screen at about 3.75 times its final size. Hold it there for 1 second, then smoothly scale and move the same image into its existing small header slot over about 0.65 seconds.
 - Render only one copy of the illustration during the transition so it appears to travel into place without flashing or overlapping a duplicate.
 - The animation is visual only: it must not delay pose order, transition or hold timers, scoring, camera-based detection, controls, or other routine behavior. A rapid pose change should replace and restart the visual transition for the newest pose cleanly.
 - Keep the existing routine layout, wording, illustration accessibility description, and final 96-point-equivalent image slot unchanged.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
-- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmTheme.kt
 
 iOS notes:
 - Implement this as a presentation-only animation driven by the currently displayed guide pose, without coupling it to routine timing or detection state.
@@ -38,8 +38,8 @@ Changes:
 - Keep the pointer decorative for accessibility and never use it or color as the only indication that an action is tappable.
 
 Relevant Android files:
-- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
-- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
 
 iOS notes:
 - Reuse the app's existing readiness refresh lifecycle and permission state; do not add parallel permission tracking.
@@ -54,7 +54,7 @@ Changes:
 - The Privacy & safety policy link opens https://www.yogaalarm.com/privacy.
 
 Relevant Android files:
-- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
 
 iOS notes:
 - Use the same public policy URL.
@@ -73,6 +73,7 @@ Changes:
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
 
 iOS notes:
 - Use native idle-timer and supported alarm presentation behavior to keep the completed routine visible briefly.
@@ -89,8 +90,9 @@ Changes:
 - Request access after the user taps an existing setup action or starts the camera. Previously stored initial_setup_shown values are ignored.
 
 Relevant Android files:
-- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
-- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
 
 iOS notes:
 - If the earlier popup was implemented, remove it. Preserve existing permission controls and supported platform permissions.
@@ -136,7 +138,10 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/data/AlarmStore.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/data/WakeProgressStore.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
-- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmApp.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmForegroundService.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/StopAlarmReceiver.kt

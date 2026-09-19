@@ -112,7 +112,7 @@ fun RoutineCameraScreen(
                     maxHeight.toPx() / 2f - WindowInsets.statusBars.getTop(density) - 56.dp.toPx()
                 }
                 LaunchedEffect(Unit) {
-                    delay(500)
+                    delay(1_000)
                     arrival.animateTo(1f, tween(durationMillis = 650))
                 }
                 PoseGlyph(
@@ -352,18 +352,22 @@ private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
     val geometry = remember(pose) { guideGeometry(pose) }
     Canvas(modifier = Modifier.fillMaxSize()) {
         val projection = frame?.let { PreviewProjection(it, size.width, size.height) }
-        fun mapped(index: Int): Offset? = frame?.landmarks?.get(index)?.takeIf { it.isDrawable() }?.let {
-            Offset(projection!!.x(it.x), projection.y(it.y))
+        fun mapped(index: Int): Offset? {
+            if (projection == null) return null
+            val point = frame?.landmarks?.get(index)?.takeIf { it.isDrawable() } ?: return null
+            return Offset(projection.x(point.x), projection.y(point.y))
         }
         val sidePose = pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD
         val side = if ((frame?.landmarks?.get(11)?.visibility ?: 0f) >= (frame?.landmarks?.get(12)?.visibility ?: 0f)) 0 else 1
         val leftShoulder = mapped(11)
         val rightShoulder = mapped(12)
+        val leftHip = mapped(23)
+        val rightHip = mapped(24)
         val shoulderMid = if (sidePose) mapped(11 + side) ?: Offset(size.width / 2f, size.height * 0.4f)
             else if (leftShoulder != null && rightShoulder != null) midpoint(leftShoulder, rightShoulder)
             else Offset(size.width / 2f, size.height * 0.4f)
         val hipMid = if (sidePose) mapped(23 + side) ?: Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
-            else if (mapped(23) != null && mapped(24) != null) midpoint(mapped(23)!!, mapped(24)!!)
+            else if (leftHip != null && rightHip != null) midpoint(leftHip, rightHip)
             else Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
         val shoulderWidth = if (leftShoulder != null && rightShoulder != null)
             distance(leftShoulder, rightShoulder).coerceAtLeast(size.width * 0.12f) else size.width * 0.2f
@@ -383,7 +387,7 @@ private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
             yScale = if (leftFoot != null && rightFoot != null)
                 ((midpoint(leftFoot, rightFoot).y - hipMid.y) / 1.8f).coerceAtLeast(shoulderWidth * 0.4f) else torsoHeight
         }
-        fun guidePoint(point: Pair<Float, Float>) = Offset(origin.x + point.first * xScale, origin.y + point.second * yScale)
+        fun guidePoint(point: Offset) = Offset(origin.x + point.x * xScale, origin.y + point.y * yScale)
         val bodyWidth = maxOf(26.dp.toPx(), shoulderWidth * 0.5f)
         val guideColor = Color(0xFFB7BDB8).copy(alpha = 0.32f * alpha)
         geometry.segments.forEach { (from, to) ->
@@ -394,84 +398,84 @@ private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
 }
 
 private data class GuideGeometry(
-    val head: Pair<Float, Float>,
-    val segments: List<Pair<Pair<Float, Float>, Pair<Float, Float>>>,
+    val head: Offset,
+    val segments: List<Pair<Offset, Offset>>,
 )
 
 private fun guideGeometry(pose: YogaPose): GuideGeometry = when (pose) {
     YogaPose.WARRIOR_TWO -> GuideGeometry(
-        0f to -0.55f,
+        Offset(0f, -0.55f),
         listOf(
-            (0f to 0f) to (0f to 1f),
-            (-0.5f to 0f) to (-1.05f to 0f), (-1.05f to 0f) to (-1.65f to 0f),
-            (0.5f to 0f) to (1.05f to 0f), (1.05f to 0f) to (1.65f to 0f),
-            (-0.24f to 1f) to (-0.95f to 1.75f), (-0.95f to 1.75f) to (-1.45f to 2.55f),
-            (0.24f to 1f) to (0.9f to 1.65f), (0.9f to 1.65f) to (1.45f to 2.45f),
+            Offset(0f, 0f) to Offset(0f, 1f),
+            Offset(-0.5f, 0f) to Offset(-1.05f, 0f), Offset(-1.05f, 0f) to Offset(-1.65f, 0f),
+            Offset(0.5f, 0f) to Offset(1.05f, 0f), Offset(1.05f, 0f) to Offset(1.65f, 0f),
+            Offset(-0.24f, 1f) to Offset(-0.95f, 1.75f), Offset(-0.95f, 1.75f) to Offset(-1.45f, 2.55f),
+            Offset(0.24f, 1f) to Offset(0.9f, 1.65f), Offset(0.9f, 1.65f) to Offset(1.45f, 2.45f),
         ),
     )
     YogaPose.TREE -> GuideGeometry(
-        0f to -0.55f,
+        Offset(0f, -0.55f),
         listOf(
-            (0f to 0f) to (0f to 1f),
-            (-0.5f to 0f) to (-0.78f to -0.55f), (-0.78f to -0.55f) to (-0.18f to -1.02f),
-            (0.5f to 0f) to (0.78f to -0.55f), (0.78f to -0.55f) to (0.18f to -1.02f),
-            (-0.24f to 1f) to (-0.25f to 2.55f),
-            (0.24f to 1f) to (0.9f to 1.62f), (0.9f to 1.62f) to (-0.12f to 1.95f),
+            Offset(0f, 0f) to Offset(0f, 1f),
+            Offset(-0.5f, 0f) to Offset(-0.78f, -0.55f), Offset(-0.78f, -0.55f) to Offset(-0.18f, -1.02f),
+            Offset(0.5f, 0f) to Offset(0.78f, -0.55f), Offset(0.78f, -0.55f) to Offset(0.18f, -1.02f),
+            Offset(-0.24f, 1f) to Offset(-0.25f, 2.55f),
+            Offset(0.24f, 1f) to Offset(0.9f, 1.62f), Offset(0.9f, 1.62f) to Offset(-0.12f, 1.95f),
         ),
     )
     YogaPose.CHAIR -> GuideGeometry(
-        0.02f to -0.28f,
+        Offset(0.02f, -0.28f),
         listOf(
-            (0f to 0f) to (-0.35f to 0.92f),
-            (0f to 0f) to (0.38f to -0.48f), (0.38f to -0.48f) to (0.75f to -0.95f),
-            (-0.35f to 0.92f) to (0.2f to 1.45f), (0.2f to 1.45f) to (-0.15f to 2.2f),
+            Offset(0f, 0f) to Offset(-0.35f, 0.92f),
+            Offset(0f, 0f) to Offset(0.38f, -0.48f), Offset(0.38f, -0.48f) to Offset(0.75f, -0.95f),
+            Offset(-0.35f, 0.92f) to Offset(0.2f, 1.45f), Offset(0.2f, 1.45f) to Offset(-0.15f, 2.2f),
         ),
     )
     YogaPose.FORWARD_FOLD -> GuideGeometry(
-        0.12f to -0.25f,
+        Offset(0.12f, -0.25f),
         listOf(
-            (0f to 0f) to (-0.55f to 0.8f),
-            (0f to 0f) to (0.65f to 0.15f), (0.65f to 0.15f) to (1.1f to 0.23f),
-            (-0.55f to 0.8f) to (0.35f to 0.85f), (0.35f to 0.85f) to (1.25f to 0.9f),
+            Offset(0f, 0f) to Offset(-0.55f, 0.8f),
+            Offset(0f, 0f) to Offset(0.65f, 0.15f), Offset(0.65f, 0.15f) to Offset(1.1f, 0.23f),
+            Offset(-0.55f, 0.8f) to Offset(0.35f, 0.85f), Offset(0.35f, 0.85f) to Offset(1.25f, 0.9f),
         ),
     )
     YogaPose.TRIANGLE -> GuideGeometry(
-        -0.42f to -0.34f,
+        Offset(-0.42f, -0.34f),
         listOf(
-            (0f to 0f) to (0.72f to 1f),
-            (-0.12f to 0f) to (-0.15f to -0.75f), (-0.15f to -0.75f) to (-0.18f to -1.55f),
-            (0.12f to 0f) to (0.16f to 0.8f), (0.16f to 0.8f) to (0.18f to 1.62f),
-            (0.52f to 1f) to (-0.72f to 1.75f), (-0.72f to 1.75f) to (-1.45f to 2.45f),
-            (0.92f to 1f) to (1.35f to 1.75f), (1.35f to 1.75f) to (1.8f to 2.42f),
+            Offset(0f, 0f) to Offset(0.72f, 1f),
+            Offset(-0.12f, 0f) to Offset(-0.15f, -0.75f), Offset(-0.15f, -0.75f) to Offset(-0.18f, -1.55f),
+            Offset(0.12f, 0f) to Offset(0.16f, 0.8f), Offset(0.16f, 0.8f) to Offset(0.18f, 1.62f),
+            Offset(0.52f, 1f) to Offset(-0.72f, 1.75f), Offset(-0.72f, 1.75f) to Offset(-1.45f, 2.45f),
+            Offset(0.92f, 1f) to Offset(1.35f, 1.75f), Offset(1.35f, 1.75f) to Offset(1.8f, 2.42f),
         ),
     )
     YogaPose.GODDESS -> GuideGeometry(
-        0f to -0.55f,
+        Offset(0f, -0.55f),
         listOf(
-            (0f to 0f) to (0f to 1f),
-            (-0.5f to 0f) to (-1.0f to 0.38f), (-1.0f to 0.38f) to (-0.98f to -0.45f),
-            (0.5f to 0f) to (1.0f to 0.38f), (1.0f to 0.38f) to (0.98f to -0.45f),
-            (-0.24f to 1f) to (-1.15f to 1.55f), (-1.15f to 1.55f) to (-1.52f to 2.35f),
-            (0.24f to 1f) to (1.15f to 1.55f), (1.15f to 1.55f) to (1.52f to 2.35f),
+            Offset(0f, 0f) to Offset(0f, 1f),
+            Offset(-0.5f, 0f) to Offset(-1.0f, 0.38f), Offset(-1.0f, 0.38f) to Offset(-0.98f, -0.45f),
+            Offset(0.5f, 0f) to Offset(1.0f, 0.38f), Offset(1.0f, 0.38f) to Offset(0.98f, -0.45f),
+            Offset(-0.24f, 1f) to Offset(-1.15f, 1.55f), Offset(-1.15f, 1.55f) to Offset(-1.52f, 2.35f),
+            Offset(0.24f, 1f) to Offset(1.15f, 1.55f), Offset(1.15f, 1.55f) to Offset(1.52f, 2.35f),
         ),
     )
     YogaPose.WIDE_LEG_FOLD -> GuideGeometry(
-        0f to 0.8f,
+        Offset(0f, 0.8f),
         listOf(
-            (0f to 0f) to (0f to 0.5f),
-            (-0.5f to 0.5f) to (-0.5f to 1.1f), (-0.5f to 1.1f) to (-0.5f to 1.7f),
-            (0.5f to 0.5f) to (0.5f to 1.1f), (0.5f to 1.1f) to (0.5f to 1.7f),
-            (-0.2f to 0f) to (-0.75f to 0.9f), (-0.75f to 0.9f) to (-1.25f to 1.8f),
-            (0.2f to 0f) to (0.75f to 0.9f), (0.75f to 0.9f) to (1.25f to 1.8f),
+            Offset(0f, 0f) to Offset(0f, 0.5f),
+            Offset(-0.5f, 0.5f) to Offset(-0.5f, 1.1f), Offset(-0.5f, 1.1f) to Offset(-0.5f, 1.7f),
+            Offset(0.5f, 0.5f) to Offset(0.5f, 1.1f), Offset(0.5f, 1.1f) to Offset(0.5f, 1.7f),
+            Offset(-0.2f, 0f) to Offset(-0.75f, 0.9f), Offset(-0.75f, 0.9f) to Offset(-1.25f, 1.8f),
+            Offset(0.2f, 0f) to Offset(0.75f, 0.9f), Offset(0.75f, 0.9f) to Offset(1.25f, 1.8f),
         ),
     )
     YogaPose.MOUNTAIN -> GuideGeometry(
-        0f to -0.55f,
+        Offset(0f, -0.55f),
         listOf(
-            (0f to 0f) to (0f to 1f),
-            (-0.5f to 0f) to (-0.62f to 0.7f), (-0.62f to 0.7f) to (-0.52f to 1.4f),
-            (0.5f to 0f) to (0.62f to 0.7f), (0.62f to 0.7f) to (0.52f to 1.4f),
-            (-0.24f to 1f) to (-0.3f to 2.55f), (0.24f to 1f) to (0.3f to 2.55f),
+            Offset(0f, 0f) to Offset(0f, 1f),
+            Offset(-0.5f, 0f) to Offset(-0.62f, 0.7f), Offset(-0.62f, 0.7f) to Offset(-0.52f, 1.4f),
+            Offset(0.5f, 0f) to Offset(0.62f, 0.7f), Offset(0.62f, 0.7f) to Offset(0.52f, 1.4f),
+            Offset(-0.24f, 1f) to Offset(-0.3f, 2.55f), Offset(0.24f, 1f) to Offset(0.3f, 2.55f),
         ),
     )
 }

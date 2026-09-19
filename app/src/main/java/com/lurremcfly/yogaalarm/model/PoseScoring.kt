@@ -44,7 +44,7 @@ object PoseScoring {
 
     private fun mountain(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val framed = framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))
+        if (!framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))) return PoseEvaluation(0f, false)
         val shoulderWidth = distance(points[11], points[12]).coerceAtLeast(0.05f)
         val shoulderMid = midpoint(points[11], points[12])
         val hipMid = midpoint(points[23], points[24])
@@ -60,13 +60,13 @@ object PoseScoring {
         val levelKnees = clamp(1f - abs(points[25].y - points[26].y) / 0.12f)
         val compactStance = rangeScore(distance(points[25], points[26]) / shoulderWidth, 0.2f, 0.42f, 1.25f, 1.65f)
         return PoseEvaluation(
-            if (framed) weighted(listOf(upright, armsDown, straightArms, levelKnees, compactStance), listOf(0.25f, 0.27f, 0.16f, 0.14f, 0.18f)) else 0f,
-            framed)
+            weighted(listOf(upright, armsDown, straightArms, levelKnees, compactStance), listOf(0.25f, 0.27f, 0.16f, 0.14f, 0.18f)),
+            true)
     }
 
     private fun warriorTwo(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val framed = framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))
+        if (!framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))) return PoseEvaluation(0f, false)
         val shoulderWidth = distance(points[11], points[12]).coerceAtLeast(0.05f)
         val shoulderMid = midpoint(points[11], points[12])
         val hipMid = midpoint(points[23], points[24])
@@ -83,13 +83,13 @@ object PoseScoring {
         val legShape = if (anklesVisible) warriorLegShape(points) else 0.72f
         val upright = clamp(1f - abs(shoulderMid.x - hipMid.x) / (shoulderWidth * 0.85f))
         return PoseEvaluation(
-            if (framed) weighted(listOf(horizontalArms, straightArms, wideKnees, legShape, upright), listOf(0.29f, 0.2f, 0.24f, 0.12f, 0.15f)) else 0f,
-            framed)
+            weighted(listOf(horizontalArms, straightArms, wideKnees, legShape, upright), listOf(0.29f, 0.2f, 0.24f, 0.12f, 0.15f)),
+            true)
     }
 
     private fun tree(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val framed = framed(points, listOf(0, 11, 12, 23, 24, 25, 26))
+        if (!framed(points, listOf(0, 11, 12, 23, 24, 25, 26))) return PoseEvaluation(0f, false)
         val hipWidth = distance(points[23], points[24]).coerceAtLeast(0.04f)
         val shoulderWidth = distance(points[11], points[12]).coerceAtLeast(0.05f)
         val shoulderMid = midpoint(points[11], points[12])
@@ -106,7 +106,7 @@ object PoseScoring {
             greaterScore(abs(points[26].x - points[24].x) / hipWidth, 0.4f, 1.25f),
             clamp(1f - abs(points[25].x - points[23].x) / (hipWidth * 0.9f)),
         )
-        return PoseEvaluation(if (framed) weighted(listOf(maxOf(leftRaised, rightRaised), upright), listOf(0.78f, 0.22f)) else 0f, framed)
+        return PoseEvaluation(weighted(listOf(maxOf(leftRaised, rightRaised), upright), listOf(0.78f, 0.22f)), true)
     }
 
     // One complete visible side is enough; the far arm/leg may be occluded in profile.
@@ -156,7 +156,7 @@ object PoseScoring {
 
     private fun triangle(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val framed = framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))
+        if (!framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))) return PoseEvaluation(0f, false)
         val shoulderWidth = distance(points[11], points[12]).coerceAtLeast(0.05f)
         val shoulderMid = midpoint(points[11], points[12])
         val hipMid = midpoint(points[23], points[24])
@@ -170,13 +170,13 @@ object PoseScoring {
         )
         val wideStance = greaterScore(distance(points[25], points[26]) / shoulderWidth, 0.8f, 1.65f)
         return PoseEvaluation(
-            if (framed) weighted(listOf(sideBend, verticalArms, wideStance, straightLegScore(points, 0.72f)), listOf(0.29f, 0.32f, 0.24f, 0.15f)) else 0f,
-            framed)
+            weighted(listOf(sideBend, verticalArms, wideStance, straightLegScore(points, 0.72f)), listOf(0.29f, 0.32f, 0.24f, 0.15f)),
+            true)
     }
 
     private fun goddess(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val framed = framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))
+        if (!framed(points, listOf(0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26))) return PoseEvaluation(0f, false)
         val shoulderWidth = distance(points[11], points[12]).coerceAtLeast(0.05f)
         val shoulderMid = midpoint(points[11], points[12])
         val hipMid = midpoint(points[23], points[24])
@@ -199,8 +199,8 @@ object PoseScoring {
         }
         val upright = clamp(1f - abs(shoulderMid.x - hipMid.x) / (shoulderWidth * 0.9f))
         return PoseEvaluation(
-            if (framed) weighted(listOf(cactusArms, wideKnees, bentKnees, upright), listOf(0.3f, 0.25f, 0.27f, 0.18f)) else 0f,
-            framed)
+            weighted(listOf(cactusArms, wideKnees, bentKnees, upright), listOf(0.3f, 0.25f, 0.27f, 0.18f)),
+            true)
     }
 
     private fun wideLegFold(body: BodyLandmarks?): PoseEvaluation {
@@ -265,5 +265,8 @@ object PoseScoring {
         value <= innerHigh -> 1f
         else -> (outerHigh - value) / (outerHigh - innerHigh)
     }
-    private fun weighted(values: List<Float>, weights: List<Float>) = values.zip(weights).sumOf { (value, weight) -> (value * weight).toDouble() }.toFloat()
+    private fun weighted(values: List<Float>, weights: List<Float>) =
+        (0 until minOf(values.size, weights.size)).sumOf { index ->
+            (values[index] * weights[index]).toDouble()
+        }.toFloat()
 }

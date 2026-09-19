@@ -51,6 +51,13 @@ Store-listing disclaimer:
 
 ## Billing and subscriptions
 
+The following is the **approved production setup**, not the current client catalog.
+The Android prototype still queries subscriptions `pro_monthly` and `pro_yearly` and
+the one-time product `pro_lifetime`, acknowledges purchases on the client, and derives
+Pro access from client-observed purchase state. Catalog migration and backend
+verification remain planned work; see [billing implementation status](../knowledge.md#9-billing-status-and-approved-direction)
+and the [production billing specification](play-billing-setup.md).
+
 - Products: monthly, yearly, and lifetime Pro.
 - Show Play-localized price, billing period, auto-renewal behavior, and restore/manage-purchase actions before purchase.
 - Monthly and yearly subscriptions renew until canceled through Google Play. Lifetime is a one-time purchase.

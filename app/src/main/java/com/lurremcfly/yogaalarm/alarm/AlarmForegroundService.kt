@@ -38,11 +38,7 @@ class AlarmForegroundService : Service() {
 
     fun finishRoutine(alarmId: Long) {
         if (activeAlarmId != alarmId) return
-        audio?.close()
-        audio = null
-        vibrator?.cancel()
-        wakeLock?.takeIf { it.isHeld }?.release()
-        wakeLock = null
+        releasePlaybackResources()
         activeAlarmId = null
         mutableRingingAlarm.value = null
         mutableFinishedAlarmId.value = alarmId
@@ -147,13 +143,17 @@ class AlarmForegroundService : Service() {
 
     override fun onDestroy() {
         mutableRingingAlarm.value = null
+        releasePlaybackResources()
+        super.onDestroy()
+    }
+
+    private fun releasePlaybackResources() {
         audio?.close()
         audio = null
         vibrator?.cancel()
         vibrator = null
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = null
-        super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
