@@ -6,6 +6,50 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+### SYNC-010 — Retry unavailable purchase prices during restoration
+
+Status: pending
+Date: 2026-09-20
+Android commit: <pending>
+
+Changes:
+- Restore Purchases retries loading product prices as well as checking owned purchases. If an earlier price lookup failed temporarily, a successful retry makes eligible purchase buttons usable again without restarting the app.
+- Starting an already-connected billing session also reloads prices. Existing entitlement rules, plan selection, and purchase availability restrictions remain unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/billing/PlayBillingManager.kt
+
+iOS notes:
+- Apply equivalent product-loading recovery with StoreKit.
+
+### SYNC-009 — Save the pose selected after swiping back
+
+Status: pending
+Date: 2026-09-20
+Android commit: <pending>
+
+Changes:
+- Each settled, unlocked pose selection updates the alarm draft, including returning to the pose that was selected when the editor opened. For example, Mountain → Warrior II → Mountain must save and test Mountain.
+- Locked poses remain unavailable without Pro. Pose durations and routine order are unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+
+### SYNC-008 — Keep configured alarm times after a daylight-saving gap
+
+Status: pending
+Date: 2026-09-20
+Android commit: <pending>
+
+Changes:
+- Resolve the configured local hour and minute independently for each candidate date. A spring daylight-saving gap may shift that day's alarm, but must not shift alarms on later dates.
+- In Europe/Stockholm, 02:30 on March 29, 2026 resolves to 03:30. Scheduling the following Monday or Sunday must still use 02:30, including rescheduling after the gap-day alarm fires. One-time alarms moved to tomorrow follow the same rule.
+- During an autumn overlap, preserve the current UTC offset when valid for the candidate time; otherwise use the zone's normal resolution. Existing weekday selection and strictly-future scheduling rules remain unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmScheduler.kt
+- app/src/test/java/com/lurremcfly/yogaalarm/alarm/AlarmSchedulerTest.kt
+
 ### SYNC-007 — Pose illustration travels into the routine header
 
 Status: pending
@@ -126,6 +170,8 @@ Changes:
 - Vibration remains independently configurable but has moved into the Sound sheet. Sound-only, vibration-only, both, and neither are supported.
 - When "Stop button" is off for a fired alarm, the normal Stop action is hidden and Android Back remains blocked. Snooze remains available. Test routines always retain normal navigation.
 - While an alarm is ringing, its system notification offers a clear Start movement action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
+- Opening a system shortcut for an upcoming alarm opens the app without starting playback or treating the alarm as fired. Ringing notifications still open the active routine.
+- Rescheduling enabled alarms after a clock or timezone change must preserve any pending snooze and its remaining snooze count. Explicitly editing, disabling, or deleting an alarm still cancels its pending snooze.
 - A subtle Emergency stop remains available. It warns that the streak will end and requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled.
 - Camera permission denial or a camera failure provides an immediate technical Stop action. Technical exits do not consume a pass or break the streak.
 - The app tracks one global daily yoga streak. Completing at least one genuinely fired alarm through yoga starts or extends it; multiple completions on one day count once. Snoozing preserves it. A normal or emergency stop breaks it. Test routines do not affect it.
@@ -145,6 +191,8 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmForegroundService.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/StopAlarmReceiver.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmScheduler.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/alarm/BootReceiver.kt
 
 iOS notes:
 - Match the observable rules and copy using idiomatic iOS persistence and alarm presentation APIs.

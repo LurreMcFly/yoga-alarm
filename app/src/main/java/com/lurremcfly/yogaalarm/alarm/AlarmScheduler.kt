@@ -22,10 +22,11 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return false
         val operation = receiverIntent(context, alarm.id)
+        // Use a separate action so notification updates cannot turn this shortcut into a ringing intent.
         val showIntent = PendingIntent.getActivity(
             context,
             alarm.id.hashCode(),
-            Intent(context, MainActivity::class.java).putExtra(EXTRA_ALARM_ID, alarm.id),
+            Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return runCatching {
@@ -49,9 +50,7 @@ object AlarmScheduler {
         val showIntent = PendingIntent.getActivity(
             context,
             alarmId.hashCode(),
-            Intent(context, MainActivity::class.java)
-                .putExtra(EXTRA_ALARM_ID, alarmId)
-                .putExtra(EXTRA_REMAINING_SNOOZES, remainingSnoozes),
+            Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return runCatching {
@@ -81,13 +80,14 @@ object AlarmScheduler {
     )
 
     internal fun nextOccurrence(alarm: AlarmConfig, now: ZonedDateTime = ZonedDateTime.now()): ZonedDateTime {
-        val today = now.withHour(alarm.hour).withMinute(alarm.minute).withSecond(0).withNano(0)
-        if (alarm.weekdays.isEmpty()) return if (today.isAfter(now)) today else today.plusDays(1)
+        val today = now.toLocalDate().atTime(alarm.hour, alarm.minute)
         for (daysAhead in 0L..7L) {
-            val candidate = today.plusDays(daysAhead)
-            if (candidate.dayOfWeek.value in alarm.weekdays && candidate.isAfter(now)) return candidate
+            val candidate = ZonedDateTime.ofLocal(today.plusDays(daysAhead), now.zone, now.offset)
+            if ((alarm.weekdays.isEmpty() || candidate.dayOfWeek.value in alarm.weekdays) && candidate.isAfter(now)) {
+                return candidate
+            }
         }
-        return today.plusWeeks(1)
+        return ZonedDateTime.ofLocal(today.plusWeeks(1), now.zone, now.offset)
     }
 
     internal fun confirmation(alarm: AlarmConfig, now: ZonedDateTime = ZonedDateTime.now()): String {

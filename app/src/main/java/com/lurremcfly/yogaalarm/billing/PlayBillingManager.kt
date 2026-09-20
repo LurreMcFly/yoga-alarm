@@ -47,6 +47,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
 
     fun start() {
         if (billingClient.isReady) {
+            queryOffers()
             refresh()
             return
         }
@@ -104,6 +105,7 @@ class PlayBillingManager(context: Context) : PurchasesUpdatedListener {
             return
         }
         mutableState.value = mutableState.value.copy(loading = true, message = null)
+        queryOffers()
         refresh(showRestoreResult = true)
     }
 

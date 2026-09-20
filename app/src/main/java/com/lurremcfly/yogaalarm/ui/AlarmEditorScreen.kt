@@ -452,7 +452,7 @@ private fun PoseCarouselCard(
     )
     LaunchedEffect(pagerState, isPro) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
-            poses.getOrNull(page)?.takeIf { (isPro || it.isFree) && it != step.pose }?.let(onSelectPose)
+            poses.getOrNull(page)?.takeIf { isPro || it.isFree }?.let(onSelectPose)
         }
     }
     Surface(

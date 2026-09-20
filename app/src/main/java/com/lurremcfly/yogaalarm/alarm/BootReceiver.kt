@@ -8,7 +8,9 @@ import com.lurremcfly.yogaalarm.data.AlarmStore
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in supportedActions) return
-        AlarmStore(context).load().filter { it.enabled }.forEach { AlarmScheduler.schedule(context, it) }
+        AlarmStore(context).load().filter { it.enabled }.forEach {
+            AlarmScheduler.schedule(context, it, preserveSnooze = true)
+        }
     }
 
     private companion object {
