@@ -1,6 +1,14 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -40,10 +48,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -62,11 +73,17 @@ import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 @Composable
 fun AlarmHomeScreen(
     alarms: List<AlarmConfig>,
     streakDays: Int,
+    previousStreakDays: Int,
+    onStreakPresented: () -> Unit,
+    savedAlarmId: Long?,
+    onSavedAlarmPresented: (Long) -> Unit,
     isPro: Boolean,
     onOpenPro: () -> Unit,
     onOpenPrivacy: () -> Unit,
@@ -144,7 +161,7 @@ fun AlarmHomeScreen(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        if (isPro) "PRO" else "TRY PRO",
+                                        if (isPro) "PRO" else "GET PRO",
                                         modifier = if (isPro) Modifier else Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
                                         color = Forest,
                                         fontSize = 11.sp,
@@ -170,7 +187,7 @@ fun AlarmHomeScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
-            item { StreakCard(streakDays) }
+            item(key = "streak") { StreakCard(streakDays, previousStreakDays, onStreakPresented) }
 
             if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
                 item {
@@ -191,7 +208,21 @@ fun AlarmHomeScreen(
                 item { EmptyAlarmCard(onAddAlarm) }
             } else {
                 items(alarms, key = { it.id }) { alarm ->
+                    val arrival = remember(alarm.id) { Animatable(if (alarm.id == savedAlarmId) 0f else 1f) }
+                    LaunchedEffect(alarm.id) {
+                        if (alarm.id == savedAlarmId) {
+                            onSavedAlarmPresented(alarm.id)
+                            arrival.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 220f))
+                        }
+                    }
+                    val arrivalOffset = with(LocalDensity.current) { 24.dp.toPx() }
                     AlarmSummaryCard(
+                        modifier = Modifier.animateItem().graphicsLayer {
+                            alpha = arrival.value.coerceIn(0f, 1f)
+                            translationY = arrivalOffset * (1f - arrival.value)
+                            scaleX = 0.97f + 0.03f * arrival.value
+                            scaleY = scaleX
+                        },
                         alarm = alarm,
                         selected = alarm.id == selectedAlarmId,
                         onClick = { onEditAlarm(alarm.id) },
@@ -255,20 +286,63 @@ fun AlarmHomeScreen(
 }
 
 @Composable
-private fun StreakCard(streakDays: Int) {
+private fun StreakCard(streakDays: Int, previousStreakDays: Int, onPresented: () -> Unit) {
+    var displayedDays by rememberSaveable { mutableIntStateOf(minOf(previousStreakDays, streakDays)) }
+    var bounceRequest by remember { mutableIntStateOf(0) }
+    val cardScale = remember { Animatable(1f) }
+    val flameScale = remember { Animatable(1f) }
+    LaunchedEffect(streakDays) {
+        val earned = streakDays > previousStreakDays
+        onPresented()
+        if (earned && coroutineContext[MotionDurationScale]?.scaleFactor != 0f) {
+            delay(100)
+            displayedDays = streakDays
+            bounceRequest++
+        } else {
+            displayedDays = streakDays
+        }
+    }
+    LaunchedEffect(bounceRequest) {
+        if (bounceRequest == 0) return@LaunchedEffect
+        coroutineScope {
+            launch {
+                cardScale.animateTo(1.025f, tween(130))
+                cardScale.animateTo(1f, spring(dampingRatio = 0.5f))
+            }
+            launch {
+                flameScale.animateTo(1.25f, tween(130))
+                flameScale.animateTo(1f, spring(dampingRatio = 0.45f))
+            }
+        }
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().graphicsLayer {
+            scaleX = cardScale.value; scaleY = cardScale.value
+        }.clickable(enabled = streakDays > 0, onClickLabel = "Celebrate streak") { bounceRequest++ },
         shape = RoundedCornerShape(24.dp),
         color = Color.White.copy(alpha = 0.82f),
         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
     ) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            Text(
-                if (streakDays > 0) "🔥 $streakDays-day yoga streak" else "Start your yoga streak",
-                color = Ink,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            if (streakDays > 0) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔥 ", fontSize = 18.sp, modifier = Modifier.graphicsLayer {
+                        scaleX = flameScale.value; scaleY = flameScale.value
+                    })
+                    AnimatedContent(
+                        targetState = displayedDays,
+                        transitionSpec = {
+                            (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
+                                (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
+                        }, label = "Earned streak count",
+                    ) { days ->
+                        Text(days.toString(), color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Text("-day yoga streak", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text("Start your yoga streak", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
             Text(
                 if (streakDays > 0) "Complete tomorrow’s alarm to keep it going."
                 else "Finish your yoga routine when your alarm rings to start your streak.",
@@ -418,14 +492,21 @@ private fun EmptyAlarmCard(onAddAlarm: () -> Unit) {
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 private fun AlarmSummaryCard(
+    modifier: Modifier,
     alarm: AlarmConfig,
     selected: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
 ) {
+    val nameColor by animateColorAsState(
+        if (alarm.enabled) Ink else MutedInk.copy(alpha = 0.55f), tween(250), label = "Alarm name color",
+    )
+    val timeColor by animateColorAsState(
+        if (alarm.enabled) Ink else MutedInk.copy(alpha = 0.45f), tween(250), label = "Alarm time color",
+    )
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(34.dp))
             .background(Color.White)
@@ -437,14 +518,14 @@ private fun AlarmSummaryCard(
                 Column(Modifier.weight(1f)) {
                     Text(
                         text = alarm.name,
-                        color = if (alarm.enabled) Ink else MutedInk.copy(alpha = 0.55f),
+                        color = nameColor,
                         fontSize = 16.sp,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = String.format(Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
-                        color = if (alarm.enabled) Ink else MutedInk.copy(alpha = 0.45f),
+                        color = timeColor,
                         fontSize = 54.sp,
                         lineHeight = 60.sp,
                         fontWeight = FontWeight.SemiBold,

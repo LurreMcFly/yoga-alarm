@@ -1,8 +1,14 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -26,7 +33,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,14 +41,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
 import androidx.core.view.doOnLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +62,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Observer
@@ -61,6 +74,8 @@ import com.lurremcfly.yogaalarm.model.PreviewProjection
 import com.lurremcfly.yogaalarm.model.PoseFrame
 import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.hypot
 
 @Composable
@@ -90,6 +105,10 @@ fun RoutineCameraScreen(
             .fillMaxSize()
             .background(Color(0xFF07100A)),
     ) {
+        if (uiState.phase == RoutinePhase.COMPLETE) {
+            RoutineCompletion(uiState, completionStreakDays, showBack, onBack)
+            return@BoxWithConstraints
+        }
         if (uiState.phase != RoutinePhase.COMPLETE) {
             key(cameraAttempt) {
                 SelfiePreview(onPoseFrame, onCameraError, onPreviewReady = { previewReady = it })
@@ -173,52 +192,57 @@ fun RoutineCameraScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when (uiState.phase) {
-                RoutinePhase.HOLDING -> {
-                    RoutineCountdown(progress, uiState.remainingSeconds)
-                    Spacer(Modifier.height(48.dp))
-                }
-                RoutinePhase.PAUSED -> {
-                    Surface(shape = RoundedCornerShape(50), color = Color.Black.copy(alpha = 0.45f)) {
-                        Text("↶ Return to pose", modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
-                            color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Medium)
+                RoutinePhase.HOLDING, RoutinePhase.PAUSED, RoutinePhase.TRANSITION -> {
+                    key(uiState.poseIndex) {
+                        RoutineCountdown(progress, uiState.remainingSeconds, uiState.phase)
                     }
-                    Spacer(Modifier.height(8.dp))
-                    Text("${uiState.remainingSeconds} sec remaining", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
-                    if (!uiState.framed || uiState.error != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(uiState.error ?: uiState.framingHint, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(12.dp))
+                    AnimatedContent(
+                        targetState = uiState.phase,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                        contentAlignment = Alignment.TopCenter,
+                        transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                        label = "Routine feedback",
+                    ) { phase ->
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                when (phase) {
+                                    RoutinePhase.PAUSED -> "↶ Return to pose"
+                                    RoutinePhase.TRANSITION -> "Next: ${uiState.nextPose?.displayName ?: uiState.pose.displayName}"
+                                    else -> "Hold"
+                                },
+                                color = Color.White, fontSize = 20.sp,
+                                fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
+                            )
+                            Spacer(Modifier.height(7.dp))
+                            Text(
+                                when (phase) {
+                                    RoutinePhase.PAUSED -> "${uiState.remainingSeconds} sec remaining · your time is saved"
+                                    RoutinePhase.TRANSITION -> "${poseInstruction(uiState.nextPose ?: uiState.pose)}\nStarts in ${uiState.transitionSeconds}"
+                                    else -> "Stay with it while the alarm fades"
+                                },
+                                color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp,
+                                textAlign = TextAlign.Center,
+                            )
+                            if (phase == RoutinePhase.PAUSED && (!uiState.framed || uiState.error != null)) {
+                                Spacer(Modifier.height(6.dp))
+                                Text(uiState.error ?: uiState.framingHint, color = Color.White.copy(alpha = 0.75f), fontSize = 13.sp, textAlign = TextAlign.Center)
+                            }
+                        }
                     }
                     Spacer(Modifier.height(36.dp))
                 }
                 else -> {
                     Text(statusTitle(uiState, previewReady), color = Color.White,
-                        fontSize = if (uiState.phase == RoutinePhase.COMPLETE) 32.sp else 20.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(7.dp))
                     Text(statusDetail(uiState), color = Color.White.copy(alpha = 0.75f),
                         fontSize = 14.sp, textAlign = TextAlign.Center)
-                    if (uiState.phase == RoutinePhase.COMPLETE && completionStreakDays > 0) {
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "🔥 $completionStreakDays-day yoga streak",
-                            color = Lime,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
                 }
             }
 
-            if (uiState.phase == RoutinePhase.COMPLETE) {
-                Spacer(Modifier.height(24.dp))
-                Button(
-                    onClick = onBack,
-                    colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color(0xFF173421)),
-                    shape = RoundedCornerShape(999.dp),
-                ) {
-                    Text("Done", modifier = Modifier.padding(horizontal = 42.dp, vertical = 5.dp), fontWeight = FontWeight.Bold)
-                }
-            } else if (uiState.error != null) {
+            if (uiState.error != null) {
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = {
@@ -293,18 +317,171 @@ private fun RoutineOverlays(frames: StateFlow<PoseFrame?>, pose: YogaPose, state
 }
 
 @Composable
-private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int) {
+private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int, phase: RoutinePhase) {
     val value by progress.collectAsStateWithLifecycle()
-    Box(contentAlignment = Alignment.Center) {
+    val pulse = remember { Animatable(1f) }
+    val check = remember { Animatable(0f) }
+    val glow = remember { Animatable(0f) }
+    val ringColor by animateColorAsState(
+        if (phase == RoutinePhase.PAUSED) Color.White.copy(alpha = 0.45f) else Lime,
+        tween(220), label = "Hold ring color",
+    )
+    LaunchedEffect(phase) {
+        pulse.snapTo(1f)
+        if (phase == RoutinePhase.HOLDING || phase == RoutinePhase.TRANSITION) {
+            coroutineScope {
+                launch {
+                    pulse.animateTo(1.07f, tween(160))
+                    pulse.animateTo(1f, spring(dampingRatio = 0.6f))
+                }
+                if (phase == RoutinePhase.TRANSITION) {
+                    launch { check.animateTo(1f, spring(dampingRatio = 0.65f)) }
+                    launch {
+                        glow.snapTo(1f)
+                        glow.animateTo(0f, tween(750))
+                    }
+                }
+            }
+        }
+    }
+    Box(
+        modifier = Modifier.graphicsLayer { scaleX = pulse.value; scaleY = pulse.value },
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(Modifier.size(176.dp)) {
+            drawCircle(Brush.radialGradient(listOf(Lime.copy(alpha = 0.28f * glow.value), Color.Transparent)))
+        }
         CircularProgressIndicator(
             progress = { value.hold },
             modifier = Modifier.size(144.dp),
-            color = Lime.copy(alpha = 0.55f),
+            color = ringColor,
             trackColor = Color.White.copy(alpha = 0.12f),
             strokeWidth = 2.dp,
             strokeCap = StrokeCap.Round,
         )
-        Text(seconds.toString(), color = Color.White, fontSize = 84.sp, fontWeight = FontWeight.Medium)
+        if (phase == RoutinePhase.TRANSITION) {
+            Text("✓", color = Lime, fontSize = 64.sp, modifier = Modifier.graphicsLayer {
+                alpha = check.value.coerceIn(0f, 1f)
+                scaleX = 0.65f + 0.35f * check.value
+                scaleY = scaleX
+            })
+        } else {
+            Text(seconds.toString(), color = Color.White, fontSize = 84.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: Boolean, onBack: () -> Unit) {
+    var presented by rememberSaveable(streakDays) { mutableStateOf(false) }
+    val sunrise = remember(streakDays) { Animatable(if (presented) 1f else 0f) }
+    val entrance = remember(streakDays) { Animatable(if (presented) 1f else 0f) }
+    val docking = remember(streakDays) { Animatable(if (presented) 1f else 0f) }
+    val bounce = remember(streakDays) { Animatable(1f) }
+    var footerSize by remember { mutableStateOf(IntSize.Zero) }
+    var numberSize by remember { mutableStateOf(IntSize.Zero) }
+    var numberCenter by remember { mutableStateOf(Offset.Zero) }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+
+    LaunchedEffect(streakDays) {
+        if (presented) return@LaunchedEffect
+        presented = true
+        if (coroutineContext[MotionDurationScale]?.scaleFactor == 0f) {
+            sunrise.snapTo(1f)
+            entrance.snapTo(1f)
+            docking.snapTo(1f)
+            return@LaunchedEffect
+        }
+        coroutineScope {
+            launch { sunrise.animateTo(1f, tween(900)) }
+            launch { entrance.animateTo(1f, spring(dampingRatio = 0.65f, stiffness = 180f)) }
+            launch {
+                delay(1100)
+                docking.animateTo(1f, tween(850))
+                bounce.animateTo(1.06f, tween(140))
+                bounce.animateTo(1f, spring(dampingRatio = 0.6f))
+            }
+        }
+    }
+    BoxWithConstraints(
+        Modifier.fillMaxSize()
+            .background(Brush.verticalGradient(listOf(Color(0xFF153523), Color(0xFF07100A))))
+            .onGloballyPositioned { origin = it.positionInRoot() },
+    ) {
+        val density = LocalDensity.current
+        val widthPx = with(density) { maxWidth.toPx() }
+        val heightPx = with(density) { maxHeight.toPx() }
+        val topPx = WindowInsets.statusBars.getTop(density).toFloat() + with(density) { 60.dp.toPx() }
+        val availableHeight = (heightPx - footerSize.height - topPx).coerceAtLeast(0f)
+        val diameter = minOf(with(density) { 220.dp.toPx() }, widthPx * 0.64f, availableHeight * 0.8f).coerceAtLeast(1f)
+        val numberFontSize = with(density) { 16.sp.toPx() }
+        val sunCenter = Offset(widthPx / 2f, topPx + availableHeight / 2f)
+        val rise = with(density) { 90.dp.toPx() } * (1f - sunrise.value)
+        Canvas(Modifier.fillMaxSize()) {
+            val center = sunCenter + Offset(0f, rise)
+            val radius = diameter / 2f * (0.8f + 0.2f * sunrise.value)
+            drawCircle(
+                Brush.radialGradient(listOf(Lime.copy(alpha = 0.16f * sunrise.value), Color.Transparent), center, radius * 2f),
+                radius * 2f, center,
+            )
+            drawCircle(
+                Brush.verticalGradient(listOf(Color(0xFFF9E4A7), Lime), center.y - radius, center.y + radius),
+                radius, center, alpha = sunrise.value,
+            )
+        }
+        if (showBack) {
+            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp)) {
+                Text("‹ Alarm", color = Color.White)
+            }
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .onSizeChanged { footerSize = it }
+                .navigationBarsPadding().padding(horizontal = 28.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(statusTitle(state, true), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center, modifier = Modifier.graphicsLayer { alpha = sunrise.value })
+            Spacer(Modifier.height(8.dp))
+            Text(statusDetail(state), color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp,
+                modifier = Modifier.graphicsLayer { alpha = sunrise.value })
+            if (streakDays > 0) {
+                Spacer(Modifier.height(22.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.graphicsLayer {
+                    scaleX = bounce.value; scaleY = bounce.value
+                }) {
+                    Text("🔥 ", fontSize = 16.sp, modifier = Modifier.graphicsLayer { alpha = docking.value })
+                    Box(Modifier.onGloballyPositioned {
+                        numberSize = it.size
+                        numberCenter = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)
+                    }) {
+                        Text(
+                            streakDays.toString(), color = lerp(Color(0xFF153523), Lime, docking.value),
+                            fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                            modifier = Modifier.graphicsLayer {
+                                val remaining = 1f - docking.value
+                                val largeScale = minOf(
+                                    diameter * 0.72f / numberSize.width.coerceAtLeast(1),
+                                    diameter * 0.78f / numberFontSize,
+                                ).coerceAtLeast(1f)
+                                val pop = 0.25f + 0.75f * entrance.value
+                                scaleX = 1f + remaining * (largeScale * pop - 1f)
+                                scaleY = scaleX
+                                translationX = remaining * (origin.x + sunCenter.x - numberCenter.x)
+                                translationY = remaining * (origin.y + sunCenter.y + rise - numberCenter.y)
+                                alpha = entrance.value.coerceIn(0f, 1f)
+                            },
+                        )
+                    }
+                    Text("-day yoga streak", color = Lime, fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                        modifier = Modifier.graphicsLayer { alpha = docking.value })
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color(0xFF07100A))) {
+                Text("Done", modifier = Modifier.padding(horizontal = 36.dp, vertical = 5.dp), fontWeight = FontWeight.Bold)
+            }
+        }
     }
 }
 

@@ -38,7 +38,6 @@ import com.lurremcfly.yogaalarm.alarm.AlarmForegroundService
 import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
 import com.lurremcfly.yogaalarm.billing.PlayBillingManager
 import com.lurremcfly.yogaalarm.data.AlarmStore
-import com.lurremcfly.yogaalarm.data.ProAccessStore
 import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import kotlinx.coroutines.launch
@@ -54,13 +53,13 @@ internal fun YogaAlarmRoot(
     val routineViewModel: RoutineViewModel = viewModel()
     val store = remember { AlarmStore(context.applicationContext) }
     val wakeProgressStore = remember { WakeProgressStore(context.applicationContext) }
-    val proAccessStore = remember { ProAccessStore(context.applicationContext) }
     val billingManager = remember { PlayBillingManager(context.applicationContext) }
     val billingState by billingManager.state.collectAsStateWithLifecycle()
     var alarms by remember { mutableStateOf(store.load()) }
     var wakeProgress by remember { mutableStateOf(wakeProgressStore.load()) }
-    var debugProPlan by remember { mutableStateOf(proAccessStore.load()) }
-    val proPlan = debugProPlan ?: billingState.activePlan
+    var presentedStreakDays by rememberSaveable { mutableStateOf(wakeProgress.streakDays) }
+    var savedAlarmId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val proEntitlement = billingState.entitlement
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
     var privacySheetOpen by rememberSaveable { mutableStateOf(false) }
     var route by rememberSaveable { mutableStateOf("home") }
@@ -114,6 +113,7 @@ internal fun YogaAlarmRoot(
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        billingManager.start()
         readinessRefresh += 1
         wakeProgress = wakeProgressStore.load()
     }
@@ -172,7 +172,7 @@ internal fun YogaAlarmRoot(
                     ?: AlarmConfig.create(editingAlarmId)
                 AlarmEditorScreen(
                     initialAlarm = initial,
-                    isPro = proPlan != null,
+                    isPro = proEntitlement != null,
                     onUpgrade = { proPaywallOpen = true },
                     onCancel = {
                         pendingEditorAlarm = null
@@ -180,6 +180,7 @@ internal fun YogaAlarmRoot(
                     },
                     onSave = { saved ->
                         saveAlarm(saved)
+                        savedAlarmId = saved.id
                         pendingEditorAlarm = null
                         route = "home"
                     },
@@ -242,7 +243,11 @@ internal fun YogaAlarmRoot(
             else -> AlarmHomeScreen(
                 alarms = alarms,
                 streakDays = wakeProgress.streakDays,
-                isPro = proPlan != null,
+                previousStreakDays = presentedStreakDays,
+                onStreakPresented = { presentedStreakDays = wakeProgress.streakDays },
+                savedAlarmId = savedAlarmId,
+                onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
+                isPro = proEntitlement != null,
                 onOpenPro = { proPaywallOpen = true },
                 onOpenPrivacy = { privacySheetOpen = true },
                 cameraReady = cameraReady,
@@ -330,9 +335,10 @@ internal fun YogaAlarmRoot(
 
     if (proPaywallOpen) {
         ProPaywallSheet(
-            activePlan = proPlan,
+            entitlement = proEntitlement,
             prices = billingState.offers.mapValues { it.value.formattedPrice },
             billingReady = billingState.connected,
+            loadingPrices = billingState.loadingOffers,
             purchaseInProgress = billingState.purchasing,
             billingMessage = billingState.message,
             onDismiss = { proPaywallOpen = false },
@@ -340,13 +346,9 @@ internal fun YogaAlarmRoot(
                 billingManager.purchase(context as Activity, selectedPlan)
             },
             onRestorePurchases = billingManager::restorePurchases,
+            onRetry = billingManager::start,
             onManageSubscription = {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PLAY_SUBSCRIPTIONS_URL)))
-            },
-            onActivateTestPlan = { selectedPlan ->
-                proAccessStore.activateForTesting(selectedPlan)
-                debugProPlan = selectedPlan
-                proPaywallOpen = false
             },
         )
     }

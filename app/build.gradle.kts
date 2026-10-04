@@ -12,8 +12,8 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 12
+        versionName = "1.0.11"
     }
 
     buildTypes {
