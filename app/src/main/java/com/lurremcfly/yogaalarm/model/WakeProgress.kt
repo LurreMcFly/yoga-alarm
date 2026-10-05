@@ -10,6 +10,7 @@ data class WakeProgress(
     val lastCompletionDate: LocalDate? = null,
     val emergencyPassMonth: YearMonth,
     val emergencyPassesUsed: Int = 0,
+    val completedDates: Set<LocalDate> = emptySet(),
 ) {
     val emergencyPassesRemaining: Int
         get() = (MONTHLY_EMERGENCY_PASSES - emergencyPassesUsed).coerceAtLeast(0)
@@ -17,6 +18,11 @@ data class WakeProgress(
     fun current(today: LocalDate): WakeProgress {
         val currentMonth = YearMonth.from(today)
         return copy(
+            completedDates = (completedDates.ifEmpty {
+                lastCompletionDate?.let { last ->
+                    (0 until streakDays.coerceIn(0, 5)).map { last.minusDays(it.toLong()) }.toSet()
+                } ?: emptySet()
+            }).filterTo(mutableSetOf()) { !it.isBefore(today.minusDays(4)) },
             streakDays = if (lastCompletionDate == today || lastCompletionDate == today.minusDays(1)) streakDays else 0,
             emergencyPassMonth = currentMonth,
             emergencyPassesUsed = if (emergencyPassMonth == currentMonth) emergencyPassesUsed else 0,
@@ -29,14 +35,15 @@ data class WakeProgress(
         return progress.copy(
             streakDays = if (progress.lastCompletionDate == today.minusDays(1)) progress.streakDays + 1 else 1,
             lastCompletionDate = today,
+            completedDates = progress.completedDates + today,
         )
     }
 
     fun stopAlarm(today: LocalDate, consumeEmergencyPass: Boolean): WakeProgress {
         val progress = current(today)
         return progress.copy(
-            streakDays = 0,
-            lastCompletionDate = null,
+            streakDays = if (progress.lastCompletionDate == today) progress.streakDays else 0,
+            lastCompletionDate = progress.lastCompletionDate?.takeIf { it == today },
             emergencyPassesUsed = if (consumeEmergencyPass && progress.emergencyPassesRemaining > 0) {
                 progress.emergencyPassesUsed + 1
             } else {

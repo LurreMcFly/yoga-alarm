@@ -79,6 +79,7 @@ internal fun CameraPermissionRoute(
     remainingSnoozes: Int,
     emergencyPassesRemaining: Int,
     streakDays: Int,
+    completedToday: Boolean,
     onSnooze: () -> Unit,
     onBack: () -> Unit,
     onStopAlarm: () -> Unit,
@@ -290,6 +291,7 @@ internal fun CameraPermissionRoute(
     if (emergencyStopOpen) {
         EmergencyStopDialog(
             streakDays = streakDays,
+            completedToday = completedToday,
             passesRemaining = emergencyPassesRemaining,
             onDismiss = { emergencyStopOpen = false },
             onConfirm = {
@@ -427,6 +429,7 @@ private fun CameraReadyScreen(
 @Composable
 private fun EmergencyStopDialog(
     streakDays: Int,
+    completedToday: Boolean,
     passesRemaining: Int,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
@@ -446,7 +449,8 @@ private fun EmergencyStopDialog(
         text = {
             Column {
                 Text(
-                    if (streakDays > 0) "Stopping now will end your $streakDays-day yoga streak."
+                    if (completedToday) "You already completed yoga today. Stopping keeps your $streakDays-day streak."
+                    else if (streakDays > 0) "Stopping now will end your $streakDays-day yoga streak."
                     else "Use this only when you cannot complete your yoga routine.",
                 )
                 Spacer(Modifier.height(8.dp))

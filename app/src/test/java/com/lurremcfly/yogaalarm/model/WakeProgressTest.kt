@@ -18,7 +18,10 @@ class WakeProgressTest {
     @Test
     fun multipleCompletionsOnSameDayCountOnce() {
         val progress = WakeProgress(4, today, YearMonth.from(today))
-        assertEquals(progress, progress.completeRoutine(today))
+        val completed = progress.completeRoutine(today)
+        assertEquals(4, completed.streakDays)
+        assertEquals(today, completed.lastCompletionDate)
+        assertEquals(completed, completed.completeRoutine(today))
     }
 
     @Test
@@ -36,6 +39,48 @@ class WakeProgressTest {
         assertNull(progress.lastCompletionDate)
         assertEquals(2, progress.emergencyPassesUsed)
         assertEquals(1, progress.emergencyPassesRemaining)
+    }
+
+    @Test
+    fun stoppingAfterCompletionPreservesTodayAndTomorrowsStreak() {
+        val completed = WakeProgress(8, today.minusDays(1), YearMonth.from(today))
+            .completeRoutine(today)
+        for (emergency in listOf(false, true)) {
+            val stopped = completed.stopAlarm(today, consumeEmergencyPass = emergency)
+            assertEquals(9, stopped.streakDays)
+            assertEquals(today, stopped.lastCompletionDate)
+            assertEquals(9, stopped.completeRoutine(today).streakDays)
+            assertEquals(10, stopped.completeRoutine(today.plusDays(1)).streakDays)
+            assertEquals(if (emergency) 1 else 0, stopped.emergencyPassesUsed)
+        }
+    }
+
+    @Test
+    fun normalStopBeforeTodayCompletionBreaksStreak() {
+        val stopped = WakeProgress(8, today.minusDays(1), YearMonth.from(today))
+            .stopAlarm(today, consumeEmergencyPass = false)
+        assertEquals(0, stopped.streakDays)
+        assertNull(stopped.lastCompletionDate)
+        assertEquals(1, stopped.completeRoutine(today).streakDays)
+    }
+
+    @Test
+    fun stoppingOrMissingADayPreservesRecentCompletedMarkers() {
+        val completed = WakeProgress(emergencyPassMonth = YearMonth.from(today))
+            .completeRoutine(today.minusDays(1))
+        assertEquals(setOf(today.minusDays(1)), completed.stopAlarm(today, false).completedDates)
+        val missed = completed.current(today.plusDays(1))
+        assertEquals(0, missed.streakDays)
+        assertEquals(setOf(today.minusDays(1)), missed.completedDates)
+        assertEquals(setOf(today.minusDays(1), today.plusDays(1)), missed.completeRoutine(today.plusDays(1)).completedDates)
+    }
+
+    @Test
+    fun existingStreakSeedsRecentMarkersAndOldMarkersExpire() {
+        val existing = WakeProgress(10, today, YearMonth.from(today)).current(today)
+        assertEquals((0L..4L).map { today.minusDays(it) }.toSet(), existing.completedDates)
+        assertEquals(setOf(today), existing.current(today.plusDays(4)).completedDates)
+        assertEquals(emptySet<LocalDate>(), existing.current(today.plusDays(5)).completedDates)
     }
 
     @Test

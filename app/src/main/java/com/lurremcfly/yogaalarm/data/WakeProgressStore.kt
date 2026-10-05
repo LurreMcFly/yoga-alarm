@@ -17,6 +17,8 @@ class WakeProgressStore(context: Context) {
                 ?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
                 ?: YearMonth.from(today),
             emergencyPassesUsed = preferences.getInt(KEY_EMERGENCY_PASSES_USED, 0),
+            completedDates = preferences.getStringSet(KEY_COMPLETED_DATES, emptySet()).orEmpty()
+                .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }.toSet(),
         ).current(today)
         save(progress)
         return progress
@@ -36,6 +38,7 @@ class WakeProgressStore(context: Context) {
             .putString(KEY_LAST_COMPLETION_DATE, progress.lastCompletionDate?.toString())
             .putString(KEY_EMERGENCY_PASS_MONTH, progress.emergencyPassMonth.toString())
             .putInt(KEY_EMERGENCY_PASSES_USED, progress.emergencyPassesUsed)
+            .putStringSet(KEY_COMPLETED_DATES, progress.completedDates.map { it.toString() }.toSet())
             .apply()
     }
 
@@ -44,5 +47,6 @@ class WakeProgressStore(context: Context) {
         const val KEY_LAST_COMPLETION_DATE = "last_completion_date"
         const val KEY_EMERGENCY_PASS_MONTH = "emergency_pass_month"
         const val KEY_EMERGENCY_PASSES_USED = "emergency_passes_used"
+        const val KEY_COMPLETED_DATES = "completed_dates"
     }
 }

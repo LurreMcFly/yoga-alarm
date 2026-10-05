@@ -41,6 +41,7 @@ data class BillingUiState(
     val loadingOffers: Boolean = true,
     val purchasing: Boolean = false,
     val entitlement: ProEntitlement? = null,
+    val subscriptionAutoRenewing: Boolean? = null,
     val offers: Map<ProPlan, BillingOffer> = emptyMap(),
     val message: String? = null,
 )
@@ -266,6 +267,7 @@ class PlayBillingManager(
 
     private suspend fun applyPurchases(purchases: List<Purchase>, replace: Boolean) {
         var entitlement = if (replace) null else state.value.entitlement
+        var subscriptionAutoRenewing = if (replace) null else state.value.subscriptionAutoRenewing
         val accepted = mutableListOf<Purchase>()
         for (purchase in purchases.distinctBy(Purchase::getPurchaseToken)) {
             if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) continue
@@ -273,6 +275,9 @@ class PlayBillingManager(
                 PurchaseEvidence(purchase.packageName, purchase.products, purchase.purchaseToken, purchase.purchaseState),
             ) ?: continue
             accepted += purchase
+            if (verified == ProEntitlement.SUBSCRIPTION) {
+                subscriptionAutoRenewing = purchase.isAutoRenewing
+            }
             if (entitlement != ProEntitlement.LIFETIME) entitlement = verified
         }
         val pending = purchases.any {
@@ -282,6 +287,7 @@ class PlayBillingManager(
         mutableState.value = state.value.copy(
             loading = false,
             entitlement = entitlement,
+            subscriptionAutoRenewing = subscriptionAutoRenewing.takeIf { entitlement == ProEntitlement.SUBSCRIPTION },
             message = when {
                 pending -> "Purchase pending. Pro unlocks after Google Play confirms payment."
                 replace && restoreRequested -> if (entitlement == null) "No previous Pro purchase was found." else "Pro purchase restored."

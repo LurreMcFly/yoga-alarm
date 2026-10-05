@@ -159,6 +159,12 @@ acknowledgement deadline to avoid automatic refunds.
 
 Before production:
 
+- Return verified subscription renewal status and `lineItems.expiryTime` from
+  `purchases.subscriptionsv2.get`. Display the localized access end date after
+  cancellation, or renewal date while auto-renewing. `Purchase.purchaseTime` is
+  the initial signup date and must never be used to estimate renewed expiry.
+  The current Settings and Pro sheets show renewal cancellation from
+  `Purchase.isAutoRenewing` and link directly to Google Play for the exact date.
 - Replace `ClientPurchaseVerifier` with a backend request. Verify tokens through the
   Google Play Developer API, validate package/product, and return trusted entitlement,
   base plan and expiry. Do not treat the client-provided state as proof.

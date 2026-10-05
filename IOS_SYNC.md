@@ -6,6 +6,28 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+### SYNC-012 — Home header supports larger text
+
+Status: pending
+Date: 2026-10-05
+Android commit: <pending>
+
+Changes:
+- Keep the full “Your alarms” title readable at larger text/display sizes. The title must wrap rather than truncate to “Your ala…”. When the title and Pro/add controls do not fit on one row, move the controls together onto a second row with 10-point vertical spacing. Preserve native text scaling; do not disable Dynamic Type to make the row fit.
+- The Pro pill grows with its text and padding rather than using a fixed circular size. Keep both Pro and add-alarm actions available.
+- A subtle Settings action at the top right opens the settings sheet; see SYNC-005 for privacy and SYNC-010 for subscription controls.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+
+iOS acceptance checks:
+- Check default and largest accessibility text sizes, larger display size, and a small phone. Confirm the complete title remains readable, controls reflow, and Settings remains reachable.
+
+Validation status:
+- Android debug Kotlin compilation and eight focused WakeProgress tests passed for the 2026-10-05 changes. Device layout, animation timing, and real Play cancellation still need verification. iOS changes remain pending.
+
 ### SYNC-011 — Routine and alarm feedback animations
 
 Status: pending
@@ -36,8 +58,8 @@ Sequence, measured from entering COMPLETE:
 | --- | --- |
 | 0–900 ms | The sun rises 90 points from below its final center, scales from 80% to 100%, and fades from transparent to opaque. The greeting and pose-count text fade in alongside it. |
 | Starting at 0 ms | The number appears at the moving sun center in dark forest `#153523`. It fades in and springs from 25% of its large scale to full size, with a small overshoot (damping 0.65, stiffness 180). |
-| 0–1100 ms | Keep the number centered inside the sun as the sun rises. The flame and “-day yoga streak” suffix remain invisible; their final layout space is already reserved. |
-| 1100–1950 ms | Over 850 ms, move the same number from the sun center to its measured position in the footer label while shrinking to its normal 16-point size. Interpolate its color from dark forest to lime. Fade the flame and suffix from transparent to opaque over the same docking motion. |
+| During entrance, then 3000 ms after both entrance animations settle | Keep the number centered inside the sun, including while the sun rises. Hold the fully presented number for 3 seconds before docking. The flame and “-day yoga streak” suffix remain invisible; their final layout space is already reserved. |
+| After the 3-second hold | Over 850 ms, move the same number from the sun center to its measured position in the footer label while shrinking to its normal 16-point size. Interpolate its color from dark forest to lime. Fade the flame and suffix from transparent to opaque over the same docking motion. |
 | After docking | Scale the entire streak label to 106% over 140 ms, then spring back to 100% (damping 0.6). Leave the sun, greeting, label, and button stationary afterward. |
 
 Number sizing and edge cases:
@@ -64,15 +86,18 @@ Number sizing and edge cases:
 - Replace the feedback with “↶ Return to pose” and “[N] sec remaining · your time is saved”, using the same 180/120 ms incoming/outgoing crossfade. Show existing framing/error guidance below it when needed. Camera retry and applicable stop actions remain available.
 - On returning to HOLDING, transition the ring back to lime over 220 ms, repeat the single 107% pulse, restore hold feedback, and continue from saved time/progress. Do not replay the large pose illustration merely because tracking resumes on the same pose. Rapid tracking changes cancel/retarget feedback; never queue repeated pulses or affect pose detection.
 
-#### 4. Streak earned and tap bounce
+#### 4. Streak earned and flame wobble
 
 - Trigger an earned celebration when the home streak count becomes greater than the last count presented in this app session. Initialize that presented count from stored progress on a cold launch, so opening the app with an existing streak does not celebrate it again. Preserve presentation state across screen recreation.
-- Keep the existing rounded white streak card (24-point corners, 82% white surface). Its positive label remains “🔥 N-day yoga streak” in dark ink `#142018`, 18-point bold text, with the existing secondary reminder.
+- Use a rounded white streak card (24-point corners, 82% white surface, hairline border, 20-point padding). Replace the old label/reminder with a 32-point flame, a 40-point bold count, and a 16-point bold “day streak” label, in dark ink `#142018`. Place five rolling day markers alongside the label; if they do not fit, wrap all five together onto a second row with 16-point vertical spacing. Preserve native text scaling.
+- Always show exactly five consecutive local calendar dates: two days before today, today, and two days after today. These are a sliding window, not a fixed week or carousel. Refresh when the app resumes; while open Android checks the local date every minute. Week/month/year boundaries must not reset or reorder the window.
+- Each marker shows the locale's narrow weekday label above a 24-point rounded square (7-point corners), separated by 6 points. Keep 8 points between marker columns. Completed dates show green `#81BD50` squares with white checkmarks; unfinished and future dates show empty hairline squares. Today's weekday uses forest text and its square has a 2-point outline (forest when unfinished, green when completed). Other squares have 1-point borders. Provide accessible full dates, today status, and completed/not-completed/upcoming descriptions so repeated weekday initials are unambiguous.
+- Persist recent actual completion dates separately from the current streak; retain today and the previous four calendar days. Stopping a later alarm or breaking a streak does not erase recent completed-day checkmarks. Multiple same-day completions produce one marker, test routines never add markers, and future dates never show checks. On upgrade with no history, reconstruct up to five known consecutive completed dates from the existing streak count and last completion date; do not invent older interrupted history. The relevant persistence/model files are listed below.
 - Initially show the previous count. After 100 ms, change to the earned count: the old number slides upward by its own height over 350 ms and fades out over 200 ms; the new number enters from one height below over 350 ms and fades in over 250 ms. Animate the entire integer string, including transitions such as 9 → 10; do not cycle through intermediate counts.
-- At the same time as the number change, scale the whole card to 102.5% over 130 ms, then spring to 100% (damping 0.5). Independently scale the flame to 125% over 130 ms, then spring to 100% (damping 0.45). The label and card settle after one bounce.
-- Consume the earned presentation once when home presents it. Ordinary navigation, reopening the same screen, and a same-day routine that does not increase the count must not roll the number or replay the earned bounce.
-- Tapping a positive streak card runs just the card/flame bounce immediately. Keep the count unchanged: no increment, persistence, navigation, or new earned event. Repeated taps restart/retarget the bounce from its current scale rather than stacking animations.
-- For zero streaks, keep “Start your yoga streak” and its existing explanatory copy; there is no earned-count roll or tap celebration. If the streak decreases/resets, show the new value without an earned celebration.
+- At the same time as the number change, rotate only the flame to −18 degrees over 100 ms, then +18 degrees over 180 ms, then spring back to zero (damping 0.45). The card and label keep their normal size and position.
+- Consume the earned presentation once when home presents it. Ordinary navigation, reopening the same screen, and a same-day routine that does not increase the count must not roll the number or replay the earned wobble.
+- Tapping a positive streak card runs only the flame wobble immediately. No gray pressed/selected background, card scaling, or label scaling. Keep the count unchanged: no increment, persistence, navigation, or new earned event. Repeated taps restart/retarget the wobble from its current angle rather than stacking animations.
+- For zero streaks, show “🔥 0 day streak” and the same five markers, preserving any known recent completions. There is no earned-count roll or tap celebration. If the streak decreases/resets, show the new value without an earned celebration.
 
 #### 5. Alarm changes
 
@@ -88,8 +113,12 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt (existing completion callback and wake deadline)
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineViewModel.kt (existing hold/transition state and timing)
+- app/src/main/java/com/lurremcfly/yogaalarm/model/WakeProgress.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/data/WakeProgressStore.kt
+- app/src/test/java/com/lurremcfly/yogaalarm/model/WakeProgressTest.kt
 
 Android validation:
+- Rolling five-day card: debug Kotlin compilation, ten focused `WakeProgressTest` cases, and whitespace checks passed. On-device layout and midnight rollover checks remain pending.
 - Kotlin compilation and the 13 existing `RoutineViewModelTest` cases passed. On-device visual verification is still pending; no Android device was connected during implementation.
 
 iOS acceptance checks:
@@ -97,7 +126,8 @@ iOS acceptance checks:
 - Test smaller screens, landscape, large text, and safe-area insets. The sun should fit above the footer and the number should land at the actual label position; Done/back must remain usable during every stage.
 - Dismiss completion before docking and recreate the screen after presentation. There must be no delayed navigation, duplicate streak day, forced replay, or extension of the completion wake window. Confirm test routines leave stored streak progress unchanged.
 - Lose and regain tracking partway through a hold, including repeated rapid losses and a camera error. Confirm saved time/progress freezes and resumes, text/color/pulse changes settle, and retry/stop actions work. Complete a non-final pose; confirm check/glow/next guide fit within the original 3 seconds. Complete the final pose; confirm sunrise appears directly.
-- Earn a day and return home, then tap repeatedly, navigate away/back, recreate the screen, and cold launch. Only the earned increase rolls the count; taps only bounce. Check 9 → 10, same-day completion, and streak reset.
+- Earn a day and return home, then tap repeatedly, navigate away/back, recreate the screen, and cold launch. Only the earned increase rolls the count; taps only wobble the flame and never gray or resize the card. Check 9 → 10, same-day completion, and streak reset. Confirm the completion number holds for 3 seconds after its entrance, then docks.
+- Check all five markers over midnight, month/year boundaries, a streak break, multiple same-day completions, restart, and upgrade from the old streak-only storage. Confirm recent completed dates survive a reset and future days remain empty. At larger text sizes, all five markers wrap together and their full-date accessibility descriptions remain available.
 - Save new/existing alarms, scroll to an offscreen saved card, toggle rapidly, and delete first/middle/last cards. Confirm correct card identity, one saved entrance, smooth reflow, and immediate schedule/persistence updates. Test scheduling failure: the disabled state and existing failure message must remain accurate.
 - Repeat the flows with motion disabled/Reduce Motion. Final states should appear immediately without celebration waits, count mutations, timing changes, or blocked controls.
 
@@ -118,6 +148,8 @@ Changes:
 - Keep unavailable plans visible even when other plans can be purchased. Offer a distinct Retry action when any plan is unavailable after loading or the store is disconnected; disable purchase when no plan is available or the store is disconnected. Restore Purchases remains an ownership action. The home entry says “GET PRO”, avoiding the implication of a free trial. Disable plan changes and repeat checkout while a purchase is opening.
 - One entitlement source grants Pro for a purchased subscription or lifetime, with lifetime taking precedence. Pending payments never grant access; show a pending-payment message. Cancellation does not grant access. Already-owned errors trigger restoration. Active Pro disables new purchases; subscription owners can open store subscription management.
 - Checkout cancellation returns to the paywall without an error or stuck purchase button. Payment failure leaves Pro locked and allows retry. Cancelling subscription renewal must not remove access before the paid entitlement expires.
+- Add “Manage or cancel subscription” under Settings → Pro and in the Pro sheet for subscription owners. Open the native store management UI for this app's subscription; Android deep-links with the `yoga_alarm_pro` product and package. Lifetime users have no cancellation action; free users can open Get Pro from Settings.
+- On store refresh after renewal cancellation, show “Renewal canceled” while preserving Pro through the paid period. Android reads the store's auto-renewing flag and currently directs users to Google Play for the exact end date. Do not invent a date from the initial purchase time. Displaying “Pro available until [localized date]” in Android remains pending backend verification of `purchases.subscriptionsv2.get` → `lineItems.expiryTime`; on iOS use verified native expiry/renewal information when available. Show renewal date for renewing subscriptions and access end date for canceled subscriptions; lifetime has no expiry.
 - Restore on connection, foreground resume, and explicit Restore Purchases. Successful empty ownership queries remove access; temporary failures preserve the current session's entitlement. No entitlement persists across process death: offline cold starts stay free until the store responds.
 - Remove the debug/free activation shortcut in all builds. All checkout uses the store; old debug preferences are ignored.
 - Acknowledge accepted purchases (never consume lifetime), retry transient acknowledgement failures, and retry on future restoration. Interim verification trusts client purchase state; production needs backend verification, expiry/revocation handling and reliable acknowledgement. Restored subscriptions display “Subscription” because client records do not identify their base plan reliably.
@@ -145,6 +177,7 @@ iOS acceptance checks:
 - Cancel checkout, fail payment, and leave a purchase pending; none may grant new Pro. Complete a pending payment later and confirm access updates on return/restart.
 - Reinstall and restore both subscription and lifetime purchases. Repeat Restore Purchases without duplicating entitlements or charging again.
 - Confirm active Pro prevents a second purchase, lifetime takes precedence, and subscription management remains accessible for subscription owners.
+- Open management from Settings and the Pro sheet. Cancel renewal, return to the app, and verify canceled status with Pro retained. Confirm the correct paid-through date from verified store data; the Android in-app date remains a backend dependency.
 - Verify renewal cancellation retains paid access, expiry/revocation removes the affected entitlement, and an independent valid lifetime purchase still grants Pro.
 - Exercise unavailable products, temporary store failures, and reconnection. Verify there are no hardcoded price fallbacks or release free-Pro shortcuts.
 - Verify the purchase area is visible immediately and stays fixed while scrolling on small screens and with larger text. Switching plans updates the billed amount, purchase wording, and renewal terms. Check the available-plan fallback, Retry, and separate restoration action.
@@ -228,9 +261,12 @@ Android commit: <pending>
 
 Changes:
 - The Privacy & safety policy link opens https://www.yogaalarm.com/privacy.
+- Remove the persistent Privacy & safety button from the bottom of the home screen. Place it under Settings, reached through a subtle top-right home action. Opening privacy closes Settings and shows the existing camera/privacy/safety explanation and Read privacy policy action. Let the explanation scroll and the policy button grow for larger text.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
 
 iOS notes:
 - Use the same public policy URL.
@@ -304,11 +340,11 @@ Changes:
 - While an alarm is ringing, its system notification offers a clear Start movement action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
 - Opening a system shortcut for an upcoming alarm opens the app without starting playback or treating the alarm as fired. Ringing notifications still open the active routine.
 - Rescheduling enabled alarms after a clock or timezone change must preserve any pending snooze and its remaining snooze count. Explicitly editing, disabling, or deleting an alarm still cancels its pending snooze.
-- A subtle Emergency stop remains available. It warns that the streak will end and requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled.
+- A subtle Emergency stop remains available. Before today's yoga is completed, it warns that the streak will end; after completion today, it says stopping keeps the streak. It requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled. An emergency stop still consumes an available pass after today's completion.
 - Camera permission denial or a camera failure provides an immediate technical Stop action. Technical exits do not consume a pass or break the streak.
-- The app tracks one global daily yoga streak. Completing at least one genuinely fired alarm through yoga starts or extends it; multiple completions on one day count once. Snoozing preserves it. A normal or emergency stop breaks it. Test routines do not affect it.
+- The app tracks one global daily yoga streak. Completing at least one genuinely fired alarm through yoga starts or extends it; multiple completions on one local calendar day count once. Snoozing preserves it. A normal or emergency stop before today's completion breaks it. Once completed today, stopping a later alarm preserves both the streak and today's completion date; another completion that day still counts once, and tomorrow can extend the streak. Missing a full day still resets it. Test routines do not affect it.
 - The streak appears on the alarm home screen, the completed-routine screen, and in the emergency-stop warning.
-- With no streak, show "Start your yoga streak" and "Finish your yoga routine when your alarm rings to start your streak." Test routines still do not start a streak.
+- With no streak, the home card shows “🔥 0 day streak” and the five rolling day markers described in SYNC-011. Test routines still do not start a streak or add completed-day markers.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmConfig.kt

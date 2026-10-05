@@ -393,15 +393,13 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
             return@LaunchedEffect
         }
         coroutineScope {
-            launch { sunrise.animateTo(1f, tween(900)) }
             launch { entrance.animateTo(1f, spring(dampingRatio = 0.65f, stiffness = 180f)) }
-            launch {
-                delay(1100)
-                docking.animateTo(1f, tween(850))
-                bounce.animateTo(1.06f, tween(140))
-                bounce.animateTo(1f, spring(dampingRatio = 0.6f))
-            }
+            launch { sunrise.animateTo(1f, tween(900)) }
         }
+        delay(3_000)
+        docking.animateTo(1f, tween(850))
+        bounce.animateTo(1.06f, tween(140))
+        bounce.animateTo(1f, spring(dampingRatio = 0.6f))
     }
     BoxWithConstraints(
         Modifier.fillMaxSize()

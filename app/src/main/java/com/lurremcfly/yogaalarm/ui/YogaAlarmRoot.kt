@@ -41,6 +41,8 @@ import com.lurremcfly.yogaalarm.data.AlarmStore
 import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import java.time.LocalDate
 
 @Composable
 internal fun YogaAlarmRoot(
@@ -57,11 +59,13 @@ internal fun YogaAlarmRoot(
     val billingState by billingManager.state.collectAsStateWithLifecycle()
     var alarms by remember { mutableStateOf(store.load()) }
     var wakeProgress by remember { mutableStateOf(wakeProgressStore.load()) }
+    var today by remember { mutableStateOf(LocalDate.now()) }
     var presentedStreakDays by rememberSaveable { mutableStateOf(wakeProgress.streakDays) }
     var savedAlarmId by rememberSaveable { mutableStateOf<Long?>(null) }
     val proEntitlement = billingState.entitlement
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
     var privacySheetOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsSheetOpen by rememberSaveable { mutableStateOf(false) }
     var route by rememberSaveable { mutableStateOf("home") }
     var editingAlarmId by rememberSaveable { mutableStateOf(-1L) }
     var pendingEditorAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
@@ -113,9 +117,20 @@ internal fun YogaAlarmRoot(
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        today = LocalDate.now()
         billingManager.start()
         readinessRefresh += 1
         wakeProgress = wakeProgressStore.load()
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            val currentDate = LocalDate.now()
+            if (currentDate != today) {
+                today = currentDate
+                wakeProgress = wakeProgressStore.load(today)
+            }
+        }
     }
     val cameraReady = remember(readinessRefresh) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
@@ -151,6 +166,7 @@ internal fun YogaAlarmRoot(
         val fired = alarms.firstOrNull { it.id == alarmId } ?: return@LaunchedEffect
         proPaywallOpen = false
         privacySheetOpen = false
+        settingsSheetOpen = false
         editingAlarmId = fired.id
         pendingEditorAlarm = fired
         cameraAlarm = fired
@@ -211,6 +227,7 @@ internal fun YogaAlarmRoot(
                     remainingSnoozes = remainingSnoozes,
                     emergencyPassesRemaining = wakeProgress.emergencyPassesRemaining,
                     streakDays = wakeProgress.streakDays,
+                    completedToday = wakeProgress.lastCompletionDate == java.time.LocalDate.now(),
                     onSnooze = {
                         val scheduled = AlarmScheduler.scheduleSnooze(
                             context = context,
@@ -244,12 +261,14 @@ internal fun YogaAlarmRoot(
                 alarms = alarms,
                 streakDays = wakeProgress.streakDays,
                 previousStreakDays = presentedStreakDays,
+                today = today,
+                completedDates = wakeProgress.completedDates,
                 onStreakPresented = { presentedStreakDays = wakeProgress.streakDays },
                 savedAlarmId = savedAlarmId,
                 onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
                 isPro = proEntitlement != null,
                 onOpenPro = { proPaywallOpen = true },
-                onOpenPrivacy = { privacySheetOpen = true },
+                onOpenSettings = { settingsSheetOpen = true },
                 cameraReady = cameraReady,
                 notificationsReady = notificationsReady,
                 fullScreenReady = fullScreenReady,
@@ -336,6 +355,7 @@ internal fun YogaAlarmRoot(
     if (proPaywallOpen) {
         ProPaywallSheet(
             entitlement = proEntitlement,
+            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
             prices = billingState.offers.mapValues { it.value.formattedPrice },
             billingReady = billingState.connected,
             loadingPrices = billingState.loadingOffers,
@@ -353,6 +373,25 @@ internal fun YogaAlarmRoot(
         )
     }
 
+    if (settingsSheetOpen) {
+        AppSettingsSheet(
+            entitlement = proEntitlement,
+            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
+            onDismiss = { settingsSheetOpen = false },
+            onOpenPro = {
+                settingsSheetOpen = false
+                proPaywallOpen = true
+            },
+            onManageSubscription = {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PLAY_SUBSCRIPTIONS_URL)))
+            },
+            onOpenPrivacy = {
+                settingsSheetOpen = false
+                privacySheetOpen = true
+            },
+        )
+    }
+
     if (privacySheetOpen) {
         PrivacyInfoSheet(
             onDismiss = { privacySheetOpen = false },
@@ -363,5 +402,5 @@ internal fun YogaAlarmRoot(
     }
 }
 
-private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions"
+private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions?sku=yoga_alarm_pro&package=com.lurremcfly.yogaalarm"
 private const val PRIVACY_POLICY_URL = "https://www.yogaalarm.com/privacy"

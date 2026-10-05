@@ -15,10 +15,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,7 +38,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -72,21 +74,25 @@ import androidx.compose.ui.window.PopupProperties
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.util.Locale
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import androidx.compose.ui.semantics.contentDescription
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlarmHomeScreen(
     alarms: List<AlarmConfig>,
     streakDays: Int,
     previousStreakDays: Int,
+    today: LocalDate,
+    completedDates: Set<LocalDate>,
     onStreakPresented: () -> Unit,
     savedAlarmId: Long?,
     onSavedAlarmPresented: (Long) -> Unit,
     isPro: Boolean,
     onOpenPro: () -> Unit,
-    onOpenPrivacy: () -> Unit,
+    onOpenSettings: () -> Unit,
     cameraReady: Boolean,
     notificationsReady: Boolean,
     fullScreenReady: Boolean,
@@ -115,7 +121,7 @@ fun AlarmHomeScreen(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 22.dp,
-                top = 56.dp,
+                top = 64.dp,
                 end = 22.dp,
                 bottom = 110.dp,
             ),
@@ -129,32 +135,23 @@ fun AlarmHomeScreen(
                         compactHeader -> 30.sp
                         else -> 38.sp
                     }
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Your alarms",
-                                color = Ink,
-                                fontSize = headerFontSize,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                            )
-                        }
-                        Spacer(Modifier.width(if (compactHeader) 8.dp else 16.dp))
+                        Text(
+                            "Your alarms",
+                            color = Ink,
+                            fontSize = headerFontSize,
+                            fontWeight = FontWeight.Bold,
+                        )
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(if (compactHeader) 8.dp else 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Surface(
-                                modifier = if (isPro) {
-                                    Modifier
-                                        .size(if (compactHeader) 46.dp else 50.dp)
-                                        .clickable(onClick = onOpenPro)
-                                } else {
-                                    Modifier.clickable(onClick = onOpenPro)
-                                },
+                                modifier = Modifier.clickable(onClick = onOpenPro),
                                 shape = RoundedCornerShape(999.dp),
                                 color = if (isPro) AlarmLime else Color.White,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, if (isPro) AlarmLime else Hairline),
@@ -162,7 +159,7 @@ fun AlarmHomeScreen(
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
                                         if (isPro) "PRO" else "GET PRO",
-                                        modifier = if (isPro) Modifier else Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
                                         color = Forest,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
@@ -187,7 +184,7 @@ fun AlarmHomeScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
-            item(key = "streak") { StreakCard(streakDays, previousStreakDays, onStreakPresented) }
+            item(key = "streak") { StreakCard(streakDays, previousStreakDays, today, completedDates, onStreakPresented) }
 
             if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
                 item {
@@ -235,13 +232,11 @@ fun AlarmHomeScreen(
         }
         TextButton(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(bottom = 8.dp),
-            colors = ButtonDefaults.textButtonColors(containerColor = Color(0xFFEAF4FF)),
-            onClick = onOpenPrivacy,
+                .align(Alignment.TopEnd)
+                .padding(end = 14.dp, top = 4.dp),
+            onClick = onOpenSettings,
         ) {
-            Text("Privacy & safety", color = MutedInk, fontSize = 13.sp)
+            Text("Settings", color = MutedInk, fontSize = 13.sp)
         }
         alarms.firstOrNull { it.id == selectedAlarmId }?.let { alarm ->
             Popup(
@@ -285,12 +280,18 @@ fun AlarmHomeScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StreakCard(streakDays: Int, previousStreakDays: Int, onPresented: () -> Unit) {
+private fun StreakCard(
+    streakDays: Int,
+    previousStreakDays: Int,
+    today: LocalDate,
+    completedDates: Set<LocalDate>,
+    onPresented: () -> Unit,
+) {
     var displayedDays by rememberSaveable { mutableIntStateOf(minOf(previousStreakDays, streakDays)) }
     var bounceRequest by remember { mutableIntStateOf(0) }
-    val cardScale = remember { Animatable(1f) }
-    val flameScale = remember { Animatable(1f) }
+    val flameRotation = remember { Animatable(0f) }
     LaunchedEffect(streakDays) {
         val earned = streakDays > previousStreakDays
         onPresented()
@@ -304,51 +305,74 @@ private fun StreakCard(streakDays: Int, previousStreakDays: Int, onPresented: ()
     }
     LaunchedEffect(bounceRequest) {
         if (bounceRequest == 0) return@LaunchedEffect
-        coroutineScope {
-            launch {
-                cardScale.animateTo(1.025f, tween(130))
-                cardScale.animateTo(1f, spring(dampingRatio = 0.5f))
-            }
-            launch {
-                flameScale.animateTo(1.25f, tween(130))
-                flameScale.animateTo(1f, spring(dampingRatio = 0.45f))
-            }
-        }
+        flameRotation.animateTo(-18f, tween(100))
+        flameRotation.animateTo(18f, tween(180))
+        flameRotation.animateTo(0f, spring(dampingRatio = 0.45f))
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().graphicsLayer {
-            scaleX = cardScale.value; scaleY = cardScale.value
-        }.clickable(enabled = streakDays > 0, onClickLabel = "Celebrate streak") { bounceRequest++ },
+        modifier = Modifier.fillMaxWidth().clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            enabled = streakDays > 0,
+            onClickLabel = "Celebrate streak",
+        ) { bounceRequest++ },
         shape = RoundedCornerShape(24.dp),
         color = Color.White.copy(alpha = 0.82f),
         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
     ) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
-            if (streakDays > 0) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🔥 ", fontSize = 18.sp, modifier = Modifier.graphicsLayer {
-                        scaleX = flameScale.value; scaleY = flameScale.value
-                    })
-                    AnimatedContent(
-                        targetState = displayedDays,
-                        transitionSpec = {
-                            (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
-                                (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
-                        }, label = "Earned streak count",
-                    ) { days ->
-                        Text(days.toString(), color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    }
-                    Text("-day yoga streak", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(Modifier.align(Alignment.CenterVertically), verticalAlignment = Alignment.CenterVertically) {
+                Text("🔥", fontSize = 32.sp, modifier = Modifier.graphicsLayer {
+                    rotationZ = flameRotation.value
+                })
+                Spacer(Modifier.width(8.dp))
+                AnimatedContent(
+                    targetState = displayedDays,
+                    transitionSpec = {
+                        (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
+                            (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
+                    }, label = "Earned streak count",
+                ) { days ->
+                    Text(days.toString(), color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold)
                 }
-            } else {
-                Text("Start your yoga streak", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Text("day streak", modifier = Modifier.weight(1f, fill = false), color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             }
-            Text(
-                if (streakDays > 0) "Complete tomorrow’s alarm to keep it going."
-                else "Finish your yoga routine when your alarm rings to start your streak.",
-                color = MutedInk,
-                fontSize = 13.sp,
-            )
+            Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (offset in -2L..2L) {
+                    val date = today.plusDays(offset)
+                    val completed = date <= today && date in completedDates
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clearAndSetSemantics {
+                            contentDescription = "${date.format(DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL))}, " +
+                                (if (date == today) "today, " else "") +
+                                (if (completed) "yoga completed" else if (date > today) "upcoming" else "yoga not completed")
+                        },
+                    ) {
+                        Text(
+                            date.dayOfWeek.getDisplayName(java.time.format.TextStyle.NARROW, Locale.getDefault()),
+                            color = if (date == today) Forest else MutedInk,
+                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Box(
+                            Modifier.size(24.dp).clip(RoundedCornerShape(7.dp))
+                                .background(if (completed) Color(0xFF81BD50) else Color.Transparent)
+                                .border(if (date == today) 2.dp else 1.dp,
+                                    if (completed) Color(0xFF81BD50) else if (date == today) Forest else Hairline,
+                                    RoundedCornerShape(7.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (completed) Text("✓", color = Color.White, fontSize = with(LocalDensity.current) { 17.dp.toSp() }, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
         }
     }
 }

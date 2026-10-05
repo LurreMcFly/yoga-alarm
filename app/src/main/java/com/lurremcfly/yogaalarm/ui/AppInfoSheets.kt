@@ -49,6 +49,52 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun AppSettingsSheet(
+    entitlement: ProEntitlement?,
+    subscriptionAutoRenewing: Boolean?,
+    onDismiss: () -> Unit,
+    onOpenPro: () -> Unit,
+    onManageSubscription: () -> Unit,
+    onOpenPrivacy: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        ) {
+            Text("Settings", color = Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            Text("Pro", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            if (entitlement == ProEntitlement.SUBSCRIPTION) {
+                Text(
+                    if (subscriptionAutoRenewing == false) "Renewal canceled. Pro remains active until your paid period ends."
+                    else "Manage your renewal and payments in Google Play.",
+                    color = MutedInk,
+                )
+                TextButton(onClick = onManageSubscription) {
+                    Text("Manage or cancel subscription", color = Forest)
+                }
+                Text("Google Play shows your exact renewal or access end date.", color = MutedInk, fontSize = 14.sp)
+            } else {
+                TextButton(onClick = onOpenPro) {
+                    Text(if (entitlement == ProEntitlement.LIFETIME) "Lifetime Pro active" else "Get Pro", color = Forest)
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = Hairline)
+            TextButton(onClick = onOpenPrivacy) {
+                Text("Privacy & safety", color = Forest)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 fun PrivacyInfoSheet(
     onDismiss: () -> Unit,
     onReadPolicy: () -> Unit,
@@ -60,6 +106,7 @@ fun PrivacyInfoSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
         ) {
             Text("Privacy & safety", color = Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold)
@@ -83,7 +130,7 @@ fun PrivacyInfoSheet(
             Button(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(54.dp),
+                    .heightIn(min = 54.dp),
                 onClick = onReadPolicy,
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
@@ -98,6 +145,7 @@ fun PrivacyInfoSheet(
 @Composable
 fun ProPaywallSheet(
     entitlement: ProEntitlement?,
+    subscriptionAutoRenewing: Boolean?,
     prices: Map<ProPlan, String>,
     billingReady: Boolean,
     loadingPrices: Boolean,
@@ -216,18 +264,22 @@ fun ProPaywallSheet(
                         Text("Retry", color = Forest)
                     }
                 }
-                Row(
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     TextButton(onClick = onRestorePurchases, enabled = !purchaseInProgress) {
                         Text("Restore purchases", color = Forest, fontWeight = FontWeight.SemiBold)
                     }
                     if (entitlement == ProEntitlement.SUBSCRIPTION) {
                         TextButton(onClick = onManageSubscription) {
-                            Text("Manage subscription", color = Forest, fontWeight = FontWeight.SemiBold)
+                            Text("Manage or cancel subscription", color = Forest, fontWeight = FontWeight.SemiBold)
                         }
+                        Text(
+                            if (subscriptionAutoRenewing == false) "Renewal canceled. Pro stays active until your paid period ends. See the exact end date in Google Play."
+                            else "Google Play shows your renewal date and cancellation options.",
+                            color = MutedInk, fontSize = 12.sp, textAlign = TextAlign.Center,
+                        )
                     }
                 }
                 billingMessage?.let { message ->
