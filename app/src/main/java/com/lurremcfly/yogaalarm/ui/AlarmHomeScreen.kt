@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +43,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -118,12 +120,12 @@ fun AlarmHomeScreen(
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 22.dp,
-                top = 64.dp,
+                top = 12.dp,
                 end = 22.dp,
-                bottom = 110.dp,
+                bottom = 24.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -131,9 +133,9 @@ fun AlarmHomeScreen(
                 BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                     val compactHeader = maxWidth < 340.dp
                     val headerFontSize = when {
-                        maxWidth < 300.dp -> 24.sp
-                        compactHeader -> 30.sp
-                        else -> 38.sp
+                        maxWidth < 300.dp -> 22.sp
+                        compactHeader -> 24.sp
+                        else -> 28.sp
                     }
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
@@ -142,46 +144,51 @@ fun AlarmHomeScreen(
                     ) {
                         Text(
                             "Your alarms",
+                            modifier = Modifier.align(Alignment.CenterVertically),
                             color = Ink,
                             fontSize = headerFontSize,
                             fontWeight = FontWeight.Bold,
                         )
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(if (compactHeader) 8.dp else 10.dp),
+                            modifier = Modifier.align(Alignment.CenterVertically),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Surface(
-                                modifier = Modifier.clickable(onClick = onOpenPro),
+                            if (!isPro) Surface(
+                                modifier = Modifier.heightIn(min = 48.dp).clickable(onClick = onOpenPro),
                                 shape = RoundedCornerShape(999.dp),
-                                color = if (isPro) AlarmLime else Color.White,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isPro) AlarmLime else Hairline),
+                                color = Color.White,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        if (isPro) "PRO" else "GET PRO",
-                                        modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+                                        "GET PRO",
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                         color = Forest,
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
                                     )
                                 }
                             }
-                            Box(
+                            IconButton(
+                                onClick = onAddAlarm,
                                 modifier = Modifier
-                                    .size(if (compactHeader) 52.dp else 56.dp)
+                                    .size(48.dp)
                                     .clip(CircleShape)
                                     .background(Color.White)
-                                    .border(1.dp, Hairline, CircleShape)
-                                    .clickable(onClick = onAddAlarm),
-                                contentAlignment = Alignment.Center,
+                                    .border(1.dp, Hairline, CircleShape),
                             ) {
-                                Text("+", color = Ink, fontSize = 36.sp, fontWeight = FontWeight.Light)
+                                Icon(painterResource(R.drawable.ic_add), contentDescription = "Add alarm",
+                                    tint = Ink, modifier = Modifier.size(28.dp))
+                            }
+                            IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
+                                Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings",
+                                    tint = MutedInk, modifier = Modifier.size(24.dp))
                             }
                         }
                     }
                 }
-                Spacer(Modifier.height(24.dp))
             }
 
             item(key = "streak") { StreakCard(streakDays, previousStreakDays, today, completedDates, onStreakPresented) }
@@ -229,14 +236,6 @@ fun AlarmHomeScreen(
                 }
             }
 
-        }
-        TextButton(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(end = 14.dp, top = 4.dp),
-            onClick = onOpenSettings,
-        ) {
-            Text("Settings", color = MutedInk, fontSize = 13.sp)
         }
         alarms.firstOrNull { it.id == selectedAlarmId }?.let { alarm ->
             Popup(
@@ -321,26 +320,27 @@ private fun StreakCard(
         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
     ) {
         FlowRow(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
         ) {
-            Row(Modifier.align(Alignment.CenterVertically), verticalAlignment = Alignment.CenterVertically) {
-                Text("🔥", fontSize = 32.sp, modifier = Modifier.graphicsLayer {
-                    rotationZ = flameRotation.value
-                })
-                Spacer(Modifier.width(8.dp))
-                AnimatedContent(
-                    targetState = displayedDays,
-                    transitionSpec = {
-                        (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
-                            (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
-                    }, label = "Earned streak count",
-                ) { days ->
-                    Text(days.toString(), color = Ink, fontSize = 40.sp, fontWeight = FontWeight.Bold)
+            Column(Modifier.align(Alignment.CenterVertically)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🔥", fontSize = 24.sp, modifier = Modifier.graphicsLayer {
+                        rotationZ = flameRotation.value
+                    })
+                    Spacer(Modifier.width(8.dp))
+                    AnimatedContent(
+                        targetState = displayedDays,
+                        transitionSpec = {
+                            (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
+                                (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
+                        }, label = "Earned streak count",
+                    ) { days ->
+                        Text(days.toString(), color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-                Spacer(Modifier.width(8.dp))
-                Text("day streak", modifier = Modifier.weight(1f, fill = false), color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("day streak", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
             Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 for (offset in -2L..2L) {
@@ -536,7 +536,7 @@ private fun AlarmSummaryCard(
             .background(Color.White)
             .border(if (selected) 2.dp else 0.dp, if (selected) Forest else Color.Transparent, RoundedCornerShape(34.dp))
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(horizontal = 24.dp, vertical = 22.dp),
+            .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -550,8 +550,8 @@ private fun AlarmSummaryCard(
                     Text(
                         text = String.format(Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
                         color = timeColor,
-                        fontSize = 54.sp,
-                        lineHeight = 60.sp,
+                        fontSize = 48.sp,
+                        lineHeight = 54.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
@@ -563,9 +563,9 @@ private fun AlarmSummaryCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(weekdaySummary(alarm.weekdays), color = MutedInk, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = Hairline)
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = "${alarm.routine.joinToString(" · ") { it.pose.displayName }}  ·  ${alarm.routine.sumOf { it.durationSeconds }} sec",
                 color = Forest,

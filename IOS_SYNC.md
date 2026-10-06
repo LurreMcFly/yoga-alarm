@@ -6,26 +6,33 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
-### SYNC-012 — Home header supports larger text
+### SYNC-012 — Compact home layout with larger-text support
 
 Status: pending
-Date: 2026-10-05
+Date: 2026-10-06
 Android commit: <pending>
 
 Changes:
-- Keep the full “Your alarms” title readable at larger text/display sizes. The title must wrap rather than truncate to “Your ala…”. When the title and Pro/add controls do not fit on one row, move the controls together onto a second row with 10-point vertical spacing. Preserve native text scaling; do not disable Dynamic Type to make the row fit.
-- The Pro pill grows with its text and padding rather than using a fixed circular size. Keep both Pro and add-alarm actions available.
-- A subtle Settings action at the top right opens the settings sheet; see SYNC-005 for privacy and SYNC-010 for subscription controls.
+- Place Settings as a gear beside the add-alarm button in the header, eliminating its separate top row. Both icons have accessible labels and 48-point touch areas; add remains a white outlined circle, Settings uses muted ink. Use 4-point spacing between header actions.
+- Keep GET PRO in the header for free users. For existing Pro members, remove the header Pro pill and provide Pro/subscription access through Settings. GET PRO uses a white outlined pill, 10-point bold text, 10-point horizontal/8-point vertical padding, and a minimum 48-point touch height. It grows with native text size.
+- Keep the full “Your alarms” title readable at larger text/display sizes. Use a 22-point title below 300 points of available header width, 24 below 340, otherwise 28. The title must wrap rather than truncate to “Your ala…”. If the title and actions cannot fit, wrap the action group together onto a second row with 10-point spacing. Preserve native text scaling; do not disable Dynamic Type to make the row fit.
+- Start the home list 12 points below the top safe area with 22-point side padding. Remove the extra 24-point spacer under the header; retain 14-point spacing between list items. Finish with 24-point bottom padding above the bottom safe area, replacing the old reserved space for the removed privacy footer.
+- Compact alarm cards to 20-point horizontal/18-point vertical padding. Alarm times use 48-point text with 54-point line height; retain the existing name, switch, weekday, divider, and pose summary. Use 12-point gaps before and after the divider. Editing and toggling behavior remains unchanged.
+- Settings contains the privacy and subscription controls specified in SYNC-005 and SYNC-010.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/res/drawable/ic_add.xml
+- app/src/main/res/drawable/ic_settings.xml
 
 iOS acceptance checks:
 - Check default and largest accessibility text sizes, larger display size, and a small phone. Confirm the complete title remains readable, controls reflow, and Settings remains reachable.
+- Check both free and Pro states: GET PRO stays visible for free users; paid users reach Pro through Settings. Verify the compact streak/count and five markers fit side by side at normal text size on a small phone, and the last alarm remains clear of the bottom safe area.
 
 Validation status:
+- Compact layout update (2026-10-06): debug Kotlin compilation and whitespace checks passed. Samsung device layout and larger-text verification remain pending.
 - Android debug Kotlin compilation and eight focused WakeProgress tests passed for the 2026-10-05 changes. Device layout, animation timing, and real Play cancellation still need verification. iOS changes remain pending.
 
 ### SYNC-011 — Routine and alarm feedback animations
@@ -89,7 +96,7 @@ Number sizing and edge cases:
 #### 4. Streak earned and flame wobble
 
 - Trigger an earned celebration when the home streak count becomes greater than the last count presented in this app session. Initialize that presented count from stored progress on a cold launch, so opening the app with an existing streak does not celebrate it again. Preserve presentation state across screen recreation.
-- Use a rounded white streak card (24-point corners, 82% white surface, hairline border, 20-point padding). Replace the old label/reminder with a 32-point flame, a 40-point bold count, and a 16-point bold “day streak” label, in dark ink `#142018`. Place five rolling day markers alongside the label; if they do not fit, wrap all five together onto a second row with 16-point vertical spacing. Preserve native text scaling.
+- Use a rounded white streak card (24-point corners, 82% white surface, hairline border, 14-point horizontal/12-point vertical padding). On the left show a 24-point flame beside a 28-point bold count, with “day streak” in 13-point semibold below. On the right show the five rolling day markers, vertically centered beside the compact count block. If larger text or a wide count prevents fitting, wrap all five markers together onto a second row with an 8-point gap. Preserve native text scaling and the existing flame-only tap wobble.
 - Always show exactly five consecutive local calendar dates: two days before today, today, and two days after today. These are a sliding window, not a fixed week or carousel. Refresh when the app resumes; while open Android checks the local date every minute. Week/month/year boundaries must not reset or reorder the window.
 - Each marker shows the locale's narrow weekday label above a 24-point rounded square (7-point corners), separated by 6 points. Keep 8 points between marker columns. Completed dates show green `#81BD50` squares with white checkmarks; unfinished and future dates show empty hairline squares. Today's weekday uses forest text and its square has a 2-point outline (forest when unfinished, green when completed). Other squares have 1-point borders. Provide accessible full dates, today status, and completed/not-completed/upcoming descriptions so repeated weekday initials are unambiguous.
 - Persist recent actual completion dates separately from the current streak; retain today and the previous four calendar days. Stopping a later alarm or breaking a streak does not erase recent completed-day checkmarks. Multiple same-day completions produce one marker, test routines never add markers, and future dates never show checks. On upgrade with no history, reconstruct up to five known consecutive completed dates from the existing streak count and last completion date; do not invent older interrupted history. The relevant persistence/model files are listed below.
@@ -261,7 +268,7 @@ Android commit: <pending>
 
 Changes:
 - The Privacy & safety policy link opens https://www.yogaalarm.com/privacy.
-- Remove the persistent Privacy & safety button from the bottom of the home screen. Place it under Settings, reached through a subtle top-right home action. Opening privacy closes Settings and shows the existing camera/privacy/safety explanation and Read privacy policy action. Let the explanation scroll and the policy button grow for larger text.
+- Remove the persistent Privacy & safety button from the bottom of the home screen. Place it under Settings, reached through the gear in the home header (see SYNC-012). Opening privacy closes Settings and shows the existing camera/privacy/safety explanation and Read privacy policy action. Let the explanation scroll and the policy button grow for larger text.
 
 Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
