@@ -31,7 +31,7 @@ iOS acceptance checks:
 
 Status: pending
 Date: 2026-10-06
-Android commit: <pending>
+Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
 
 Changes:
 - Place Settings as a muted-ink gear in the header with an accessible label and 48-point touch area, eliminating its separate top row. Use 4-point spacing between header actions. The header no longer contains an add-alarm button.
@@ -63,7 +63,7 @@ Validation status:
 
 Status: pending
 Date: 2026-10-04
-Android commit: <pending>
+Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
 
 Changes:
 - Add five coordinated feedback animations: sunrise completion with a docking streak number, pose completion, find/hold/return feedback, an earned streak card with tap replay, and alarm changes. The specifications below describe the Android implementation, including the final resting state and when each animation may replay.
@@ -364,7 +364,7 @@ iOS notes:
 
 Status: pending
 Date: 2026-09-11
-Android commit: <pending>
+Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
 
 Changes:
 - Alarm editing has three primary rows in this order: Sound, Snooze, and "Stop button." The Stop button option defaults to on for new and existing alarms, uses the supporting text "Allow manual alarm stop," and shows the manual Stop action when enabled. Turning it off hides the normal Stop action.
