@@ -342,23 +342,30 @@ Relevant Android files:
 iOS notes:
 - If the earlier popup was implemented, remove it. Preserve existing permission controls and supported platform permissions.
 
-### SYNC-002 — Launcher icon safe-area spacing
+### SYNC-002 — Launcher artwork and safe-area spacing
 
 Status: pending
 Date: 2026-09-11
+Updated: 2026-10-10
 Android commit: <pending>
 
 Changes:
-- The launcher icon foreground now has a small uniform inset so the yoga pose's hands leave visible space against the left and right edges instead of reaching the adaptive-icon crop.
-- Preserve the existing artwork, colors, silhouette, and proportions; only match the slightly roomier framing.
+- Replace the framed launcher artwork with the supplied square artwork: a dark navy Warrior II silhouette over a coral/orange-to-yellow sunrise and navy ground, with no decorative border or baked-in rounded corners.
+- Use the same artwork for all launcher sizes. Android's adaptive icon retains a uniform 4% foreground inset for safe-area spacing; the launcher supplies the final icon mask.
 
 Relevant Android files:
 - app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
 - app/src/main/res/drawable/ic_launcher_foreground_inset.xml
 - app/src/main/res/drawable-nodpi/ic_launcher_foreground.webp
+- app/src/main/res/mipmap-mdpi/ic_launcher.png
+- app/src/main/res/mipmap-hdpi/ic_launcher.png
+- app/src/main/res/mipmap-xhdpi/ic_launcher.png
+- app/src/main/res/mipmap-xxhdpi/ic_launcher.png
+- app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
 
 iOS notes:
-- Apply equivalent safe-area spacing to the iOS app icon source artwork before generating icon sizes.
+- Generate opaque iOS icon sizes from the new square artwork, preserving its colors, silhouette, and proportions. Let iOS apply rounded corners; do not add the old frame or transparent corners.
+- Check the installed icon matches the new artwork and the pose's hands and feet remain visible within the platform mask.
 
 ### SYNC-001 — Yoga-only dismissal, emergency stops, and wake-up streak
 
