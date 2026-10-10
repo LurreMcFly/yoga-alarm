@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -382,11 +383,13 @@ private fun StreakCard(
                 ) {
                     Text(label, color = MutedInk, style = labelStyle, modifier = Modifier.height(labelHeight), maxLines = 1)
                     Row(Modifier.height(markerSize), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(flameSize), contentAlignment = Alignment.Center) {
+                        Box(Modifier.width(flameSize).height(markerSize), contentAlignment = Alignment.Center) {
                             Text("🔥", fontSize = with(density) { flameSize.toSp() },
-                                lineHeight = with(density) { flameSize.toSp() },
-                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
-                                modifier = Modifier.graphicsLayer { rotationZ = flameRotation.value })
+                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = true)),
+                                maxLines = 1, overflow = TextOverflow.Visible,
+                                // Emoji font metrics can exceed the nominal glyph size.
+                                modifier = Modifier.wrapContentSize(unbounded = true)
+                                    .graphicsLayer { rotationZ = flameRotation.value })
                         }
                         Spacer(Modifier.width(6.dp))
                         AnimatedContent(
