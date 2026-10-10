@@ -11,6 +11,8 @@ data class WakeProgress(
     val emergencyPassMonth: YearMonth,
     val emergencyPassesUsed: Int = 0,
     val completedDates: Set<LocalDate> = emptySet(),
+    val scheduledDates: Set<LocalDate> = emptySet(),
+    val upcomingAlarmDates: Set<LocalDate> = emptySet(),
 ) {
     val emergencyPassesRemaining: Int
         get() = (MONTHLY_EMERGENCY_PASSES - emergencyPassesUsed).coerceAtLeast(0)
@@ -23,7 +25,10 @@ data class WakeProgress(
                     (0 until streakDays.coerceIn(0, 5)).map { last.minusDays(it.toLong()) }.toSet()
                 } ?: emptySet()
             }).filterTo(mutableSetOf()) { !it.isBefore(today.minusDays(4)) },
-            streakDays = if (lastCompletionDate == today || lastCompletionDate == today.minusDays(1)) streakDays else 0,
+            streakDays = if (scheduledDates.any { date ->
+                date < today && (lastCompletionDate == null || date > lastCompletionDate)
+            }) 0 else streakDays,
+            scheduledDates = scheduledDates.filterTo(mutableSetOf()) { it >= today.minusDays(4) },
             emergencyPassMonth = currentMonth,
             emergencyPassesUsed = if (emergencyPassMonth == currentMonth) emergencyPassesUsed else 0,
         )
@@ -33,7 +38,7 @@ data class WakeProgress(
         val progress = current(today)
         if (progress.lastCompletionDate == today) return progress
         return progress.copy(
-            streakDays = if (progress.lastCompletionDate == today.minusDays(1)) progress.streakDays + 1 else 1,
+            streakDays = progress.streakDays + 1,
             lastCompletionDate = today,
             completedDates = progress.completedDates + today,
         )

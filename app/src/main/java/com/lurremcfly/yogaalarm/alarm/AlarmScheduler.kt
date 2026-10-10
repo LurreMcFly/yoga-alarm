@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.lurremcfly.yogaalarm.MainActivity
+import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.time.Instant
 import java.time.Duration
@@ -29,12 +30,16 @@ object AlarmScheduler {
             Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return runCatching {
+        val now = ZonedDateTime.now()
+        val occurrence = nextOccurrence(alarm, now)
+        val scheduled = runCatching {
             alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(nextOccurrence(alarm).toInstant().toEpochMilli(), showIntent),
+                AlarmManager.AlarmClockInfo(occurrence.toInstant().toEpochMilli(), showIntent),
                 operation,
             )
         }.isSuccess
+        if (scheduled) WakeProgressStore(context).recordScheduledAlarm(alarm, occurrence, now)
+        return scheduled
     }
 
     fun cancel(context: Context, alarmId: Long) {

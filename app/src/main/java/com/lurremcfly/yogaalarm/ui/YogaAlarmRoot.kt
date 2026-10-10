@@ -81,6 +81,7 @@ internal fun YogaAlarmRoot(
             alarms + saved
         }
         store.save(alarms)
+        wakeProgress = wakeProgressStore.load()
         val message = when {
             config.enabled && !scheduled -> "Couldn’t schedule alarm. It’s saved and switched off. Check alarm permissions."
             saved.enabled -> AlarmScheduler.confirmation(saved)
@@ -96,6 +97,8 @@ internal fun YogaAlarmRoot(
         onAlarmPresentationFinished()
         firedRoutine = false
         remainingSnoozes = 0
+        alarms = store.load()
+        wakeProgress = wakeProgressStore.load()
         pendingEditorAlarm = null
         cameraAlarm = null
         route = "home"
@@ -120,6 +123,7 @@ internal fun YogaAlarmRoot(
         today = LocalDate.now()
         billingManager.start()
         readinessRefresh += 1
+        alarms = store.load()
         wakeProgress = wakeProgressStore.load()
     }
     LaunchedEffect(Unit) {
@@ -128,7 +132,7 @@ internal fun YogaAlarmRoot(
             val currentDate = LocalDate.now()
             if (currentDate != today) {
                 today = currentDate
-                wakeProgress = wakeProgressStore.load(today)
+                wakeProgress = wakeProgressStore.load()
             }
         }
     }
@@ -263,6 +267,7 @@ internal fun YogaAlarmRoot(
                 previousStreakDays = presentedStreakDays,
                 today = today,
                 completedDates = wakeProgress.completedDates,
+                scheduledDates = wakeProgress.scheduledDates + wakeProgress.upcomingAlarmDates,
                 onStreakPresented = { presentedStreakDays = wakeProgress.streakDays },
                 savedAlarmId = savedAlarmId,
                 onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
@@ -346,6 +351,7 @@ internal fun YogaAlarmRoot(
                     AlarmScheduler.cancel(context, id)
                     alarms = alarms.filterNot { it.id == id }
                     store.save(alarms)
+                    wakeProgress = wakeProgressStore.load()
                 },
             )
         }

@@ -7,7 +7,7 @@ import com.lurremcfly.yogaalarm.model.AlarmSound
 import com.lurremcfly.yogaalarm.model.PoseStep
 import com.lurremcfly.yogaalarm.model.YogaPose
 
-class AlarmStore(context: Context) {
+class AlarmStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE)
 
     fun load(): List<AlarmConfig> = preferences.getString(KEY_ALARMS, null)
@@ -17,6 +17,7 @@ class AlarmStore(context: Context) {
         .orEmpty()
 
     fun save(alarms: List<AlarmConfig>) {
+        WakeProgressStore(context).updateSchedule(alarms)
         preferences.edit()
             .putString(KEY_ALARMS, alarms.joinToString("\n", transform = ::encode))
             .apply()

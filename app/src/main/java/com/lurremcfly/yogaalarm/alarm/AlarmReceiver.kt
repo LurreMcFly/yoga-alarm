@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.lurremcfly.yogaalarm.data.AlarmStore
+import com.lurremcfly.yogaalarm.data.WakeProgressStore
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -12,6 +13,7 @@ class AlarmReceiver : BroadcastReceiver() {
         val isSnooze = intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false)
         val store = AlarmStore(context)
         val alarm = store.load().firstOrNull { it.id == alarmId } ?: return
+        WakeProgressStore(context).recordAlarmDue()
         val remainingSnoozes = if (isSnooze) {
             intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
         } else if (alarm.snoozeEnabled) {

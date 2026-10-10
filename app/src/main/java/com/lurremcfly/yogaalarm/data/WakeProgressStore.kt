@@ -1,14 +1,31 @@
 package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
+import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
+import com.lurremcfly.yogaalarm.model.AlarmConfig
+import com.lurremcfly.yogaalarm.model.StreakSchedule
 import com.lurremcfly.yogaalarm.model.WakeProgress
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.YearMonth
+import java.time.ZonedDateTime
 
-class WakeProgressStore(context: Context) {
+class WakeProgressStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE)
 
-    fun load(today: LocalDate = LocalDate.now()): WakeProgress {
+    fun load(now: ZonedDateTime = ZonedDateTime.now()): WakeProgress {
+        val today = now.toLocalDate()
+        val schedules = if (preferences.contains(KEY_SCHEDULE)) {
+            readSchedule()
+        } else {
+            // Legacy installs have no schedule history. Preserve their saved count and start tracking now.
+            createSchedule(AlarmStore(context).load(), emptyList(), now).also(::saveSchedule)
+        }
+        val checkedAt = preferences.getString(KEY_CHECKED_AT, null)
+            ?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() } ?: now.toLocalDateTime()
+        val dueDates = schedules.flatMap { it.datesDueBetween(checkedAt, now.toLocalDateTime()) }.toSet()
         val progress = WakeProgress(
             streakDays = preferences.getInt(KEY_STREAK_DAYS, 0),
             lastCompletionDate = preferences.getString(KEY_LAST_COMPLETION_DATE, null)
@@ -19,18 +36,73 @@ class WakeProgressStore(context: Context) {
             emergencyPassesUsed = preferences.getInt(KEY_EMERGENCY_PASSES_USED, 0),
             completedDates = preferences.getStringSet(KEY_COMPLETED_DATES, emptySet()).orEmpty()
                 .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }.toSet(),
+            scheduledDates = preferences.getStringSet(KEY_SCHEDULED_DATES, emptySet()).orEmpty()
+                .mapNotNull { runCatching { LocalDate.parse(it) }.getOrNull() }.toSet() + dueDates,
+            upcomingAlarmDates = schedules.flatMap { it.datesBetween(today, today.plusDays(2)) }.toSet(),
         ).current(today)
         save(progress)
+        preferences.edit().putString(KEY_CHECKED_AT, now.toLocalDateTime().toString()).apply()
         return progress
     }
 
-    fun recordCompletion(today: LocalDate = LocalDate.now()): WakeProgress =
-        load(today).completeRoutine(today).also(::save)
+    fun recordCompletion(now: ZonedDateTime = ZonedDateTime.now()): WakeProgress =
+        load(now).completeRoutine(now.toLocalDate()).also(::save)
 
     fun recordStop(
         consumeEmergencyPass: Boolean,
-        today: LocalDate = LocalDate.now(),
-    ): WakeProgress = load(today).stopAlarm(today, consumeEmergencyPass).also(::save)
+        now: ZonedDateTime = ZonedDateTime.now(),
+    ): WakeProgress = load(now).stopAlarm(now.toLocalDate(), consumeEmergencyPass).also(::save)
+
+    fun recordAlarmDue(now: ZonedDateTime = ZonedDateTime.now()) {
+        val progress = load(now)
+        save(progress.copy(scheduledDates = progress.scheduledDates + now.toLocalDate()))
+    }
+
+    fun updateSchedule(alarms: List<AlarmConfig>, now: ZonedDateTime = ZonedDateTime.now()) {
+        load(now) // Evaluate the previous schedule before an edit can remove an overdue alarm.
+        saveSchedule(createSchedule(alarms, readSchedule(), now))
+    }
+
+    fun recordScheduledAlarm(alarm: AlarmConfig, occurrence: ZonedDateTime, now: ZonedDateTime) {
+        load(now)
+        val schedule = StreakSchedule(alarm.id, occurrence.toLocalDateTime(), alarm.weekdays)
+        saveSchedule(readSchedule().filterNot { it.alarmId == alarm.id } + schedule)
+    }
+
+    private fun createSchedule(
+        alarms: List<AlarmConfig>,
+        previous: List<StreakSchedule>,
+        now: ZonedDateTime,
+    ): List<StreakSchedule> = alarms.filter { it.enabled }.map { alarm ->
+        previous.firstOrNull {
+            it.alarmId == alarm.id && it.weekdays == alarm.weekdays &&
+                it.firstOccurrence.hour == alarm.hour && it.firstOccurrence.minute == alarm.minute
+        } ?: StreakSchedule(alarm.id, AlarmScheduler.nextOccurrence(alarm, now).toLocalDateTime(), alarm.weekdays)
+    }
+
+    private fun readSchedule(): List<StreakSchedule> = runCatching {
+        val array = JSONArray(preferences.getString(KEY_SCHEDULE, "[]"))
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            val weekdays = item.getJSONArray("weekdays")
+            StreakSchedule(
+                item.getLong("id"),
+                LocalDateTime.parse(item.getString("first")),
+                (0 until weekdays.length()).map { weekdays.getInt(it) }.toSet(),
+            )
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveSchedule(schedules: List<StreakSchedule>) {
+        val array = JSONArray()
+        schedules.forEach { schedule ->
+            array.put(JSONObject()
+                .put("id", schedule.alarmId)
+                .put("first", schedule.firstOccurrence.toString())
+                .put("weekdays", JSONArray(schedule.weekdays.sorted())))
+        }
+        preferences.edit().putString(KEY_SCHEDULE, array.toString()).apply()
+    }
 
     private fun save(progress: WakeProgress) {
         preferences.edit()
@@ -39,6 +111,7 @@ class WakeProgressStore(context: Context) {
             .putString(KEY_EMERGENCY_PASS_MONTH, progress.emergencyPassMonth.toString())
             .putInt(KEY_EMERGENCY_PASSES_USED, progress.emergencyPassesUsed)
             .putStringSet(KEY_COMPLETED_DATES, progress.completedDates.map { it.toString() }.toSet())
+            .putStringSet(KEY_SCHEDULED_DATES, progress.scheduledDates.map { it.toString() }.toSet())
             .apply()
     }
 
@@ -48,5 +121,8 @@ class WakeProgressStore(context: Context) {
         const val KEY_EMERGENCY_PASS_MONTH = "emergency_pass_month"
         const val KEY_EMERGENCY_PASSES_USED = "emergency_passes_used"
         const val KEY_COMPLETED_DATES = "completed_dates"
+        const val KEY_SCHEDULED_DATES = "scheduled_dates"
+        const val KEY_SCHEDULE = "streak_schedule"
+        const val KEY_CHECKED_AT = "schedule_checked_at"
     }
 }

@@ -69,6 +69,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,6 +93,7 @@ fun AlarmHomeScreen(
     previousStreakDays: Int,
     today: LocalDate,
     completedDates: Set<LocalDate>,
+    scheduledDates: Set<LocalDate>,
     onStreakPresented: () -> Unit,
     savedAlarmId: Long?,
     onSavedAlarmPresented: (Long) -> Unit,
@@ -183,7 +187,7 @@ fun AlarmHomeScreen(
 
             item(key = "streak") {
                 Column {
-                    StreakCard(streakDays, previousStreakDays, today, completedDates, onStreakPresented)
+                    StreakCard(streakDays, previousStreakDays, today, completedDates, scheduledDates, onStreakPresented)
                     Spacer(Modifier.height(14.dp))
                 }
             }
@@ -295,6 +299,7 @@ private fun StreakCard(
     previousStreakDays: Int,
     today: LocalDate,
     completedDates: Set<LocalDate>,
+    scheduledDates: Set<LocalDate>,
     onPresented: () -> Unit,
 ) {
     var displayedDays by rememberSaveable { mutableIntStateOf(minOf(previousStreakDays, streakDays)) }
@@ -328,56 +333,105 @@ private fun StreakCard(
         color = Color.White.copy(alpha = 0.82f),
         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
     ) {
-        FlowRow(
-            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().height(80.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Column(Modifier.align(Alignment.CenterVertically)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🔥", fontSize = 24.sp, modifier = Modifier.graphicsLayer {
-                        rotationZ = flameRotation.value
-                    })
-                    Spacer(Modifier.width(8.dp))
-                    AnimatedContent(
-                        targetState = displayedDays,
-                        transitionSpec = {
-                            (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
-                                (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
-                        }, label = "Earned streak count",
-                    ) { days ->
-                        Text(days.toString(), color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            val density = LocalDensity.current
+            val textMeasurer = rememberTextMeasurer()
+            val labelHeight = (16f * density.fontScale).coerceAtMost(24f).dp
+            val rowGap = 4.dp
+            val markerSize = minOf(
+                when {
+                    density.fontScale >= 1.4f -> 34.dp
+                    density.fontScale >= 1.15f -> 32.dp
+                    else -> 28.dp
+                },
+                maxHeight - labelHeight - rowGap,
+            )
+            val labelFontSize = with(density) { minOf(12.sp.toPx(), 22.dp.toPx()).toSp() }
+            val countFontSize = with(density) { minOf(28.sp.toPx(), markerSize.toPx()).toSp() }
+            val labelStyle = TextStyle(
+                fontSize = labelFontSize, lineHeight = with(density) { labelHeight.toSp() },
+                fontWeight = FontWeight.Medium, platformStyle = PlatformTextStyle(includeFontPadding = false),
+            )
+            val countStyle = TextStyle(
+                fontSize = countFontSize, lineHeight = countFontSize,
+                fontWeight = FontWeight.Bold, platformStyle = PlatformTextStyle(includeFontPadding = false),
+            )
+            val flameSize = minOf(24.dp, markerSize - 4.dp)
+            val countWidth = with(density) {
+                textMeasurer.measure(maxOf(streakDays, previousStreakDays).toString(), countStyle).size.width.toDp()
+            } + flameSize + 6.dp
+            val markerGap = 6.dp
+            val groupGap = 12.dp
+            val fullLabelWidth = with(density) { textMeasurer.measure("day streak", labelStyle).size.width.toDp() }
+            val label = if (maxOf(fullLabelWidth, countWidth) + groupGap + markerSize * 5 + markerGap * 4 <= maxWidth) {
+                "day streak"
+            } else "streak"
+            val statWidth = maxOf(countWidth, with(density) { textMeasurer.measure(label, labelStyle).size.width.toDp() })
+            val availableDaysWidth = maxWidth - statWidth - groupGap
+            val dayCount = listOf(7, 5, 3, 1).firstOrNull {
+                markerSize * it + markerGap * (it - 1) <= availableDaysWidth
+            } ?: 1
+            val firstOffset = if (dayCount == 7) -4L else -(dayCount / 2).toLong()
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(groupGap)) {
+                Column(
+                    Modifier.width(statWidth).clearAndSetSemantics { contentDescription = "$streakDays-day yoga streak" },
+                    verticalArrangement = Arrangement.spacedBy(rowGap),
+                ) {
+                    Text(label, color = MutedInk, style = labelStyle, modifier = Modifier.height(labelHeight), maxLines = 1)
+                    Row(Modifier.height(markerSize), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(flameSize), contentAlignment = Alignment.Center) {
+                            Text("🔥", fontSize = with(density) { flameSize.toSp() },
+                                lineHeight = with(density) { flameSize.toSp() },
+                                style = TextStyle(platformStyle = PlatformTextStyle(includeFontPadding = false)),
+                                modifier = Modifier.graphicsLayer { rotationZ = flameRotation.value })
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        AnimatedContent(
+                            targetState = displayedDays,
+                            transitionSpec = {
+                                (slideInVertically(tween(350)) { it } + fadeIn(tween(250))) togetherWith
+                                    (slideOutVertically(tween(350)) { -it } + fadeOut(tween(200)))
+                            }, label = "Earned streak count",
+                        ) { days ->
+                            Text(days.toString(), color = Ink, style = countStyle, maxLines = 1)
+                        }
                     }
                 }
-                Text("day streak", color = Ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
-            Row(Modifier.align(Alignment.CenterVertically), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (offset in -2L..2L) {
-                    val date = today.plusDays(offset)
-                    val completed = date <= today && date in completedDates
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.clearAndSetSemantics {
-                            contentDescription = "${date.format(DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL))}, " +
-                                (if (date == today) "today, " else "") +
-                                (if (completed) "yoga completed" else if (date > today) "upcoming" else "yoga not completed")
-                        },
-                    ) {
-                        Text(
-                            date.dayOfWeek.getDisplayName(java.time.format.TextStyle.NARROW, Locale.getDefault()),
-                            color = if (date == today) Forest else MutedInk,
-                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Box(
-                            Modifier.size(24.dp).clip(RoundedCornerShape(7.dp))
-                                .background(if (completed) Color(0xFF81BD50) else Color.Transparent)
-                                .border(if (date == today) 2.dp else 1.dp,
-                                    if (completed) Color(0xFF81BD50) else if (date == today) Forest else Hairline,
-                                    RoundedCornerShape(7.dp)),
-                            contentAlignment = Alignment.Center,
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
+                    for (offset in firstOffset until firstOffset + dayCount) {
+                        val date = today.plusDays(offset)
+                        val completed = date <= today && date in completedDates
+                        val restDay = !completed && date !in scheduledDates
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(rowGap),
+                            modifier = Modifier.clearAndSetSemantics {
+                                contentDescription = "${date.format(DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.FULL))}, " +
+                                    (if (date == today) "today, " else "") +
+                                    (if (completed) "yoga completed" else if (restDay) "rest day, no alarm scheduled"
+                                    else if (date > today) "upcoming" else "yoga not completed")
+                            },
                         ) {
-                            if (completed) Text("✓", color = Color.White, fontSize = with(LocalDensity.current) { 17.dp.toSp() }, fontWeight = FontWeight.Bold)
+                            Text(
+                                date.dayOfWeek.getDisplayName(java.time.format.TextStyle.NARROW, Locale.getDefault()),
+                                color = if (date == today) Forest else MutedInk,
+                                style = labelStyle.copy(fontWeight = if (date == today) FontWeight.Bold else FontWeight.Medium),
+                                modifier = Modifier.height(labelHeight), maxLines = 1,
+                            )
+                            Box(
+                                Modifier.size(markerSize).clip(RoundedCornerShape(8.dp))
+                                    .background(if (completed) Color(0xFF81BD50) else Color.Transparent)
+                                    .border(if (date == today) 2.dp else 1.dp,
+                                        if (completed) Color(0xFF81BD50) else if (date == today) Forest else Hairline,
+                                        RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (completed) Text("✓", color = Color.White, fontSize = with(density) { (markerSize * 0.7f).toSp() }, fontWeight = FontWeight.Bold)
+                                else if (restDay) Text("–", color = MutedInk, fontSize = with(density) { 18.dp.toSp() })
+                            }
                         }
                     }
                 }
