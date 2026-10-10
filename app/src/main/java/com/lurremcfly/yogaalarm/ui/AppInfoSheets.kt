@@ -21,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -69,20 +70,58 @@ fun AppSettingsSheet(
             Text("Settings", color = Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(18.dp))
             Text("Pro", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            if (entitlement == ProEntitlement.SUBSCRIPTION) {
+            when (entitlement) {
+                ProEntitlement.LIFETIME -> {
+                    Text("Lifetime Pro active", color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text("One-time purchase. No renewal or expiry date.", color = MutedInk)
+                }
+                ProEntitlement.SUBSCRIPTION -> {
+                    Text("Subscription Pro active", color = Ink, fontWeight = FontWeight.SemiBold)
+                }
+                null -> {
+                    TextButton(onClick = onOpenPro) {
+                        Text("Get Pro", color = Forest)
+                    }
+                }
+            }
+            if (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null) {
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    if (subscriptionAutoRenewing == false) "Renewal canceled. Pro remains active until your paid period ends."
-                    else "Manage your renewal and payments in Google Play.",
+                    when (subscriptionAutoRenewing) {
+                        false -> "Subscription renewal canceled."
+                        true -> "Subscription renews automatically."
+                        null -> "Check your subscription status in Google Play."
+                    },
                     color = MutedInk,
                 )
                 TextButton(onClick = onManageSubscription) {
-                    Text("Manage or cancel subscription", color = Forest)
+                    Text(
+                        if (subscriptionAutoRenewing == false) "View subscription end date in Google Play"
+                        else "View renewal date in Google Play",
+                        color = Forest,
+                    )
                 }
-                Text("Google Play shows your exact renewal or access end date.", color = MutedInk, fontSize = 14.sp)
-            } else {
-                TextButton(onClick = onOpenPro) {
-                    Text(if (entitlement == ProEntitlement.LIFETIME) "Lifetime Pro active" else "Get Pro", color = Forest)
+                OutlinedButton(
+                    onClick = onManageSubscription,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Forest),
+                ) {
+                    Text(
+                        if (subscriptionAutoRenewing == false) "Manage subscription" else "Cancel subscription",
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    when {
+                        entitlement == ProEntitlement.LIFETIME -> "Your lifetime Pro access is unaffected by subscription cancellation."
+                        subscriptionAutoRenewing == false -> "Pro stays active until your paid period ends."
+                        else -> "Confirm cancellation in Google Play. Pro stays active until your paid period ends."
+                    },
+                    color = MutedInk,
+                    fontSize = 14.sp,
+                )
             }
             Spacer(Modifier.height(18.dp))
             HorizontalDivider(color = Hairline)
@@ -181,7 +220,7 @@ fun ProPaywallSheet(
                 Text("Make every morning yours", color = Ink, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Unlock all poses and sounds, choose 1–10 poses, and set holds from 10–60 seconds.",
+                    "Unlock all poses and sounds, choose 1–10 poses, and set holds from 5–60 seconds.",
                     color = MutedInk,
                     fontSize = 15.sp,
                 )
@@ -271,12 +310,13 @@ fun ProPaywallSheet(
                     TextButton(onClick = onRestorePurchases, enabled = !purchaseInProgress) {
                         Text("Restore purchases", color = Forest, fontWeight = FontWeight.SemiBold)
                     }
-                    if (entitlement == ProEntitlement.SUBSCRIPTION) {
+                    if (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null) {
                         TextButton(onClick = onManageSubscription) {
                             Text("Manage or cancel subscription", color = Forest, fontWeight = FontWeight.SemiBold)
                         }
                         Text(
-                            if (subscriptionAutoRenewing == false) "Renewal canceled. Pro stays active until your paid period ends. See the exact end date in Google Play."
+                            if (entitlement == ProEntitlement.LIFETIME) "Your lifetime Pro access is unaffected by subscription cancellation. See subscription dates in Google Play."
+                            else if (subscriptionAutoRenewing == false) "Renewal canceled. Pro stays active until your paid period ends. See the exact end date in Google Play."
                             else "Google Play shows your renewal date and cancellation options.",
                             color = MutedInk, fontSize = 12.sp, textAlign = TextAlign.Center,
                         )

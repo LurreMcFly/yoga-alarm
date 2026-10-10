@@ -846,9 +846,9 @@ private fun DurationPickerSheet(
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
-    val durations = listOf(10, 15, 20, 30, 45, 60)
+    val durations = listOf(5, 10, 15, 20, 30, 45, 60)
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = SoftSurface) {
-        Column(Modifier.padding(horizontal = 22.dp, vertical = 4.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 22.dp, vertical = 4.dp)) {
             Text("Hold duration", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text("20 seconds is included in the free routine.", color = MutedInk, modifier = Modifier.padding(top = 6.dp, bottom = 16.dp))
             durations.forEach { duration ->

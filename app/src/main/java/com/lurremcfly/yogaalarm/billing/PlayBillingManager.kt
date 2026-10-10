@@ -287,7 +287,7 @@ class PlayBillingManager(
         mutableState.value = state.value.copy(
             loading = false,
             entitlement = entitlement,
-            subscriptionAutoRenewing = subscriptionAutoRenewing.takeIf { entitlement == ProEntitlement.SUBSCRIPTION },
+            subscriptionAutoRenewing = subscriptionAutoRenewing,
             message = when {
                 pending -> "Purchase pending. Pro unlocks after Google Play confirms payment."
                 replace && restoreRequested -> if (entitlement == null) "No previous Pro purchase was found." else "Pro purchase restored."

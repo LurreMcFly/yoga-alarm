@@ -37,9 +37,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -123,9 +124,9 @@ fun AlarmHomeScreen(
             modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 start = 22.dp,
-                top = 12.dp,
+                top = 40.dp,
                 end = 22.dp,
-                bottom = 24.dp,
+                bottom = 96.dp,
             ),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
@@ -171,17 +172,6 @@ fun AlarmHomeScreen(
                                     )
                                 }
                             }
-                            IconButton(
-                                onClick = onAddAlarm,
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.White)
-                                    .border(1.dp, Hairline, CircleShape),
-                            ) {
-                                Icon(painterResource(R.drawable.ic_add), contentDescription = "Add alarm",
-                                    tint = Ink, modifier = Modifier.size(28.dp))
-                            }
                             IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
                                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings",
                                     tint = MutedInk, modifier = Modifier.size(24.dp))
@@ -191,7 +181,12 @@ fun AlarmHomeScreen(
                 }
             }
 
-            item(key = "streak") { StreakCard(streakDays, previousStreakDays, today, completedDates, onStreakPresented) }
+            item(key = "streak") {
+                Column {
+                    StreakCard(streakDays, previousStreakDays, today, completedDates, onStreakPresented)
+                    Spacer(Modifier.height(14.dp))
+                }
+            }
 
             if (!cameraReady || !notificationsReady || !fullScreenReady || !exactAlarmsReady) {
                 item {
@@ -237,6 +232,20 @@ fun AlarmHomeScreen(
             }
 
         }
+        Button(
+            onClick = onAddAlarm,
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 12.dp)
+                .heightIn(min = 56.dp),
+            shape = RoundedCornerShape(50),
+            colors = ButtonDefaults.buttonColors(containerColor = AlarmLime, contentColor = Forest),
+            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),
+        ) {
+            Icon(painterResource(R.drawable.ic_add), contentDescription = null, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Add alarm", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
         alarms.firstOrNull { it.id == selectedAlarmId }?.let { alarm ->
             Popup(
                 alignment = Alignment.BottomCenter,
@@ -245,7 +254,7 @@ fun AlarmHomeScreen(
             ) {
                 Surface(
                     modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(bottom = 64.dp),
+                        .padding(bottom = 80.dp),
                     shape = RoundedCornerShape(50),
                     color = Color.White,
                     shadowElevation = 10.dp,

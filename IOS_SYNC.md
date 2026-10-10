@@ -6,6 +6,27 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+### SYNC-013 — Five-second pose holds
+
+Status: pending
+Date: 2026-10-06
+Android commit: <pending>
+
+Changes:
+- Add 5 seconds as the shortest selectable hold duration, followed by the existing 10, 15, 20, 30, 45, and 60 seconds. Each pose can independently use 5 seconds; saving, testing, and fired routines use that duration.
+- Preserve the 20-second default and existing access rules: 20 seconds is free; every other duration, including 5 seconds, requires Pro. Locked duration choices open the existing paywall.
+- Let the duration picker scroll so all seven options remain reachable on smaller screens and with larger text. Update Pro benefits to describe 5–60-second holds.
+- Pose detection/hold qualification and the 3-second between-pose transition are unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
+- docs/play-billing-setup.md
+
+iOS acceptance checks:
+- Select 5 seconds, save/reopen an alarm, and test or run it. Confirm the hold countdown uses 5 seconds and existing pose qualification still applies.
+- Confirm free users retain 20 seconds and tapping 5 seconds opens the paywall. Check all seven choices remain reachable with larger text.
+
 ### SYNC-012 — Compact home layout with larger-text support
 
 Status: pending
@@ -13,10 +34,11 @@ Date: 2026-10-06
 Android commit: <pending>
 
 Changes:
-- Place Settings as a gear beside the add-alarm button in the header, eliminating its separate top row. Both icons have accessible labels and 48-point touch areas; add remains a white outlined circle, Settings uses muted ink. Use 4-point spacing between header actions.
+- Place Settings as a muted-ink gear in the header with an accessible label and 48-point touch area, eliminating its separate top row. Use 4-point spacing between header actions. The header no longer contains an add-alarm button.
+- Place a fixed, bottom-center “+ Add alarm” pill above the bottom safe area, 12 points from it. Use lime background, forest content, fully rounded corners, a minimum 56-point height, 24-point plus icon, 8-point icon/text spacing, 14-point bold label, and a subtle shadow. Tapping opens the existing new-alarm editor. Keep the action visible while the list scrolls.
 - Keep GET PRO in the header for free users. For existing Pro members, remove the header Pro pill and provide Pro/subscription access through Settings. GET PRO uses a white outlined pill, 10-point bold text, 10-point horizontal/8-point vertical padding, and a minimum 48-point touch height. It grows with native text size.
 - Keep the full “Your alarms” title readable at larger text/display sizes. Use a 22-point title below 300 points of available header width, 24 below 340, otherwise 28. The title must wrap rather than truncate to “Your ala…”. If the title and actions cannot fit, wrap the action group together onto a second row with 10-point spacing. Preserve native text scaling; do not disable Dynamic Type to make the row fit.
-- Start the home list 12 points below the top safe area with 22-point side padding. Remove the extra 24-point spacer under the header; retain 14-point spacing between list items. Finish with 24-point bottom padding above the bottom safe area, replacing the old reserved space for the removed privacy footer.
+- Start the home list 40 points below the top safe area with 22-point side padding. Retain 14-point spacing between list items and add another 14 points after the streak card, for a 28-point gap to the following card. Keep the compact streak card's own layout unchanged. Finish with 96-point bottom padding above the bottom safe area so the final alarm can scroll clear of the fixed add pill. Position the existing alarm-action popup 80 points above the bottom safe area so it clears the pill.
 - Compact alarm cards to 20-point horizontal/18-point vertical padding. Alarm times use 48-point text with 54-point line height; retain the existing name, switch, weekday, divider, and pose summary. Use 12-point gaps before and after the divider. Editing and toggling behavior remains unchanged.
 - Settings contains the privacy and subscription controls specified in SYNC-005 and SYNC-010.
 
@@ -30,6 +52,7 @@ Relevant Android files:
 iOS acceptance checks:
 - Check default and largest accessibility text sizes, larger display size, and a small phone. Confirm the complete title remains readable, controls reflow, and Settings remains reachable.
 - Check both free and Pro states: GET PRO stays visible for free users; paid users reach Pro through Settings. Verify the compact streak/count and five markers fit side by side at normal text size on a small phone, and the last alarm remains clear of the bottom safe area.
+- Confirm the bottom Add alarm pill remains visible while scrolling, opens a new alarm, and does not obscure the last alarm or alarm-action popup. Check gesture navigation and three-button navigation safe areas.
 
 Validation status:
 - Compact layout update (2026-10-06): debug Kotlin compilation and whitespace checks passed. Samsung device layout and larger-text verification remain pending.
@@ -155,7 +178,8 @@ Changes:
 - Keep unavailable plans visible even when other plans can be purchased. Offer a distinct Retry action when any plan is unavailable after loading or the store is disconnected; disable purchase when no plan is available or the store is disconnected. Restore Purchases remains an ownership action. The home entry says “GET PRO”, avoiding the implication of a free trial. Disable plan changes and repeat checkout while a purchase is opening.
 - One entitlement source grants Pro for a purchased subscription or lifetime, with lifetime taking precedence. Pending payments never grant access; show a pending-payment message. Cancellation does not grant access. Already-owned errors trigger restoration. Active Pro disables new purchases; subscription owners can open store subscription management.
 - Checkout cancellation returns to the paywall without an error or stuck purchase button. Payment failure leaves Pro locked and allows retry. Cancelling subscription renewal must not remove access before the paid entitlement expires.
-- Add “Manage or cancel subscription” under Settings → Pro and in the Pro sheet for subscription owners. Open the native store management UI for this app's subscription; Android deep-links with the `yoga_alarm_pro` product and package. Lifetime users have no cancellation action; free users can open Get Pro from Settings.
+- Settings → Pro displays “Subscription Pro active” and a prominent full-width outlined “Cancel subscription” button, with text explaining that cancellation is confirmed in the store and paid access continues until the period ends. After renewal cancellation, show “Subscription renewal canceled.” and change the button to “Manage subscription”. Include a separate “View renewal date in Google Play” link, or “View subscription end date in Google Play” after cancellation; use native App Store wording on iOS. The Pro sheet also provides subscription management. Android deep-links with the `yoga_alarm_pro` product and package.
+- Lifetime settings display “Lifetime Pro active” and “One-time purchase. No renewal or expiry date.” Lifetime alone has no cancellation action. If a valid subscription also exists alongside lifetime, keep its renewal status and cancellation/date controls visible in Settings and the Pro sheet; explain that lifetime Pro access is unaffected by subscription cancellation. Lifetime still takes precedence for Pro access. Free users can open Get Pro from Settings.
 - On store refresh after renewal cancellation, show “Renewal canceled” while preserving Pro through the paid period. Android reads the store's auto-renewing flag and currently directs users to Google Play for the exact end date. Do not invent a date from the initial purchase time. Displaying “Pro available until [localized date]” in Android remains pending backend verification of `purchases.subscriptionsv2.get` → `lineItems.expiryTime`; on iOS use verified native expiry/renewal information when available. Show renewal date for renewing subscriptions and access end date for canceled subscriptions; lifetime has no expiry.
 - Restore on connection, foreground resume, and explicit Restore Purchases. Successful empty ownership queries remove access; temporary failures preserve the current session's entitlement. No entitlement persists across process death: offline cold starts stay free until the store responds.
 - Remove the debug/free activation shortcut in all builds. All checkout uses the store; old debug preferences are ignored.
@@ -184,12 +208,13 @@ iOS acceptance checks:
 - Cancel checkout, fail payment, and leave a purchase pending; none may grant new Pro. Complete a pending payment later and confirm access updates on return/restart.
 - Reinstall and restore both subscription and lifetime purchases. Repeat Restore Purchases without duplicating entitlements or charging again.
 - Confirm active Pro prevents a second purchase, lifetime takes precedence, and subscription management remains accessible for subscription owners.
-- Open management from Settings and the Pro sheet. Cancel renewal, return to the app, and verify canceled status with Pro retained. Confirm the correct paid-through date from verified store data; the Android in-app date remains a backend dependency.
+- Open management from Settings and the Pro sheet. Cancel renewal, return to the app, and verify canceled status with Pro retained and the Settings button changed to “Manage subscription”. Verify lifetime alone explains no renewal/expiry, and lifetime plus a separate valid subscription still exposes subscription management. Confirm the correct paid-through date from verified store data; the Android in-app date remains a backend dependency.
 - Verify renewal cancellation retains paid access, expiry/revocation removes the affected entitlement, and an independent valid lifetime purchase still grants Pro.
 - Exercise unavailable products, temporary store failures, and reconnection. Verify there are no hardcoded price fallbacks or release free-Pro shortcuts.
 - Verify the purchase area is visible immediately and stays fixed while scrolling on small screens and with larger text. Switching plans updates the billed amount, purchase wording, and renewal terms. Check the available-plan fallback, Retry, and separate restoration action.
 
 Validation status:
+- Subscription settings clarity update (2026-10-10): focused Android debug Kotlin compilation and whitespace checks passed. Cancellation/date links and lifetime-plus-subscription behavior still need on-device verification; exact in-app dates remain a backend dependency.
 - Paywall layout update: focused Android debug Kotlin compilation and whitespace checks passed. On-device layout, large-text behavior, and real Google Play checkout still need verification.
 - Android debug/release Kotlin compilation and eight focused billing tests passed. Real Google Play checkout still requires the Internal Testing checklist in `docs/play-billing-setup.md`.
 - iOS implementation and StoreKit/device verification remain pending. Move this entire entry to Completed only after the native behavior is implemented and verified.

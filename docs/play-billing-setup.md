@@ -53,7 +53,7 @@ Every Pro purchase unlocks:
 
 - All eight current poses and future Pro poses.
 - One to ten poses per routine.
-- Hold durations of 10, 15, 20, 30, 45, or 60 seconds.
+- Hold durations of 5, 10, 15, 20, 30, 45, or 60 seconds.
 - All ten current alarm sounds and future Pro sounds.
 - The same Pro feature set regardless of monthly, yearly, or lifetime payment.
 
@@ -145,6 +145,12 @@ Callbacks grant accepted purchases immediately, then reconcile with a fresh snap
 Subscriptions are shown as “Subscription”, since the client record does not reliably
 identify monthly versus yearly. Cancelling renewal does not itself remove access:
 the app relies on the active purchases returned by Play. Lifetime takes precedence.
+Settings explains that lifetime has no renewal or expiry. For subscriptions, a
+full-width Cancel subscription button opens Google Play for confirmation; canceled
+renewal changes the action to Manage subscription. A separate link opens the exact
+renewal or subscription end date in Google Play. Subscription management remains
+visible when the user owns both lifetime and a valid subscription, without affecting
+lifetime access.
 
 No entitlement or token is persisted by this implementation. An offline cold start
 has no Pro until Play responds; an outage within a running session preserves access
