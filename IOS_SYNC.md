@@ -42,8 +42,8 @@ Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak upda
 iOS implementation progress (2026-10-10):
 - [x] Header Settings gear, free-user GET PRO, Pro access through Settings, adaptive title/action layout, and fixed bottom Add alarm pill.
 - [x] Compact alarm-card padding/time typography, list spacing, and scroll clearance above the add pill.
-- [ ] Implement the fixed 80-point streak card and adaptive date markers specified in SYNC-011.
-- [ ] Finish subscription Settings controls specified in SYNC-010.
+- [x] Implement the fixed 80-point streak card and adaptive date markers specified in SYNC-011.
+- [x] Finish subscription Settings controls specified in SYNC-010.
 - [ ] Verify small-phone/large-text layouts, safe areas, last-card clearance, and native alarm context-menu placement relative to the add pill.
 
 Changes:
@@ -84,8 +84,8 @@ iOS implementation progress (2026-10-10):
 - [x] Session-owned earned-streak presentation, whole-count slide/fade, flame-only tap wobble, and Reduce Motion handling.
 - [x] Recent completed-day persistence and bounded history reconstruction from an existing positive streak; future markers do not show checks.
 - [x] Saved-card entrance keyed by alarm identity, insertion/removal reflow, and enable/disable color transitions.
-- [ ] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, rest-day dashes, and full accessibility descriptions.
-- [ ] Add the specified 100 ms delay before the earned-count roll and coordinated flame wobble.
+- [x] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, rest-day dashes, and full accessibility descriptions.
+- [x] Add the specified 100 ms delay before the earned-count roll and coordinated flame wobble.
 - [ ] Finish scheduled-day accounting and migration rules in SYNC-001; do not restore a previously reset streak from old completion markers.
 - [ ] Run iOS animation, recreation, rapid-tracking/toggle, midnight, large-text, and Reduce Motion acceptance checks.
 
@@ -186,6 +186,8 @@ iOS acceptance checks:
 - Save new/existing alarms, scroll to an offscreen saved card, toggle rapidly, and delete first/middle/last cards. Confirm correct card identity, one saved entrance, smooth reflow, and immediate schedule/persistence updates. Test scheduling failure: the disabled state and existing failure message must remain accurate.
 - Repeat the flows with motion disabled/Reduce Motion. Final states should appear immediately without celebration waits, count mutations, timing changes, or blocked controls.
 
+iOS implementation update (2026-10-10): fixed-height adaptive card and delayed earned-count presentation implemented in AlarmHomeView.swift/StreakViews.swift; rest-day marker classification covered by an added WakeProgressTests regression. Scheduled-day streak accounting remains pending under SYNC-001. Structural checks and whitespace checks passed; Swift/Xcode are unavailable on this Linux host, so compilation, XCTest execution, and device layout/motion checks remain pending.
+
 ### SYNC-010 — Store purchases, localized prices, and restoration
 
 Status: pending
@@ -197,9 +199,9 @@ iOS implementation progress (2026-10-10):
 - [x] Expanded paywall with Close, scrolling content above a fixed App Store purchase area, renewal terms, and separate selection/checkout.
 - [x] Shared verified entitlement authority, lifetime precedence, pending/canceled checkout handling, active-Pro purchase blocking, transaction updates/finish, and restore/foreground refresh.
 - [x] Verified subscription renewal/cancellation and paid-through-date text for subscription-only ownership; native subscription management is available.
-- [ ] Add explicit subscription/lifetime active Settings copy, prominent Cancel subscription/Manage subscription states, cancellation explanation, and separate renewal/end-date controls.
-- [ ] Show the verified localized renewal or subscription end date directly in Settings; use an App Store date/management link only when verified date information is unavailable.
-- [ ] Keep subscription status and management available when lifetime and a valid subscription coexist; explain that lifetime access is unaffected.
+- [x] Add explicit subscription/lifetime active Settings copy, prominent Cancel subscription/Manage subscription states, cancellation explanation, and separate renewal/end-date controls.
+- [x] Show the verified localized renewal or subscription end date directly in Settings; use an App Store date/management link only when verified date information is unavailable.
+- [x] Keep subscription status and management available when lifetime and a valid subscription coexist; explain that lifetime access is unaffected.
 - [ ] Remove sandbox/Xcode Test Pro access and its entitlement bypass; the queue requires store-only unlocking in all builds.
 - [ ] Verify real StoreKit checkout, deferred payments, restoration, expiry/grace/revocation, temporary failures, catalog IDs, and small-screen/large-text layout.
 
@@ -257,6 +259,8 @@ Validation status:
 - Paywall layout update: focused Android debug Kotlin compilation and whitespace checks passed. On-device layout, large-text behavior, and real Google Play checkout still need verification.
 - Android debug/release Kotlin compilation and eight focused billing tests passed. Real Google Play checkout still requires the Internal Testing checklist in `docs/play-billing-setup.md`.
 - iOS implementation and StoreKit/device verification remain pending. Move this entire entry to Completed only after the native behavior is implemented and verified.
+
+iOS implementation update (2026-10-10): verified subscription state is tracked separately from lifetime access, Settings/Pro show localized dates or native management fallback, and Settings uses the full-width cancellation/management control. Added cancellation/date/fallback and lifetime-plus-subscription regressions in ProPlanTests.swift. Structural checks and whitespace checks passed; Swift/Xcode are unavailable on this Linux host, so compilation, StoreKitTest execution, and device checks remain pending. The separate Test Pro access removal task remains pending.
 
 ### SYNC-009 — Save the pose selected after swiping back
 
