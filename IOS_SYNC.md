@@ -6,11 +6,17 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
+iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
+
 ### SYNC-013 — Five-second pose holds
 
 Status: pending
 Date: 2026-10-06
 Android commit: <pending>
+
+iOS implementation progress (2026-10-10):
+- [x] Five-second holds in the shared duration catalog; 20-second default/free choice, Pro gates, scrollable picker, and 5–60-second benefits copy.
+- [ ] Verify save/reopen, test/fired countdowns, free-user paywall routing, and all seven choices at accessibility text sizes on iOS.
 
 Changes:
 - Add 5 seconds as the shortest selectable hold duration, followed by the existing 10, 15, 20, 30, 45, and 60 seconds. Each pose can independently use 5 seconds; saving, testing, and fired routines use that duration.
@@ -32,6 +38,13 @@ iOS acceptance checks:
 Status: pending
 Date: 2026-10-06
 Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
+
+iOS implementation progress (2026-10-10):
+- [x] Header Settings gear, free-user GET PRO, Pro access through Settings, adaptive title/action layout, and fixed bottom Add alarm pill.
+- [x] Compact alarm-card padding/time typography, list spacing, and scroll clearance above the add pill.
+- [ ] Implement the fixed 80-point streak card and adaptive date markers specified in SYNC-011.
+- [ ] Finish subscription Settings controls specified in SYNC-010.
+- [ ] Verify small-phone/large-text layouts, safe areas, last-card clearance, and native alarm context-menu placement relative to the add pill.
 
 Changes:
 - Place Settings as a muted-ink gear in the header with an accessible label and 48-point touch area, eliminating its separate top row. Use 4-point spacing between header actions. The header no longer contains an add-alarm button.
@@ -64,6 +77,17 @@ Validation status:
 Status: pending
 Date: 2026-10-04
 Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
+
+iOS implementation progress (2026-10-10):
+- [x] Sunrise completion with measured whole-number docking, entrance-settled three-second hold, multi-digit/zero handling, and usable Done/back controls.
+- [x] Pose-complete check/glow, find/hold/return feedback, saved-progress pause/resume presentation, and traveling pose illustration.
+- [x] Session-owned earned-streak presentation, whole-count slide/fade, flame-only tap wobble, and Reduce Motion handling.
+- [x] Recent completed-day persistence and bounded history reconstruction from an existing positive streak; future markers do not show checks.
+- [x] Saved-card entrance keyed by alarm identity, insertion/removal reflow, and enable/disable color transitions.
+- [ ] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, rest-day dashes, and full accessibility descriptions.
+- [ ] Add the specified 100 ms delay before the earned-count roll and coordinated flame wobble.
+- [ ] Finish scheduled-day accounting and migration rules in SYNC-001; do not restore a previously reset streak from old completion markers.
+- [ ] Run iOS animation, recreation, rapid-tracking/toggle, midnight, large-text, and Reduce Motion acceptance checks.
 
 Changes:
 - Add five coordinated feedback animations: sunrise completion with a docking streak number, pose completion, find/hold/return feedback, an earned streak card with tap replay, and alarm changes. The specifications below describe the Android implementation, including the final resting state and when each animation may replay.
@@ -168,6 +192,17 @@ Status: pending
 Date: 2026-09-27
 Android commit: <pending>
 
+iOS implementation progress (2026-10-10):
+- [x] StoreKit Monthly/Yearly/Lifetime catalog, localized prices, unavailable-plan states, retry, restore with price reload, and available-plan selection fallback.
+- [x] Expanded paywall with Close, scrolling content above a fixed App Store purchase area, renewal terms, and separate selection/checkout.
+- [x] Shared verified entitlement authority, lifetime precedence, pending/canceled checkout handling, active-Pro purchase blocking, transaction updates/finish, and restore/foreground refresh.
+- [x] Verified subscription renewal/cancellation and paid-through-date text for subscription-only ownership; native subscription management is available.
+- [ ] Add explicit subscription/lifetime active Settings copy, prominent Cancel subscription/Manage subscription states, cancellation explanation, and separate renewal/end-date controls.
+- [ ] Show the verified localized renewal or subscription end date directly in Settings; use an App Store date/management link only when verified date information is unavailable.
+- [ ] Keep subscription status and management available when lifetime and a valid subscription coexist; explain that lifetime access is unaffected.
+- [ ] Remove sandbox/Xcode Test Pro access and its entitlement bypass; the queue requires store-only unlocking in all builds.
+- [ ] Verify real StoreKit checkout, deferred payments, restoration, expiry/grace/revocation, temporary failures, catalog IDs, and small-screen/large-text layout.
+
 Changes:
 - Restore Purchases retries loading product prices as well as checking owned purchases. If an earlier price lookup failed temporarily, a successful retry makes eligible purchase buttons usable again without restarting the app.
 - Starting an already-connected billing session also reloads prices.
@@ -199,6 +234,8 @@ Relevant Android files:
 
 iOS notes:
 - Implement the same Monthly, Yearly, and non-consumable Lifetime choices using the independently configured App Store product IDs. Google Play product IDs, base-plan IDs, offer tokens, and acknowledgement calls are Android-specific and must not be copied into StoreKit code.
+- Settings cancellation uses a full-width outlined button with a minimum 48-point touch height and labels “Cancel subscription” while renewal is enabled and “Manage subscription” after cancellation. Opening management does not itself cancel renewal; refresh verified store status when the app returns. Keep status, dates, and actions usable with larger text.
+- Display “Next renewal: [localized date]” for an auto-renewing subscription and “Subscription ends: [localized date]” after cancellation, using verified StoreKit information. Do not wait for Android's backend integration when native verified date information is already available. If the date is unavailable, show an explicit App Store date/management link instead of estimating it. When lifetime and a subscription coexist, label the date as the subscription's date and keep lifetime access independent; lifetime alone has no end date.
 - Preserve the existing native paywall design and use App Store localized prices. Keep one entitlement authority shared by all Pro feature gates; restore subscription and lifetime ownership after reinstall and when returning to the app.
 - Handle native pending/deferred purchases without unlocking Pro. Use the native transaction verification and completion flow, including purchases that complete while the app is away. Lifetime ownership must remain restorable.
 - Keep purchase verification isolated so the future backend can receive store-specific purchase evidence. Android's current client-only trust and offline cold-start behavior are interim limitations, not requirements to weaken iOS verification. Production must handle subscription expiry, grace period, account hold or equivalent store state, refunds/revocations, and durable transaction processing.
@@ -210,6 +247,7 @@ iOS acceptance checks:
 - Reinstall and restore both subscription and lifetime purchases. Repeat Restore Purchases without duplicating entitlements or charging again.
 - Confirm active Pro prevents a second purchase, lifetime takes precedence, and subscription management remains accessible for subscription owners.
 - Open management from Settings and the Pro sheet. Cancel renewal, return to the app, and verify canceled status with Pro retained and the Settings button changed to “Manage subscription”. Verify lifetime alone explains no renewal/expiry, and lifetime plus a separate valid subscription still exposes subscription management. Confirm the correct paid-through date from verified store data; the Android in-app date remains a backend dependency.
+- Verify Settings displays the localized verified date before and after cancellation, updates after renewal, and uses an App Store link when the date is unavailable. With lifetime plus a subscription, the subscription's end date must never imply lifetime Pro expires. Check date/button layout at accessibility text sizes.
 - Verify renewal cancellation retains paid access, expiry/revocation removes the affected entitlement, and an independent valid lifetime purchase still grants Pro.
 - Exercise unavailable products, temporary store failures, and reconnection. Verify there are no hardcoded price fallbacks or release free-Pro shortcuts.
 - Verify the purchase area is visible immediately and stays fixed while scrolling on small screens and with larger text. Switching plans updates the billed amount, purchase wording, and renewal terms. Check the available-plan fallback, Retry, and separate restoration action.
@@ -226,6 +264,10 @@ Status: pending
 Date: 2026-09-20
 Android commit: <pending>
 
+iOS implementation progress (2026-10-10):
+- [x] Each idle, unlocked carousel selection updates the draft, including swiping back to the original pose; locked poses do not commit.
+- [ ] Verify Mountain → Warrior II → Mountain through Save, reopen, and Test, plus other steps and locked-pose cases on iOS.
+
 Changes:
 - Each settled, unlocked pose selection updates the alarm draft, including returning to the pose that was selected when the editor opened. For example, Mountain → Warrior II → Mountain must save and test Mountain.
 - Locked poses remain unavailable without Pro. Pose durations and routine order are unchanged.
@@ -238,6 +280,10 @@ Relevant Android files:
 Status: pending
 Date: 2026-09-20
 Android commit: <pending>
+
+iOS implementation progress (2026-10-10):
+- [x] Per-date configured-wall-time resolution, spring-gap minute preservation, overlap offset preference, and focused Stockholm regression tests authored.
+- [ ] Run the iOS scheduling tests and verify native AlarmKit gap/overlap delivery and subsequent rescheduling; app next-occurrence calculations alone do not verify system delivery.
 
 Changes:
 - Resolve the configured local hour and minute independently for each candidate date. A spring daylight-saving gap may shift that day's alarm, but must not shift alarms on later dates.
@@ -253,6 +299,10 @@ Relevant Android files:
 Status: pending
 Date: 2026-09-17
 Android commit: <pending>
+
+iOS implementation progress (2026-10-10):
+- [x] Single illustration travels from screen center at 3.75× after a one-second hold into the 96-point header slot over 0.65 seconds; presentation is separate from routine timing.
+- [ ] Verify rapid pose changes, recreation/rotation, Reduce Motion, accessibility, and unchanged detection/countdown/control behavior on iOS.
 
 Changes:
 - When the routine first displays a pose or advances to a new one, show that pose's existing illustration centered on screen at about 3.75 times its final size. Hold it there for 1 second, then smoothly scale and move the same image into its existing small header slot over about 0.65 seconds.
@@ -273,6 +323,11 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
+iOS implementation progress (2026-10-10):
+- [x] All four readiness rows remain visible while incomplete, with completed checks, actions, and a decorative bouncing pointer on only the first incomplete action.
+- [x] Pointer stops after tapping its row; existing readiness refresh and Camera/AlarmKit permission state are reused.
+- [ ] Verify grant/denial/Settings recovery, pointer advancement, app resume, VoiceOver, and Reduce Motion. AlarmKit authorization supplies the three alarm capability rows together on iOS.
+
 Changes:
 - While any alarm readiness requirement is incomplete, keep all four setup rows visible in this order: Camera, Notifications, Full-screen alarms, and Exact alarms.
 - Show a checkmark for each completed requirement. Keep the existing Allow or Enable action for incomplete requirements, including the existing title, detail text, permission behavior, and tap feedback.
@@ -292,6 +347,11 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
+iOS implementation progress (2026-10-10):
+- [x] Privacy & safety is reached through header Settings; opening it dismisses Settings and shows the scrollable explanation and scalable policy action.
+- [x] Privacy links use https://www.yogaalarm.com/privacy.
+- [ ] Verify Settings-to-privacy presentation, policy opening, and accessibility text layout on iOS.
+
 Changes:
 - The Privacy & safety policy link opens https://www.yogaalarm.com/privacy.
 - Remove the persistent Privacy & safety button from the bottom of the home screen. Place it under Settings, reached through the gear in the home header (see SYNC-012). Opening privacy closes Settings and shows the existing camera/privacy/safety explanation and Read privacy policy action. Let the explanation scroll and the policy button grow for larger text.
@@ -309,6 +369,11 @@ iOS notes:
 Status: pending
 Date: 2026-09-16
 Android commit: <pending>
+
+iOS implementation progress (2026-10-10):
+- [x] Session-owned monotonic ten-second foreground idle-timer deadline, immediate media/camera stop, cancellation on exit, and resume without extending the deadline.
+- [ ] Lock-screen completion grace remains unmatched: the current iOS flow stops the system alarm before camera handoff and has no completed AlarmKit presentation.
+- [ ] Verify real/test completion, immediate single completion recording, redraw/resume, early exit, and isolation from a subsequent routine on a physical iPhone.
 
 Changes:
 - After finishing a yoga routine, keep the completion screen awake for ten seconds. Apply this to real alarms and test routines.
@@ -329,6 +394,10 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
+iOS implementation progress (2026-10-10):
+- [x] No automatic setup popup; home readiness actions and explicit camera start request access, with denial/Settings recovery and no legacy setup-flag dependency.
+- [ ] Verify fresh/existing installs, cold-launch alarm routing, explicit permission prompts, and recovery on iOS. Separate Android alarm permissions are represented by AlarmKit authorization.
+
 Changes:
 - The first-launch setup popup was reverted. Do not show an automatic permission popup on first launch or subsequent launches.
 - Keep the existing home-screen readiness card with actions for missing permissions, including the existing denial and settings recovery behavior.
@@ -347,7 +416,11 @@ iOS notes:
 Status: pending
 Date: 2026-09-11
 Updated: 2026-10-10
-Android commit: <pending>
+Android commit: fcf38b3a8d17f5cbb5e073b48c26707c12827e51 (2026-10-10 artwork update; earlier changes: <pending>)
+
+iOS implementation progress (2026-10-10):
+- [ ] Replace iOS icon assets with the newly supplied square sunrise/Warrior II artwork, using a suitable high-resolution source and preserving colors, silhouette, and proportions.
+- [ ] Generate opaque iOS sizes without the old decorative frame or baked-in rounded/transparent corners; verify hands/feet remain visible under the installed platform mask.
 
 Changes:
 - Replace the framed launcher artwork with the supplied square artwork: a dark navy Warrior II silhouette over a coral/orange-to-yellow sunrise and navy ground, with no decorative border or baked-in rounded corners.
@@ -372,6 +445,19 @@ iOS notes:
 Status: pending
 Date: 2026-09-11
 Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
+
+iOS implementation progress (2026-10-10):
+- [x] Sound/Snooze/Stop button editor order and copy, default-on Stop setting, vibration in Sound, conditional in-app Stop, and unrestricted test navigation.
+- [x] Emergency 5/15-second holds with three monthly passes, after-completion warning/pass use, immediate technical camera exits, and streak-neutral system Stop recording.
+- [x] Explicit alarm edits cancel pending snoozes with retryable cleanup; reconciliation retains pending snooze ownership/count.
+- [x] Fired completions are idempotent and count once per local day; test routines do not earn days/markers; streak count is shown on home/completion/emergency UI.
+- [ ] Replace consecutive-calendar-day reset logic with scheduled-day accounting that preserves unscheduled weekends and all-disabled periods.
+- [ ] Persist exact due dates/effective first occurrences and evaluate the previous schedule before mutations; handle edits before/after due time, unchanged alarms, one-offs, firing/snooze dates, and rescheduling.
+- [ ] Make normal/emergency stops before today’s completion break the streak; current stoppingAlarm preserves it. Preserve the streak after today’s completion and keep technical/system exits neutral.
+- [ ] Preserve saved progress on upgrade, start schedule tracking from the current time, and remove recovery of previously reset counts from old completion markers.
+- [ ] Support or explicitly resolve current scheduling rejection of sound-disabled/vibration-disabled combinations and system Stop/secondary-action differences.
+- [ ] Verify upcoming-shortcut routing does not start playback or mark an alarm fired, and clock/timezone rescheduling preserves snooze/count.
+- [ ] Implement the adaptive zero/positive streak markers from SYNC-011 and run the full iOS streak/lifecycle acceptance matrix.
 
 Changes:
 - Alarm editing has three primary rows in this order: Sound, Snooze, and "Stop button." The Stop button option defaults to on for new and existing alarms, uses the supporting text "Allow manual alarm stop," and shows the manual Stop action when enabled. Turning it off hides the normal Stop action.
