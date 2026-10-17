@@ -66,6 +66,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -94,7 +98,7 @@ internal fun AlarmHomeScreen(
     previousStreakDays: Int,
     today: LocalDate,
     completedDates: Set<LocalDate>,
-    scheduledDates: Set<LocalDate>,
+    pausedDates: Set<LocalDate>,
     onStreakPresented: () -> Unit,
     savedAlarmId: Long?,
     onSavedAlarmPresented: (Long) -> Unit,
@@ -116,6 +120,11 @@ internal fun AlarmHomeScreen(
     onboardingTargets: OnboardingTargets? = null,
 ) {
     var selectedAlarmId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(cameraReady, notificationsReady, fullScreenReady, exactAlarmsReady) {
+        if (cameraReady && notificationsReady && fullScreenReady && exactAlarmsReady) {
+            onboardingTargets?.readinessBounds = Rect.Zero
+        }
+    }
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -189,7 +198,7 @@ internal fun AlarmHomeScreen(
 
             item(key = "streak") {
                 Column {
-                    StreakCard(streakDays, previousStreakDays, today, completedDates, scheduledDates, onStreakPresented)
+                    StreakCard(streakDays, previousStreakDays, today, completedDates, pausedDates, onStreakPresented)
                     Spacer(Modifier.height(14.dp))
                 }
             }
@@ -205,6 +214,9 @@ internal fun AlarmHomeScreen(
                         onFixNotifications = onFixNotifications,
                         onFixFullScreen = onFixFullScreen,
                         onFixExactAlarms = onFixExactAlarms,
+                        modifier = Modifier.onGloballyPositioned {
+                            onboardingTargets?.readinessBounds = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+                        },
                     )
                 }
             }
@@ -302,7 +314,7 @@ private fun StreakCard(
     previousStreakDays: Int,
     today: LocalDate,
     completedDates: Set<LocalDate>,
-    scheduledDates: Set<LocalDate>,
+    pausedDates: Set<LocalDate>,
     onPresented: () -> Unit,
 ) {
     var displayedDays by rememberSaveable { mutableIntStateOf(minOf(previousStreakDays, streakDays)) }
@@ -409,7 +421,7 @@ private fun StreakCard(
                     for (offset in firstOffset until firstOffset + dayCount) {
                         val date = today.plusDays(offset)
                         val completed = date <= today && date in completedDates
-                        val restDay = !completed && date !in scheduledDates
+                        val restDay = !completed && date in pausedDates
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(rowGap),
@@ -462,7 +474,7 @@ private fun StreakCard(
 }
 
 @Composable
-private fun AlarmReadinessCard(
+internal fun AlarmReadinessCard(
     cameraReady: Boolean,
     notificationsReady: Boolean,
     fullScreenReady: Boolean,
@@ -471,6 +483,7 @@ private fun AlarmReadinessCard(
     onFixNotifications: () -> Unit,
     onFixFullScreen: () -> Unit,
     onFixExactAlarms: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val readiness = listOf(cameraReady, notificationsReady, fullScreenReady, exactAlarmsReady)
     val readyCount = readiness.count { it }
@@ -491,7 +504,7 @@ private fun AlarmReadinessCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = Forest),
     ) {

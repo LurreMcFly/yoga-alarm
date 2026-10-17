@@ -1,6 +1,7 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +48,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -72,6 +74,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -131,21 +134,37 @@ internal fun AlarmEditorScreen(
     val tipHeight = onboardingTargets?.tipHeight ?: 0f
     val navigationBottom = WindowInsets.navigationBars.getBottom(density)
     val statusTop = WindowInsets.statusBars.getTop(density)
+    var routineIntroductionReady by remember(onboardingStep) { mutableStateOf(false) }
+    LaunchedEffect(onboardingStep, viewport.size, fontScale) {
+        if (onboardingStep != OnboardingStep.Routine) return@LaunchedEffect
+        withFrameNanos { }
+        val target = onboardingTargets?.bounds?.get(OnboardingStep.Pose1)
+        if (target != null) {
+            val desired = viewport.top + statusTop + with(density) { 96.dp.toPx() }
+            editorScrollState.animateScrollTo(
+                (editorScrollState.value + target.top - desired).roundToInt().coerceAtLeast(0), tween(1_000),
+            )
+        }
+        if (coroutineContext[MotionDurationScale]?.scaleFactor != 0f) delay(200)
+        routineIntroductionReady = true
+    }
     LaunchedEffect(onboardingStep, viewport.size, tipHeight, fontScale) {
         if (onboardingStep == null || onboardingStep.isPage || onboardingStep == OnboardingStep.SoundChoice || onboardingStep == OnboardingStep.Save) return@LaunchedEffect
         withFrameNanos { }
         if (onboardingStep == OnboardingStep.Time) {
-            editorScrollState.scrollTo(0)
+            editorScrollState.animateScrollTo(0, tween(1_000))
         } else {
             val target = onboardingTargets?.bounds?.get(onboardingStep) ?: return@LaunchedEffect
             val top = viewport.top + statusTop + with(density) { 76.dp.toPx() }
             val bottom = viewport.bottom - navigationBottom - tipHeight - with(density) { 90.dp.toPx() }
             val desired = maxOf(top, (top + bottom - target.height) / 2f)
-            editorScrollState.scrollTo((editorScrollState.value + target.top - desired).roundToInt().coerceAtLeast(0))
+            editorScrollState.animateScrollTo(
+                (editorScrollState.value + target.top - desired).roundToInt().coerceAtLeast(0), tween(1_000),
+            )
         }
     }
     fun changeOnboardingStep(next: OnboardingStep) {
-        if (next != OnboardingStep.Name) { focusManager.clearFocus(); keyboard?.hide() }
+        if (next != OnboardingStep.Name) { focusManager.clearFocus(force = true); keyboard?.hide() }
         soundSheetOpen = next == OnboardingStep.SoundChoice
         onOnboardingStep(next, draft)
     }
@@ -198,8 +217,12 @@ internal fun AlarmEditorScreen(
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
                             unfocusedContainerColor = Color.Transparent,
+                            disabledContainerColor = Color.Transparent,
+                            disabledTextColor = Ink,
+                            disabledPlaceholderColor = MutedInk,
                             focusedIndicatorColor = Forest,
                             unfocusedIndicatorColor = Hairline,
+                            disabledIndicatorColor = Hairline,
                         ),
                     )
                     Spacer(Modifier.height(18.dp))
@@ -241,9 +264,8 @@ internal fun AlarmEditorScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable(enabled = onboardingStep == null || onboardingStep == OnboardingStep.Test, role = androidx.compose.ui.semantics.Role.Button) { onTestRoutine(draft) }
-                            .padding(vertical = 4.dp)
-                            .onboardingTarget(OnboardingStep.Test, onboardingTargets),
+                            .clickable(enabled = onboardingStep == null, role = androidx.compose.ui.semantics.Role.Button) { onTestRoutine(draft) }
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -352,6 +374,7 @@ internal fun AlarmEditorScreen(
         )
         if (onboardingStep != null && onboardingStep != OnboardingStep.SoundChoice && onboardingTargets != null) {
             OnboardingOverlay(onboardingStep, onboardingTargets, draft, practiceComplete,
+                showRoutineIntroduction = routineIntroductionReady,
                 onStep = ::changeOnboardingStep,
                 onSkip = { soundSheetOpen = false; onSkipOnboarding() },
                 onPractice = { onPractice(draft) },
@@ -673,7 +696,15 @@ private fun SettingRow(
             Text(title, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Text(detail, color = MutedInk, fontSize = 14.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = toggleEnabled, colors = yogaSwitchColors())
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = toggleEnabled,
+            colors = yogaSwitchColors().copy(
+                disabledCheckedThumbColor = Forest,
+                disabledCheckedTrackColor = AlarmLime,
+                disabledCheckedBorderColor = Color.Transparent,
+                disabledUncheckedThumbColor = Color.White,
+                disabledUncheckedTrackColor = Color(0xFFB9C1BB),
+                disabledUncheckedBorderColor = Color.Transparent,
+            ))
     }
 }
 
@@ -692,6 +723,9 @@ private fun SoundPickerSheet(
     onSkipOnboarding: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = onOnboardingStep != null)
+    val scope = rememberCoroutineScope()
+    var closing by remember { mutableStateOf(false) }
     var previewPlayer by remember { mutableStateOf<AlarmAudio?>(null) }
     var previewing by remember { mutableStateOf<AlarmSound?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
@@ -699,6 +733,19 @@ private fun SoundPickerSheet(
         previewPlayer?.close()
         previewPlayer = null
         previewing = null
+    }
+    fun closeSheet(onClosed: () -> Unit) {
+        if (closing) return
+        closing = true
+        stopPreview()
+        scope.launch {
+            try {
+                sheetState.hide()
+                if (!sheetState.isVisible) onClosed()
+            } finally {
+                closing = false
+            }
+        }
     }
     LaunchedEffect(previewing) {
         if (previewing != null) {
@@ -712,10 +759,14 @@ private fun SoundPickerSheet(
     DisposableEffect(Unit) {
         onDispose { previewPlayer?.close() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = onOnboardingStep != null)) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White, sheetState = sheetState,
+        scrimColor = if (onOnboardingStep != null) Color(0xAA0D1913) else BottomSheetDefaults.ScrimColor,
+        dragHandle = { if (onOnboardingStep == null) BottomSheetDefaults.DragHandle() }) {
         Box(if (onOnboardingStep != null) Modifier.fillMaxWidth().fillMaxHeight(0.92f) else Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 28.dp)) {
+            if (onOnboardingStep != null) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
+            }
             Text("Sound & vibration", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Text(if (onOnboardingStep != null || isPro) "Choose your alarm sound." else "Upgrade to Pro to unlock the dimmed sounds.", color = MutedInk, fontSize = 13.sp)
@@ -780,8 +831,8 @@ private fun SoundPickerSheet(
         }
         if (onOnboardingStep != null && onboardingTargets != null) {
             OnboardingOverlay(OnboardingStep.SoundChoice, onboardingTargets, null,
-                onStep = { stopPreview(); onOnboardingStep(it) },
-                onSkip = { stopPreview(); onSkipOnboarding() },
+                onStep = { next -> closeSheet { onOnboardingStep(next) } },
+                onSkip = { closeSheet(onSkipOnboarding) },
                 onPractice = {}, onTest = {}, modifier = Modifier.matchParentSize(),
             )
         }

@@ -34,6 +34,23 @@ data class WakeProgress(
         )
     }
 
+    fun pausedDates(today: LocalDate): Set<LocalDate> {
+        val progress = current(today)
+        val firstDate = today.minusDays(4)
+        val alarmDates = progress.scheduledDates + progress.upcomingAlarmDates
+        var continuingStreak = progress.streakDays > 0 && progress.lastCompletionDate?.isBefore(firstDate) == true
+        val paused = mutableSetOf<LocalDate>()
+        for (offset in 0L..6L) {
+            val date = firstDate.plusDays(offset)
+            when {
+                date <= today && date in progress.completedDates -> continuingStreak = true
+                date in alarmDates -> continuingStreak = false
+                continuingStreak -> paused += date
+            }
+        }
+        return paused
+    }
+
     fun completeRoutine(today: LocalDate): WakeProgress {
         val progress = current(today)
         if (progress.lastCompletionDate == today) return progress

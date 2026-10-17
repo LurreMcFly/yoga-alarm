@@ -160,6 +160,54 @@ class WakeProgressTest {
     }
 
     @Test
+    fun freshInstallHasNoPausedDates() {
+        val progress = WakeProgress(emergencyPassMonth = YearMonth.from(today))
+        assertEquals(emptySet<LocalDate>(), progress.pausedDates(today))
+    }
+
+    @Test
+    fun pausedDatesOnlyFollowACompletion() {
+        val progress = WakeProgress(emergencyPassMonth = YearMonth.from(today)).completeRoutine(today)
+        assertEquals(setOf(today.plusDays(1), today.plusDays(2)), progress.pausedDates(today))
+    }
+
+    @Test
+    fun missedAlarmEndsPauseChainButPreservesEarlierPauses() {
+        val completed = today.minusDays(3)
+        val progress = WakeProgress(1, completed, YearMonth.from(today),
+            completedDates = setOf(completed), scheduledDates = setOf(today.minusDays(1)))
+        assertEquals(setOf(today.minusDays(2)), progress.pausedDates(today))
+        assertEquals(setOf(today.minusDays(2), today.plusDays(1), today.plusDays(2)),
+            progress.completeRoutine(today).pausedDates(today))
+    }
+
+    @Test
+    fun activeStreakCanPauseBeyondVisibleCompletionHistory() {
+        val progress = WakeProgress(5, today.minusDays(10), YearMonth.from(today))
+        assertEquals((-4L..2L).map { today.plusDays(it) }.toSet(), progress.pausedDates(today))
+        val broken = progress.copy(scheduledDates = setOf(today.minusDays(6))).current(today)
+        assertEquals(emptySet<LocalDate>(), broken.pausedDates(today))
+    }
+
+    @Test
+    fun upcomingAlarmMustBeCompletedBeforeFollowingDatesCanPause() {
+        val progress = WakeProgress(emergencyPassMonth = YearMonth.from(today))
+            .completeRoutine(today)
+            .copy(upcomingAlarmDates = setOf(today.plusDays(1)))
+        assertEquals(emptySet<LocalDate>(), progress.pausedDates(today))
+    }
+
+    @Test
+    fun stoppedAlarmDoesNotShowAsPausedOrEnableFuturePauses() {
+        val progress = WakeProgress(emergencyPassMonth = YearMonth.from(today))
+            .completeRoutine(today.minusDays(1))
+            .stopAlarm(today, consumeEmergencyPass = false)
+        assertEquals(1, progress.streakDays)
+        assertEquals(emptySet<LocalDate>(), progress.pausedDates(today))
+        assertEquals(setOf(today.plusDays(1), today.plusDays(2)), progress.completeRoutine(today).pausedDates(today))
+    }
+
+    @Test
     fun completedFridayRemainsVisibleInSevenDayWindowOnTuesday() {
         val progress = WakeProgress(5, today, YearMonth.from(today), completedDates = setOf(today))
         assertEquals(setOf(today), progress.current(today.plusDays(4)).completedDates)

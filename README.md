@@ -38,7 +38,7 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
-Android now includes the approved onboarding on first use, with replay through **Settings → How to use Yoga Alarm**. It guides time, alarm name, repeat days, sound and routine setup using the real controls, then offers quiet five-second pose practice and a full-routine test before saving. The native flow still uses the normal alarm scheduling and permissions checks.
+Android offers a styled tour invitation on first use, with an initial permission-setup page and replay through **Settings → How to use Yoga Alarm**. Replays skip the permission introduction; missing permissions remain available in the home checklist. The tour guides time, alarm name, repeat days, sound and routine setup using the real controls, with smooth step transitions and a slow, continuous routine preview. The sound sheet closes and the editor scrolls to the poses before the routine introduction appears. The tour then offers quiet five-second pose practice and goes directly to saving. Full-routine testing remains available in the editor and saved-alarm summary. The native flow still uses the normal alarm scheduling and permissions checks.
 
 The browser tester retains the onboarding design preview. **Preview without camera** lets you test practice with simulated pose detection. Saved preview alarms stay in this browser.
 
