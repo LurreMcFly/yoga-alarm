@@ -8,14 +8,17 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
 
-### SYNC-017 — Configurable first day of week in the alarm editor
+### SYNC-017 — Structured Settings and configurable first day of week
 
 Status: pending
 Date: 2026-10-17
 Android commit: <pending>
 
 Changes:
+- Restyle the scrollable Settings sheet with the app's cream background, white rounded cards, subtle borders, forest text/actions, and lime selection highlights. Group content into Preferences, Yoga Alarm Pro, and Help & info, with the muted app version below the cards. Help and privacy use full-width rows; preserve their existing destinations.
 - Add a free, app-wide “First day of week” setting with mutually exclusive Monday and Sunday options. Default to Monday for new and existing installations regardless of locale. Save changes immediately and retain the preference across restarts.
+- Keep “First day of week” and a compact M / S pill selector in one row. Use a lime highlight for the selected option, full Monday/Sunday accessibility labels and mutually exclusive selection semantics. Preserve at least 48-point touch targets and let the label wrap and the sheet scroll at larger text sizes.
+- Keep free, lifetime and subscription Pro states in a dedicated card. Free users see Get Pro; lifetime users see permanent-access information. Consolidate renewal/end-date and cancellation actions into one “Manage subscription” button opening the existing platform subscription management destination. Explain automatic renewal or canceled renewal and where to find the relevant date; retain paid-period access and lifetime-access assurances. Show management whenever a subscription entitlement or known renewal state exists, including a lifetime user with a separate subscription.
 - Order the repeat-day picker Monday–Sunday or Sunday–Saturday according to the preference when creating or editing an alarm, including the guided setup tour and replay.
 - Change display order only: preserve selected weekdays, weekday defaults (Monday–Friday), existing alarms, and scheduled firing days. Keep canonical weekday IDs Monday = 1 through Sunday = 7; selecting the first item in Sunday-first mode selects Sunday, not Monday. Selecting no days continues to use the existing one-time alarm behavior.
 
@@ -28,6 +31,7 @@ iOS acceptance checks:
 - Verify Monday is initially selected; switch to Sunday, reopen Settings and restart the app, and confirm the preference persists.
 - Create and edit alarms in both modes; verify day order, selected-day highlights, Sunday selection, and unchanged saved weekday identities and next occurrences. Replay the setup tour with Sunday first.
 - Verify both options remain reachable with larger text and expose a single accessible radio selection.
+- Verify the Settings groups, full-width help/privacy actions and version footer at narrow widths and larger text sizes. Check free, lifetime, renewing, canceled and unknown-renewal subscription states, including lifetime plus a separate subscription; confirm Get Pro and Manage subscription open their existing destinations.
 
 ### SYNC-016 — Guided first-use onboarding and Settings replay
 
@@ -35,19 +39,45 @@ Status: pending — implemented on Android; awaiting iOS implementation and devi
 Date: 2026-10-17
 Android commit: <pending>
 
+Final approved flow (2026-10-17):
+- Use the native Android flow below as the current reference. The browser preview is design history and can differ from the latest native sequence.
+- The invitation and optional first-use permission prelude are outside the numbered tour. The permission prelude shows “Getting ready”; the numbered tour has 14 steps. The separate “Test your full routine” teaching step has been removed.
+
+| Step | Screen / prompt | Action and next behavior |
+| --- | --- | --- |
+| 1 | “An alarm that gets you moving.” | Introduce Set an alarm → Do your poses → Alarm stops. Set up an alarm advances to Add. |
+| 2 | “Add an alarm” | Highlight the real Add alarm button. Tapping it opens a new editor draft with the slower screen transition. |
+| 3 | “Set the time” | Scroll the actual hour/minute wheels, then Next. |
+| 4 | “Name your alarm” | Edit the actual name field, then Next; clear focus and hide the keyboard. |
+| 5 | “Choose repeat days” | Select repeat days, then Next. Green means selected; no days means a one-time alarm. |
+| 6 | “Choose your alarm sound” | Tap the actual Sound row to open the sound sheet. |
+| 7 | “Find your sound” | Preview/select either free sound. Next closes the sheet before moving to the routine introduction. |
+| 8 | “Build your yoga routine” | Explain “Choose the poses you’ll do when your alarm rings.” Show the slow continuous three-pose preview, then Choose poses. |
+| 9 | “Choose pose 1” | Swipe the first pose card among the three free poses, then Next. |
+| 10 | “Choose pose 2” | Swipe the second card; explain the free 20-second holds, then Next. |
+| 11 | “Choose pose 3” | Swipe the third card; explain top-to-bottom routine order. Try a pose opens placement instructions, without starting the camera yet. |
+| 12 | “Try your first pose.” | Show the three-panel placement illustration. Try it now starts quiet five-second practice of the first chosen pose; Skip practice goes directly to Save. Successful practice shows Continue setup, which also goes directly to Save. |
+| 13 | “Save your alarm” | Highlight the actual Save action. Back returns to placement; saving persists/schedules the configured alarm and opens the summary. |
+| 14 | Saved-alarm summary | Show readiness, name, next occurrence when ready, ordered poses, per-pose durations and total duration. Offer Done and optional Test full routine. |
+
 Observable behavior:
 - On first launch, wait 600 ms on the home screen and offer a “Take a quick tour?” popup using the app’s cream background, 28 dp rounded corners, forest text/buttons, pose illustration and full-width Start tour button, with Later underneath. Start tour begins with a first-use-only “A few permissions first” page explaining why permissions are needed and reusing the normal camera/notifications/full-screen/exact-alarm checklist. Already granted permissions show as complete. Continue after granting permissions, or choose Set up later to continue the tour while retaining the home readiness checklist. Skip this page when all permissions are already ready, when it was previously introduced, and on Settings replay. Persist that it was introduced when leaving this page or skipping/finishing the tour. Later or dismissing the invitation suppresses future automatic invitations, with replay still available in Settings. Do not show the popup over another sheet, an editor/test, or a real ringing alarm.
+- On iOS, use the equivalent native permission/readiness requirements; Android-only full-screen-intent and exact-alarm settings are not literal iOS permission requests. Keep the same first-use explanation, granted/denied/retry handling, deferral and replay behavior.
 - Match the invitation’s position, width and height to the visible home permission card so the cream card fully covers its dark green background. Use a centered card with the same horizontal margins when no permission card exists. Keep content scrollable and clamp the card to the usable screen height for large text/small screens.
 - Opening the alarm editor from home fades the home screen out over 450 ms and fades/slides the editor in over 1,100 ms after a 100 ms lead-in. This applies to Add alarm during the tour and normal use. Block taps during this transition to prevent duplicate actions; other navigation, especially real ringing alarms, remains immediate. Respect disabled/system-scaled animations.
 - Keep the alarm-name field transparent with its normal text and underline colors when it becomes disabled outside its guided step. Clear focus and dismiss the keyboard when leaving Name, without introducing a grey fill or lingering focus highlight.
 - Use a 350 ms fade out followed by a 900 ms fade in for guided Next/Back transitions, with a subtle 12 dp tooltip slide. Scroll the editor to the relevant control over 1,000 ms instead of jumping. Respect system animation scaling, including disabled animations. Prevent repeated Next/Back taps from queuing transitions.
 - Use short, time-neutral copy to introduce the alarm → camera → poses → completed routine flow. Guide time, alarm name (40-character limit; generated names and blank-name fallback follow Android’s local-hour groups from SYNC-015), repeat days, sound selection, a dedicated yoga-routine introduction and each of three ordered pose slots. Back and Skip tour remain available; multi-choice steps advance with Next. Widen name, day and Sound highlights to nearly the editor card width and align rounded highlights with pose cards. Show a wide finger swipe without dashes or arrows.
+- Use a dark translucent scrim (Android: #0D1913 at about 67% opacity), rounded spotlight corners up to 28 dp and a 2 dp lime outline. Leave only the active control available for interaction through the spotlight. Use a large pointing hand (54 sp on Android); on pose steps move the finger horizontally across about 160 dp over 1.5 seconds, then repeat after a short pause. Keep the gesture finger-only, without trailing dashes or arrows. Position hints around status/navigation bars and the keyboard, keep text scrollable at larger sizes, and scroll the editor so the active control and hint fit together.
 - Guide the real editor controls: repeat-day order follows Settings (SYNC-017); Sound, Snooze and Stop button rows; Test full routine above the pose cards; no pose-reorder handle. The sound step opens Sound & vibration, offers the two free sounds (Sunbird Morning Call and Morning Temple Call), and supports ten-second local previews. Selecting a sound preserves the fully expanded sheet until Next; Pro sounds stay outside the guided selection. Stop previews when leaving the sheet or backgrounding the app. The routine introduction is a popout that scrolls slowly and continuously through the three numbered poses at a constant speed (six seconds per card, about 32 dp/second), with a repeated first card for a seamless loop. Do not pause or snap between poses; reduced-motion users see a static three-pose overview.
 - Keep guided pose selection to the three free poses (Mountain, Warrior II, Tree). Explain the free 20-second holds and top-to-bottom routine order without leading users into Pro purchases.
+- A new guided draft starts with Mountain → Warrior II → Tree, each held for 20 seconds (60 seconds total). Guide the same free catalog even for a Pro user. During the tour, disable adding/removing poses, duration changes, per-pose Try actions and the normal editor Test full routine action; keep the three pose slots available only during their respective selection steps. Restore ordinary editor/Pro behavior when the tour is skipped or finished. Keep the editor’s actual layout and current defaults rather than recreating an outdated mock screen; weekday defaults/order and local-hour time/name behavior follow SYNC-015/SYNC-017.
 - In Find your sound, dim the entire screen outside the highlighted free sound choices, including the sheet’s drag handle and the editor behind/above the sheet. Use the same dark scrim opacity in the sheet and its modal backdrop. Keep guided switches in their actual on/off colors even when their interaction is temporarily disabled (on: lime track, forest thumb). After Next, fade the guide out, animate the sound sheet closed, scroll down to the first pose over 1,000 ms, pause briefly (200 ms unless animations are disabled), then reveal the Build your yoga routine popup with a 900 ms fade and subtle slide. Do not show the popup while the sheet is still visible. Stop sound previews before closing; preserve the chosen sound and draft. Back and Skip must also dismiss the sheet cleanly.
 - Before optional practice, show the approved three-panel illustration: prop the phone upright on the floor facing the user, take about two steps back, then follow the pose. Start the camera only on explicit user action. Practice the first chosen pose for five seconds with sound, vibration and transition/completion cues off; preserve the configured routine and its durations. Practice and routine tests never record a real alarm completion or change streaks. Support retry and skipping practice. After successful practice, show a quiet completion screen with Continue setup; cancelling practice returns to placement.
+- Reuse the approved static `onboarding_phone_setup.png` illustration of the default yoga woman, with the panels “Place your phone”, “Take 2 steps back” and “Follow the pose”. Do not substitute the rejected Remotion phone-placement scene or add a full-app animation. Placement copy also explains screen-facing orientation, “5 seconds · sound off” and local processing without recording. Returning to placement after a completed practice of the same first pose shows “You’ve got it.”, Next and Practise again; changing the first pose requires fresh practice. A practice cancellation/permission failure must leave the original alarm draft intact.
 - After practice completion (or skipping practice), go directly to Save your alarm. Omit the separate Test your full routine teaching step; Save is step 13 of 14, and Back returns to phone placement/practice. Keep the normal Test full routine editor action and the optional test on the saved-alarm summary. Save explicitly through the normal persistence and OS scheduling path, then confirm the name, selected routine and durations. Show the next occurrence and “ready” only when the alarm is enabled and all existing readiness checks pass; otherwise say “saved” and direct the user to finish setup on the home screen. Preserve the existing native permissions checklist and scheduling-failure behavior (save switched off). Offer Done and Test full routine.
 - Include permission setup at the start of the first-use tour. Persist tour completion when the user finishes or skips; allow replay through Settings → How to use Yoga Alarm without changing existing alarms automatically. Guide a new draft, restrict interactions to the highlighted control, preserve draft edits through Back and camera tests, and dismiss the keyboard when leaving the name step. Hardware Back navigates the guide or returns from practice/tests. A real ringing alarm takes priority over the guide, including during practice; it must retain the usual alarm completion/stop behavior. After the real alarm closes, an unfinished first-use tour can be offered again.
+- Keep two persisted concepts: automatic-tour completion/dismissal, and whether the permission prelude has been introduced (Android keys `completed_v1` and `permissions_introduced_v1`). Back from Time to Add and then re-entering the editor must reuse the same unsaved draft. Skip tour in the editor leaves that draft editable without automatically saving; exiting the tour on home clears its pending draft. Settings replay creates a fresh guided draft and leaves existing saved alarms untouched. A full-routine test launched from the saved summary finishes the tour, uses the saved alarm’s normal sound/settings/durations, and returns home on exit.
 - The browser remains a design/testing harness. Its camera-free simulation is not included in native onboarding.
 
 Android references:
@@ -57,6 +87,9 @@ Android references:
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmTheme.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmConfig.kt
+- app/src/test/java/com/lurremcfly/yogaalarm/ui/RoutineViewModelTest.kt
 - app/src/main/res/drawable-nodpi/onboarding_phone_setup.png
 
 Prototype references:
@@ -70,6 +103,11 @@ Prototype references:
 Acceptance:
 - Verify invitation alignment/complete coverage over the home permission card, its centered fallback when permissions are ready, small-screen/large-text scrolling, the slower Add alarm transition without double activation, name-field appearance after Next, initial permission page with partially/already granted permissions, denial/retry and Set up later, persisted omission on subsequent tours, Start/Later/dismiss behavior and Settings replay. Verify full-screen dimming around sound choices (including the handle/background), colored Sound switch, the ordered sheet-close → scroll → routine-popup transition, smooth step transitions and the continuous routine-preview loop, skip/back, sound selection and preview cleanup, each free pose selection, camera denial/retry, practice completion/cancellation, draft preservation, explicit save and next-alarm summary.
 - Verify highlights follow the controls on small screens and with larger text; respect reduced motion and accessible navigation. Verify rotation, background/foreground, permission changes, and a fired alarm interrupting the guide or practice. Android compilation and focused unit tests pass; native device verification remains pending.
+- Verify the final sequence has 14 numbered steps with Save at 13: both Skip practice and successful practice → Continue setup must go straight to Save, with no full-routine-test teaching step. Verify Back from the Save step returns to placement, including its completed-practice/retry state. Test the optional full routine from the final summary and the normal editor after leaving the guide.
+
+Validation status:
+- The latest Android debug APK builds successfully with the 14-step sequence. The 27 focused routine/draft/scheduler tests passed during this onboarding work, including isolation of quiet five-second practice from the configured routine; the final UI-only refinements were checked by compilation and diff review without rerunning those tests.
+- Android-device screenshots/feedback informed the visual refinements. Final device acceptance of the latest revision, including timing, invitation coverage, name-field appearance and sound-sheet dimming, remains pending. This entry remains Pending until the iOS flow is implemented and verified; this documentation update does not change the iOS repository.
 
 ### SYNC-015 — Local-hour defaults and varied alarm names
 

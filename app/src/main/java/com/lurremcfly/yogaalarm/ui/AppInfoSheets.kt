@@ -1,12 +1,14 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,9 +38,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -64,104 +69,151 @@ fun AppSettingsSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color.White,
+        containerColor = SoftSurface,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     ) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+                .padding(start = 22.dp, end = 22.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
         ) {
             Text("Settings", color = Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(18.dp))
-            Text("First day of week", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            Column(Modifier.selectableGroup()) {
-                listOf(false to "Monday", true to "Sunday").forEach { (startsOnSunday, label) ->
-                    val selected = weekStartsOnSunday == startsOnSunday
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Preferences", color = MutedInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.dp, Hairline),
+                ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                            .selectable(
-                                selected = selected,
-                                onClick = { onWeekStartsOnSundayChange(startsOnSunday) },
-                                role = Role.RadioButton,
-                            ),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        RadioButton(
-                            selected = selected,
-                            onClick = null,
-                            colors = RadioButtonDefaults.colors(selectedColor = Forest),
+                        Text(
+                            "First day of week",
+                            modifier = Modifier.weight(1f),
+                            color = Ink,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
-                        Spacer(Modifier.width(12.dp))
-                        Text(label, color = Ink)
+                        Surface(shape = RoundedCornerShape(999.dp), color = SoftSurface) {
+                            Row(Modifier.padding(4.dp).selectableGroup()) {
+                                listOf(false to "Monday", true to "Sunday").forEach { (startsOnSunday, label) ->
+                                    val selected = weekStartsOnSunday == startsOnSunday
+                                    Surface(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(999.dp))
+                                            .selectable(
+                                                selected = selected,
+                                                onClick = { onWeekStartsOnSundayChange(startsOnSunday) },
+                                                role = Role.RadioButton,
+                                            )
+                                            .semantics { contentDescription = label },
+                                        shape = RoundedCornerShape(999.dp),
+                                        color = if (selected) AlarmLime else Color.Transparent,
+                                    ) {
+                                        Text(
+                                            label.take(1),
+                                            modifier = Modifier.width(48.dp).heightIn(min = 48.dp)
+                                                .padding(vertical = 12.dp),
+                                            color = if (selected) Forest else MutedInk,
+                                            fontSize = 16.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(18.dp))
-            HorizontalDivider(color = Hairline)
-            Spacer(Modifier.height(18.dp))
-            Text("Pro", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-            when (entitlement) {
-                ProEntitlement.LIFETIME -> {
-                    Text("Lifetime Pro active", color = Ink, fontWeight = FontWeight.SemiBold)
-                    Text("One-time purchase. No renewal or expiry date.", color = MutedInk)
-                }
-                ProEntitlement.SUBSCRIPTION -> {
-                    Text("Subscription Pro active", color = Ink, fontWeight = FontWeight.SemiBold)
-                }
-                null -> {
-                    TextButton(onClick = onOpenPro) {
-                        Text("Get Pro", color = Forest)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Hairline),
+            ) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Yoga Alarm Pro", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    when (entitlement) {
+                        ProEntitlement.LIFETIME -> {
+                            Text("Lifetime Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
+                            Text("One-time purchase. No renewal or expiry date.", color = MutedInk, fontSize = 14.sp)
+                        }
+                        ProEntitlement.SUBSCRIPTION -> {
+                            Text("Subscription Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
+                        }
+                        null -> {
+                            Text("More poses, sounds, and a routine that’s yours.", color = MutedInk, fontSize = 14.sp)
+                            Button(
+                                onClick = onOpenPro,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
+                            ) {
+                                Text("Get Pro", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                    if (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null) {
+                        Text(
+                            when (subscriptionAutoRenewing) {
+                                false -> "Subscription renewal canceled. View your end date in Google Play."
+                                true -> "Renews automatically. View your renewal date or cancel in Google Play."
+                                null -> "View your renewal date or cancel in Google Play."
+                            },
+                            color = MutedInk,
+                            fontSize = 14.sp,
+                        )
+                        OutlinedButton(
+                            onClick = onManageSubscription,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Forest),
+                            border = BorderStroke(1.dp, Hairline),
+                        ) {
+                            Text("Manage subscription", fontWeight = FontWeight.SemiBold)
+                        }
+                        Text(
+                            if (entitlement == ProEntitlement.LIFETIME)
+                                "Your lifetime Pro access is unaffected by subscription cancellation."
+                            else "Pro stays active until your paid period ends.",
+                            color = MutedInk,
+                            fontSize = 14.sp,
+                        )
                     }
                 }
             }
-            if (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    when (subscriptionAutoRenewing) {
-                        false -> "Subscription renewal canceled."
-                        true -> "Subscription renews automatically."
-                        null -> "Check your subscription status in Google Play."
-                    },
-                    color = MutedInk,
-                )
-                TextButton(onClick = onManageSubscription) {
-                    Text(
-                        if (subscriptionAutoRenewing == false) "View subscription end date in Google Play"
-                        else "View renewal date in Google Play",
-                        color = Forest,
-                    )
-                }
-                OutlinedButton(
-                    onClick = onManageSubscription,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Forest),
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Help & info", color = MutedInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.White,
+                    border = BorderStroke(1.dp, Hairline),
                 ) {
-                    Text(
-                        if (subscriptionAutoRenewing == false) "Manage subscription" else "Cancel subscription",
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                    Column {
+                        TextButton(
+                            onClick = onOpenHelp,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+                        ) {
+                            Text("How to use Yoga Alarm", modifier = Modifier.fillMaxWidth(), color = Forest, fontSize = 15.sp)
+                        }
+                        HorizontalDivider(Modifier.padding(horizontal = 18.dp), color = Hairline)
+                        TextButton(
+                            onClick = onOpenPrivacy,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                            shape = RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 14.dp),
+                        ) {
+                            Text("Privacy & safety", modifier = Modifier.fillMaxWidth(), color = Forest, fontSize = 15.sp)
+                        }
+                    }
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    when {
-                        entitlement == ProEntitlement.LIFETIME -> "Your lifetime Pro access is unaffected by subscription cancellation."
-                        subscriptionAutoRenewing == false -> "Pro stays active until your paid period ends."
-                        else -> "Confirm cancellation in Google Play. Pro stays active until your paid period ends."
-                    },
-                    color = MutedInk,
-                    fontSize = 14.sp,
-                )
             }
-            Spacer(Modifier.height(18.dp))
-            HorizontalDivider(color = Hairline)
-            TextButton(onClick = onOpenHelp) {
-                Text("How to use Yoga Alarm", color = Forest)
-            }
-            TextButton(onClick = onOpenPrivacy) {
-                Text("Privacy & safety", color = Forest)
-            }
-            Spacer(Modifier.height(8.dp))
             Text(
                 "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 color = MutedInk,
