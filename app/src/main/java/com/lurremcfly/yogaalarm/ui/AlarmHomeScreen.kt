@@ -88,7 +88,7 @@ import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AlarmHomeScreen(
+internal fun AlarmHomeScreen(
     alarms: List<AlarmConfig>,
     streakDays: Int,
     previousStreakDays: Int,
@@ -113,6 +113,7 @@ fun AlarmHomeScreen(
     onEditAlarm: (Long) -> Unit,
     onToggleAlarm: (Long, Boolean) -> Unit,
     onDeleteAlarm: (Long) -> Unit,
+    onboardingTargets: OnboardingTargets? = null,
 ) {
     var selectedAlarmId by remember { mutableStateOf<Long?>(null) }
     Box(
@@ -242,7 +243,8 @@ fun AlarmHomeScreen(
             modifier = Modifier.align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 12.dp)
-                .heightIn(min = 56.dp),
+                .heightIn(min = 56.dp)
+                .onboardingTarget(OnboardingStep.Add, onboardingTargets),
             shape = RoundedCornerShape(50),
             colors = ButtonDefaults.buttonColors(containerColor = AlarmLime, contentColor = Forest),
             elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp),

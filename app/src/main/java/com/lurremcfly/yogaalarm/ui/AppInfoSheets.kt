@@ -58,6 +58,7 @@ fun AppSettingsSheet(
     onOpenPro: () -> Unit,
     onManageSubscription: () -> Unit,
     onOpenPrivacy: () -> Unit,
+    onOpenHelp: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -126,6 +127,9 @@ fun AppSettingsSheet(
             }
             Spacer(Modifier.height(18.dp))
             HorizontalDivider(color = Hairline)
+            TextButton(onClick = onOpenHelp) {
+                Text("How to use Yoga Alarm", color = Forest)
+            }
             TextButton(onClick = onOpenPrivacy) {
                 Text("Privacy & safety", color = Forest)
             }

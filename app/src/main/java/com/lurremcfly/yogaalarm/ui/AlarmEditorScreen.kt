@@ -46,6 +46,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -55,6 +56,12 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import kotlin.math.roundToInt
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,6 +79,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -91,7 +100,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun AlarmEditorScreen(
+internal fun AlarmEditorScreen(
     initialAlarm: AlarmConfig,
     existingAlarmNames: List<String>,
     isPro: Boolean,
@@ -100,18 +109,50 @@ fun AlarmEditorScreen(
     onSave: (AlarmConfig) -> Unit,
     onTestRoutine: (AlarmConfig) -> Unit,
     onTestPose: (AlarmConfig, PoseStep) -> Unit,
+    onboardingStep: OnboardingStep? = null,
+    onboardingTargets: OnboardingTargets? = null,
+    onOnboardingStep: (OnboardingStep, AlarmConfig) -> Unit = { _, _ -> },
+    onSkipOnboarding: () -> Unit = {},
+    onPractice: (AlarmConfig) -> Unit = {},
+    practiceComplete: Boolean = false,
 ) {
     BackHandler(onBack = onCancel)
     var draft by rememberSaveable(initialAlarm.id) { mutableStateOf(initialAlarm) }
     var durationSheetSlot by remember { mutableStateOf<Int?>(null) }
-    var soundSheetOpen by remember { mutableStateOf(false) }
+    var soundSheetOpen by rememberSaveable(initialAlarm.id) { mutableStateOf(onboardingStep == OnboardingStep.SoundChoice) }
     var snoozeSheetOpen by remember { mutableStateOf(false) }
     val editorScrollState = rememberScrollState()
     val fontScale = LocalDensity.current.fontScale
+    val density = LocalDensity.current
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    var viewport by remember { mutableStateOf(Rect.Zero) }
+    val tipHeight = onboardingTargets?.tipHeight ?: 0f
+    val navigationBottom = WindowInsets.navigationBars.getBottom(density)
+    val statusTop = WindowInsets.statusBars.getTop(density)
+    LaunchedEffect(onboardingStep, viewport.size, tipHeight, fontScale) {
+        if (onboardingStep == null || onboardingStep.isPage || onboardingStep == OnboardingStep.SoundChoice || onboardingStep == OnboardingStep.Save) return@LaunchedEffect
+        withFrameNanos { }
+        if (onboardingStep == OnboardingStep.Time) {
+            editorScrollState.scrollTo(0)
+        } else {
+            val target = onboardingTargets?.bounds?.get(onboardingStep) ?: return@LaunchedEffect
+            val top = viewport.top + statusTop + with(density) { 76.dp.toPx() }
+            val bottom = viewport.bottom - navigationBottom - tipHeight - with(density) { 90.dp.toPx() }
+            val desired = maxOf(top, (top + bottom - target.height) / 2f)
+            editorScrollState.scrollTo((editorScrollState.value + target.top - desired).roundToInt().coerceAtLeast(0))
+        }
+    }
+    fun changeOnboardingStep(next: OnboardingStep) {
+        if (next != OnboardingStep.Name) { focusManager.clearFocus(); keyboard?.hide() }
+        soundSheetOpen = next == OnboardingStep.SoundChoice
+        onOnboardingStep(next, draft)
+    }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { viewport = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat())) }
             .background(
                 Brush.verticalGradient(
                     listOf(Color(0xFFF3F5F3), Color(0xFFF1FBF5), Color(0xFFF3EEFF)),
@@ -129,11 +170,11 @@ fun AlarmEditorScreen(
             AlarmTimePicker(
                 hour = draft.hour,
                 minute = draft.minute,
-                onHourChange = { draft = draft.copy(hour = it) },
-                onMinuteChange = { draft = draft.copy(minute = it) },
+                onHourChange = { if (onboardingStep == null || onboardingStep == OnboardingStep.Time) draft = draft.copy(hour = it) },
+                onMinuteChange = { if (onboardingStep == null || onboardingStep == OnboardingStep.Time) draft = draft.copy(minute = it) },
                 modifier = Modifier.graphicsLayer {
                     translationY = editorScrollState.value.toFloat()
-                },
+                }.onboardingTarget(OnboardingStep.Time, onboardingTargets),
             )
 
             Column(
@@ -141,13 +182,15 @@ fun AlarmEditorScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 18.dp)
                     .clip(RoundedCornerShape(38.dp))
+                    .onGloballyPositioned { onboardingTargets?.editorBounds = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat())) }
                     .background(Color.White)
                     .padding(horizontal = 22.dp, vertical = 22.dp),
             ) {
                     TextField(
                         value = draft.name,
                         onValueChange = { draft = draft.copy(name = it.take(40)) },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().onboardingTarget(OnboardingStep.Name, onboardingTargets),
+                        enabled = onboardingStep == null || onboardingStep == OnboardingStep.Name,
                         placeholder = { Text("Alarm name") },
                         singleLine = true,
                         textStyle = MaterialTheme.typography.titleLarge.copy(color = Ink),
@@ -162,9 +205,15 @@ fun AlarmEditorScreen(
                     WeekdayPicker(
                         selectedDays = draft.weekdays,
                         onSelectionChange = { draft = draft.copy(weekdays = it) },
+                        enabled = onboardingStep == null || onboardingStep == OnboardingStep.Days,
+                        onboardingTargets = onboardingTargets,
                     )
                     Spacer(Modifier.height(30.dp))
-                    SettingRow("Sound", draft.sound.displayName, draft.soundEnabled, onClick = { soundSheetOpen = true }) {
+                    SettingRow("Sound", draft.sound.displayName, draft.soundEnabled,
+                        modifier = Modifier.onboardingTarget(OnboardingStep.Sound, onboardingTargets),
+                        enabled = onboardingStep == null || onboardingStep == OnboardingStep.Sound,
+                        toggleEnabled = onboardingStep == null,
+                        onClick = { soundSheetOpen = true; if (onboardingStep == OnboardingStep.Sound) changeOnboardingStep(OnboardingStep.SoundChoice) }) {
                         draft = draft.copy(soundEnabled = it)
                     }
                     HorizontalDivider(color = Hairline)
@@ -173,6 +222,7 @@ fun AlarmEditorScreen(
                         "${draft.snoozeMinutes} minutes, ${draft.snoozeCount} ${if (draft.snoozeCount == 1) "time" else "times"}",
                         draft.snoozeEnabled,
                         onClick = { snoozeSheetOpen = true },
+                        enabled = onboardingStep == null,
                     ) {
                         draft = draft.copy(snoozeEnabled = it)
                     }
@@ -181,6 +231,7 @@ fun AlarmEditorScreen(
                         "Stop button",
                         "Allow manual alarm stop",
                         !draft.stopButtonDisabled,
+                        enabled = onboardingStep == null,
                     ) {
                         draft = draft.copy(stopButtonDisabled = !it)
                     }
@@ -188,8 +239,9 @@ fun AlarmEditorScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable(role = androidx.compose.ui.semantics.Role.Button) { onTestRoutine(draft) }
-                            .padding(vertical = 4.dp),
+                            .clickable(enabled = onboardingStep == null || onboardingStep == OnboardingStep.Test, role = androidx.compose.ui.semantics.Role.Button) { onTestRoutine(draft) }
+                            .padding(vertical = 4.dp)
+                            .onboardingTarget(OnboardingStep.Test, onboardingTargets),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -233,6 +285,9 @@ fun AlarmEditorScreen(
                             },
                             onSelectDuration = { durationSheetSlot = index },
                             onTryPose = { onTestPose(draft, step) },
+                            guided = onboardingStep != null,
+                            guideSelected = onboardingStep == listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index),
+                            onboardingTargets = onboardingTargets,
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -243,6 +298,7 @@ fun AlarmEditorScreen(
                     ) {
                         if (isPro && draft.routine.size > 1) {
                             OutlinedButton(
+                                enabled = onboardingStep == null,
                                 onClick = { draft = draft.copy(routine = draft.routine.dropLast(1)) },
                                 modifier = Modifier.weight(1f).widthIn(min = 156.dp * fontScale),
                                 shape = RoundedCornerShape(18.dp),
@@ -260,7 +316,7 @@ fun AlarmEditorScreen(
                                     draft = draft.copy(routine = draft.routine + PoseStep(nextPose))
                                 }
                             },
-                            enabled = !isPro || draft.routine.size < 10,
+                            enabled = onboardingStep == null && (!isPro || draft.routine.size < 10),
                             modifier = Modifier.weight(1f).widthIn(min = 156.dp * fontScale),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFFF1F6F1),
@@ -289,7 +345,17 @@ fun AlarmEditorScreen(
                     AlarmConfig.defaultName(draft.hour, existingAlarmNames)
                 }))
             },
+            onboardingStep = onboardingStep,
+            onboardingTargets = onboardingTargets,
         )
+        if (onboardingStep != null && onboardingStep != OnboardingStep.SoundChoice && onboardingTargets != null) {
+            OnboardingOverlay(onboardingStep, onboardingTargets, draft, practiceComplete,
+                onStep = ::changeOnboardingStep,
+                onSkip = { soundSheetOpen = false; onSkipOnboarding() },
+                onPractice = { onPractice(draft) },
+                onTest = { onTestRoutine(draft) },
+            )
+        }
     }
 
     durationSheetSlot?.let { slotIndex ->
@@ -331,11 +397,14 @@ fun AlarmEditorScreen(
                 soundSheetOpen = false
                 onUpgrade()
             },
-            onDismiss = { soundSheetOpen = false },
+            onDismiss = { soundSheetOpen = false; if (onboardingStep == OnboardingStep.SoundChoice) onOnboardingStep(OnboardingStep.Sound, draft) },
             onSelect = { sound ->
                 draft = draft.copy(sound = sound, soundEnabled = true)
             },
             onVibrationChange = { draft = draft.copy(vibrationEnabled = it) },
+            onboardingTargets = onboardingTargets,
+            onOnboardingStep = if (onboardingStep == OnboardingStep.SoundChoice) ::changeOnboardingStep else null,
+            onSkipOnboarding = { soundSheetOpen = false; onSkipOnboarding() },
         )
     }
 
@@ -414,15 +483,17 @@ private fun NumberWheel(
 private fun WeekdayPicker(
     selectedDays: Set<Int>,
     onSelectionChange: (Set<Int>) -> Unit,
+    enabled: Boolean = true,
+    onboardingTargets: OnboardingTargets? = null,
 ) {
     val days = listOf(1 to "M", 2 to "T", 3 to "W", 4 to "T", 5 to "F", 6 to "S", 7 to "S")
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(modifier = Modifier.fillMaxWidth().onboardingTarget(OnboardingStep.Days, onboardingTargets), horizontalArrangement = Arrangement.SpaceBetween) {
         days.forEach { (day, label) ->
             val selected = day in selectedDays
             Surface(
                 modifier = Modifier
                     .size(38.dp)
-                    .clickable {
+                    .clickable(enabled = enabled) {
                         onSelectionChange(if (selected) selectedDays - day else selectedDays + day)
                     },
                 shape = CircleShape,
@@ -446,20 +517,25 @@ private fun PoseCarouselCard(
     onSelectPose: (YogaPose) -> Unit,
     onSelectDuration: () -> Unit,
     onTryPose: () -> Unit,
+    guided: Boolean = false,
+    guideSelected: Boolean = false,
+    onboardingTargets: OnboardingTargets? = null,
 ) {
     val fontScale = LocalDensity.current.fontScale
-    val poses = YogaPose.entries
+    val poses = if (guided) YogaPose.entries.filter { it.isFree } else YogaPose.entries
     val pagerState = rememberPagerState(
         initialPage = poses.indexOf(step.pose).coerceAtLeast(0),
         pageCount = { poses.size },
     )
-    LaunchedEffect(pagerState, isPro) {
+    LaunchedEffect(pagerState, isPro, guided) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
             poses.getOrNull(page)?.takeIf { isPro || it.isFree }?.let(onSelectPose)
         }
     }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index)?.let {
+            Modifier.onboardingTarget(it, onboardingTargets)
+        } ?: Modifier),
         shape = RoundedCornerShape(28.dp),
         color = Color(0xFFF1F6F1),
         border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
@@ -477,6 +553,7 @@ private fun PoseCarouselCard(
                 )
                 HorizontalPager(
                     state = pagerState,
+                    userScrollEnabled = !guided || guideSelected,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(252.dp * fontScale.coerceAtLeast(1f)),
@@ -517,7 +594,7 @@ private fun PoseCarouselCard(
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Surface(
-                                        modifier = Modifier.clickable(onClick = onSelectDuration),
+                                        modifier = Modifier.clickable(enabled = !guided, onClick = onSelectDuration),
                                         shape = RoundedCornerShape(50),
                                         color = Color.White,
                                     ) {
@@ -530,7 +607,7 @@ private fun PoseCarouselCard(
                                         )
                                     }
                                     Surface(
-                                        modifier = Modifier.clickable(onClick = onTryPose),
+                                        modifier = Modifier.clickable(enabled = !guided, onClick = onTryPose),
                                         shape = RoundedCornerShape(50),
                                         color = Forest,
                                     ) {
@@ -576,12 +653,15 @@ private fun SettingRow(
     detail: String,
     checked: Boolean,
     onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    toggleEnabled: Boolean = enabled,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = onClick != null) { onClick?.invoke() }
+            .clickable(enabled = enabled && onClick != null) { onClick?.invoke() }
             .padding(vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -589,7 +669,7 @@ private fun SettingRow(
             Text(title, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
             Text(detail, color = MutedInk, fontSize = 14.sp)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, colors = yogaSwitchColors())
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = toggleEnabled, colors = yogaSwitchColors())
     }
 }
 
@@ -603,6 +683,9 @@ private fun SoundPickerSheet(
     onDismiss: () -> Unit,
     onSelect: (AlarmSound) -> Unit,
     onVibrationChange: (Boolean) -> Unit,
+    onboardingTargets: OnboardingTargets? = null,
+    onOnboardingStep: ((OnboardingStep) -> Unit)? = null,
+    onSkipOnboarding: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var previewPlayer by remember { mutableStateOf<AlarmAudio?>(null) }
@@ -625,21 +708,23 @@ private fun SoundPickerSheet(
     DisposableEffect(Unit) {
         onDispose { previewPlayer?.close() }
     }
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = onOnboardingStep != null)) {
+        Box(if (onOnboardingStep != null) Modifier.fillMaxWidth().fillMaxHeight(0.92f) else Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 22.dp).padding(bottom = 28.dp)) {
             Text("Sound & vibration", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
-            Text(if (isPro) "Choose your alarm sound." else "Upgrade to Pro to unlock the dimmed sounds.", color = MutedInk, fontSize = 13.sp)
+            Text(if (onOnboardingStep != null || isPro) "Choose your alarm sound." else "Upgrade to Pro to unlock the dimmed sounds.", color = MutedInk, fontSize = 13.sp)
             previewError?.let { Text(it, color = Color(0xFFB4232C)) }
             Spacer(Modifier.height(12.dp))
             SettingRow("Vibration", "Gentle pulse", vibrationEnabled, onCheckedChange = onVibrationChange)
             HorizontalDivider(color = Hairline)
             Spacer(Modifier.height(18.dp))
             LazyColumn(
-                Modifier.fillMaxWidth().heightIn(max = 480.dp),
+                Modifier.fillMaxWidth().heightIn(max = 480.dp).onboardingTarget(OnboardingStep.SoundChoice, onboardingTargets),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items(AlarmSound.entries, key = { it.name }) { sound ->
+                items(AlarmSound.entries.filter { onOnboardingStep == null || it.isFree }, key = { it.name }) { sound ->
                     val locked = !sound.isFree && !isPro
                     Row(
                         modifier = Modifier
@@ -689,11 +774,20 @@ private fun SoundPickerSheet(
                 }
             }
         }
+        if (onOnboardingStep != null && onboardingTargets != null) {
+            OnboardingOverlay(OnboardingStep.SoundChoice, onboardingTargets, null,
+                onStep = { stopPreview(); onOnboardingStep(it) },
+                onSkip = { stopPreview(); onSkipOnboarding() },
+                onPractice = {}, onTest = {}, modifier = Modifier.matchParentSize(),
+            )
+        }
+        }
     }
 }
 
 @Composable
-private fun EditorActions(onCancel: () -> Unit, onSave: () -> Unit, modifier: Modifier = Modifier) {
+private fun EditorActions(onCancel: () -> Unit, onSave: () -> Unit, modifier: Modifier = Modifier,
+    onboardingStep: OnboardingStep? = null, onboardingTargets: OnboardingTargets? = null) {
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -708,11 +802,11 @@ private fun EditorActions(onCancel: () -> Unit, onSave: () -> Unit, modifier: Mo
             shadowElevation = 8.dp,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onCancel, modifier = Modifier.weight(1f)) {
+                TextButton(onClick = onCancel, enabled = onboardingStep == null, modifier = Modifier.weight(1f)) {
                     Text("Cancel", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
                 Box(Modifier.width(1.dp).height(30.dp).background(Hairline))
-                TextButton(onClick = onSave, modifier = Modifier.weight(1f)) {
+                TextButton(onClick = onSave, enabled = onboardingStep == null || onboardingStep == OnboardingStep.Save, modifier = Modifier.weight(1f).onboardingTarget(OnboardingStep.Save, onboardingTargets)) {
                     Text("Save", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }

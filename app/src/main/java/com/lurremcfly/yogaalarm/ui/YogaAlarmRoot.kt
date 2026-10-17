@@ -40,6 +40,7 @@ import com.lurremcfly.yogaalarm.billing.PlayBillingManager
 import com.lurremcfly.yogaalarm.data.AlarmStore
 import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
+import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import java.time.LocalDate
@@ -70,9 +71,24 @@ internal fun YogaAlarmRoot(
     var editingAlarmId by rememberSaveable { mutableStateOf(-1L) }
     var pendingEditorAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
     var cameraAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
+    val onboardingPreferences = remember { context.getSharedPreferences("onboarding", Context.MODE_PRIVATE) }
+    var onboardingStep by rememberSaveable {
+        mutableStateOf<OnboardingStep?>(if (onboardingPreferences.getBoolean("completed_v1", false)) null else OnboardingStep.Welcome)
+    }
+    val onboardingTargets = remember { OnboardingTargets() }
+    var onboardingSavedAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
+    var onboardingPractice by rememberSaveable { mutableStateOf(false) }
+    var onboardingPracticeComplete by rememberSaveable { mutableStateOf(false) }
+    var onboardingPracticePose by rememberSaveable { mutableStateOf<YogaPose?>(null) }
+    fun finishOnboarding() {
+        onboardingPreferences.edit().putBoolean("completed_v1", true).apply()
+        onboardingStep = null
+        onboardingSavedAlarm = null
+        if (route == "home") pendingEditorAlarm = null
+    }
     val snackbarHost = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
-    fun saveAlarm(config: AlarmConfig) {
+    fun saveAlarm(config: AlarmConfig): AlarmConfig {
         val scheduled = AlarmScheduler.schedule(context, config)
         val saved = if (config.enabled && !scheduled) config.copy(enabled = false) else config
         alarms = if (alarms.any { it.id == saved.id }) {
@@ -89,6 +105,7 @@ internal fun YogaAlarmRoot(
         }
         snackbarHost.currentSnackbarData?.dismiss()
         snackbarScope.launch { snackbarHost.showSnackbar(message) }
+        return saved
     }
     var firedRoutine by rememberSaveable { mutableStateOf(false) }
     var remainingSnoozes by rememberSaveable { mutableStateOf(0) }
@@ -171,6 +188,9 @@ internal fun YogaAlarmRoot(
         proPaywallOpen = false
         privacySheetOpen = false
         settingsSheetOpen = false
+        onboardingPractice = false
+        onboardingPracticeComplete = false
+        onboardingStep = if (onboardingPreferences.getBoolean("completed_v1", false)) null else OnboardingStep.Welcome
         editingAlarmId = fired.id
         pendingEditorAlarm = fired
         cameraAlarm = fired
@@ -200,23 +220,50 @@ internal fun YogaAlarmRoot(
                         route = "home"
                     },
                     onSave = { saved ->
-                        saveAlarm(saved)
+                        val actual = saveAlarm(saved)
                         savedAlarmId = saved.id
                         pendingEditorAlarm = null
                         route = "home"
+                        if (onboardingStep == OnboardingStep.Save) {
+                            onboardingSavedAlarm = actual
+                            onboardingStep = OnboardingStep.Complete
+                        }
                     },
                     onTestRoutine = { draft ->
                         pendingEditorAlarm = draft
                         cameraAlarm = draft
                         firedRoutine = false
+                        onboardingPractice = false
                         route = "camera"
                     },
                     onTestPose = { draft, step ->
                         pendingEditorAlarm = draft
                         cameraAlarm = draft.copy(routine = listOf(step))
                         firedRoutine = false
+                        onboardingPractice = false
                         route = "camera"
                     },
+                    onboardingStep = onboardingStep.takeIf { firedAlarmId == null && !firedRoutine },
+                    onboardingTargets = onboardingTargets,
+                    onOnboardingStep = { step, draft ->
+                        pendingEditorAlarm = draft
+                        onboardingStep = step
+                        if (step == OnboardingStep.Add) route = "home"
+                    },
+                    onSkipOnboarding = ::finishOnboarding,
+                    onPractice = { draft ->
+                        pendingEditorAlarm = draft
+                        cameraAlarm = draft.copy(
+                            routine = listOf(draft.routine.first().copy(durationSeconds = 5)),
+                            soundEnabled = false, vibrationEnabled = false,
+                        )
+                        onboardingPractice = true
+                        onboardingPracticeComplete = false
+                        onboardingPracticePose = draft.routine.first().pose
+                        firedRoutine = false
+                        route = "camera"
+                    },
+                    practiceComplete = onboardingPracticeComplete && onboardingPracticePose == initial.routine.firstOrNull()?.pose,
                 )
             }
             "camera" -> {
@@ -225,10 +272,12 @@ internal fun YogaAlarmRoot(
                     alarm = testAlarm,
                     viewModel = routineViewModel,
                     onRoutineComplete = {
-                        if (firedRoutine) wakeProgress = wakeProgressStore.recordCompletion()
+                        if (onboardingPractice) onboardingPracticeComplete = true
+                        else if (firedRoutine) wakeProgress = wakeProgressStore.recordCompletion()
                     },
                     onCompletionPresentationFinished = onAlarmPresentationFinished,
                     isFiredAlarm = firedRoutine,
+                    isOnboardingPractice = onboardingPractice,
                     remainingSnoozes = remainingSnoozes,
                     emergencyPassesRemaining = wakeProgress.emergencyPassesRemaining,
                     streakDays = wakeProgress.streakDays,
@@ -248,7 +297,15 @@ internal fun YogaAlarmRoot(
                         if (firedRoutine) {
                             closeFiredAlarm()
                         } else {
-                            route = "editor"
+                            if (onboardingPractice) {
+                                val complete = routineViewModel.uiState.value.phase == RoutinePhase.COMPLETE
+                                onboardingPracticeComplete = complete
+                                onboardingStep = if (complete) OnboardingStep.Test else OnboardingStep.Placement
+                                onboardingPractice = false
+                            }
+                            cameraAlarm = null
+                            readinessRefresh += 1
+                            route = if (pendingEditorAlarm == null) "home" else "editor"
                         }
                     },
                     onStopAlarm = {
@@ -273,8 +330,8 @@ internal fun YogaAlarmRoot(
                 savedAlarmId = savedAlarmId,
                 onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
                 isPro = proEntitlement != null,
-                onOpenPro = { proPaywallOpen = true },
-                onOpenSettings = { settingsSheetOpen = true },
+                onOpenPro = { if (onboardingStep == null) proPaywallOpen = true },
+                onOpenSettings = { if (onboardingStep == null) settingsSheetOpen = true },
                 cameraReady = cameraReady,
                 notificationsReady = notificationsReady,
                 fullScreenReady = fullScreenReady,
@@ -336,26 +393,51 @@ internal fun YogaAlarmRoot(
                     }
                 },
                 onAddAlarm = {
-                    val draft = AlarmConfig.create(existingNames = alarms.map { it.name })
+                    val draft = pendingEditorAlarm.takeIf { onboardingStep == OnboardingStep.Add }
+                        ?: AlarmConfig.create(existingNames = alarms.map { it.name })
                     editingAlarmId = draft.id
                     pendingEditorAlarm = draft
+                    if (onboardingStep == OnboardingStep.Add) onboardingStep = OnboardingStep.Time
                     route = "editor"
                 },
                 onEditAlarm = {
-                    editingAlarmId = it
-                    pendingEditorAlarm = null
-                    route = "editor"
+                    if (onboardingStep == null) {
+                        editingAlarmId = it
+                        pendingEditorAlarm = null
+                        route = "editor"
+                    }
                 },
                 onToggleAlarm = { id, enabled ->
-                    alarms.firstOrNull { it.id == id }?.let { saveAlarm(it.copy(enabled = enabled)) }
+                    if (onboardingStep == null) alarms.firstOrNull { it.id == id }?.let { saveAlarm(it.copy(enabled = enabled)) }
                 },
                 onDeleteAlarm = { id ->
-                    AlarmScheduler.cancel(context, id)
-                    alarms = alarms.filterNot { it.id == id }
-                    store.save(alarms)
-                    wakeProgress = wakeProgressStore.load()
+                    if (onboardingStep == null) {
+                        AlarmScheduler.cancel(context, id)
+                        alarms = alarms.filterNot { it.id == id }
+                        store.save(alarms)
+                        wakeProgress = wakeProgressStore.load()
+                    }
                 },
+                onboardingTargets = onboardingTargets,
             )
+        }
+        if (route == "home" && firedAlarmId == null && !firedRoutine) {
+            onboardingStep?.let { step ->
+                OnboardingOverlay(step, onboardingTargets, onboardingSavedAlarm ?: pendingEditorAlarm,
+                    alarmReady = cameraReady && notificationsReady && fullScreenReady && exactAlarmsReady,
+                    onStep = { onboardingStep = it }, onSkip = ::finishOnboarding, onPractice = {},
+                    onTest = {
+                        val saved = onboardingSavedAlarm
+                        if (saved != null) {
+                            finishOnboarding()
+                            pendingEditorAlarm = null
+                            cameraAlarm = saved
+                            firedRoutine = false
+                            route = "camera"
+                        }
+                    },
+                )
+            }
         }
         SnackbarHost(snackbarHost, Modifier.align(Alignment.BottomCenter).navigationBarsPadding())
     }
@@ -396,6 +478,14 @@ internal fun YogaAlarmRoot(
             onOpenPrivacy = {
                 settingsSheetOpen = false
                 privacySheetOpen = true
+            },
+            onOpenHelp = {
+                settingsSheetOpen = false
+                pendingEditorAlarm = null
+                onboardingSavedAlarm = null
+                onboardingPracticeComplete = false
+                onboardingStep = OnboardingStep.Welcome
+                route = "home"
             },
         )
     }

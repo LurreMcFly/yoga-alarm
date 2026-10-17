@@ -85,6 +85,7 @@ internal fun CameraPermissionRoute(
     onStopAlarm: () -> Unit,
     onEmergencyStopAlarm: () -> Unit,
     onTechnicalStopAlarm: () -> Unit,
+    isOnboardingPractice: Boolean = false,
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -179,7 +180,7 @@ internal fun CameraPermissionRoute(
     var lastCuedPoseIndex by rememberSaveable(alarm) { mutableStateOf(-1) }
     DisposableEffect(uiState.phase, uiState.poseIndex, cameraStarted, foreground) {
         val cueDue = uiState.phase == RoutinePhase.TRANSITION || uiState.phase == RoutinePhase.COMPLETE
-        val cue = if (cameraStarted && foreground && cueDue && lastCuedPoseIndex != uiState.poseIndex) {
+        val cue = if (!isOnboardingPractice && cameraStarted && foreground && cueDue && lastCuedPoseIndex != uiState.poseIndex) {
             lastCuedPoseIndex = uiState.poseIndex
             runCatching {
                 android.media.MediaPlayer.create(
@@ -244,9 +245,11 @@ internal fun CameraPermissionRoute(
             viewModel.start(alarm)
         }
     }
-    BackHandler(enabled = isFiredAlarm) { }
+    BackHandler { if (!isFiredAlarm) onBack() }
 
-    if (cameraStarted && hasPermission) {
+    if (isOnboardingPractice && uiState.phase == RoutinePhase.COMPLETE) {
+        OnboardingPracticeComplete(onContinue = onBack)
+    } else if (cameraStarted && hasPermission) {
         RoutineCameraScreen(
             uiState = uiState,
             frames = viewModel.frames,

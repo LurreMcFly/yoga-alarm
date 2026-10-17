@@ -38,6 +38,12 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
+Android now includes the approved onboarding on first use, with replay through **Settings → How to use Yoga Alarm**. It guides time, alarm name, repeat days, sound and routine setup using the real controls, then offers quiet five-second pose practice and a full-routine test before saving. The native flow still uses the normal alarm scheduling and permissions checks.
+
+The browser tester retains the onboarding design preview. **Preview without camera** lets you test practice with simulated pose detection. Saved preview alarms stay in this browser.
+
+The alarm setup preview was checked against the current Android source on 2026-10-17: Monday-first days, local-hour draft defaults, sound/Snooze/Stop button controls, the full-routine test above poses, and matching free/Pro catalogs. Sound previews use the Android audio files. OS permissions, scheduled/ringing alarms, real streak history, billing and Android camera behavior still require native testing; the browser streak is a layout sample and Pro purchases are unavailable here. Android references: `model/AlarmConfig.kt`, `ui/AlarmEditorScreen.kt`, and `ui/AlarmHomeScreen.kt` under `app/src/main/java/com/lurremcfly/yogaalarm/`.
+
 ## Run
 
 Use JDK 17 and Android SDK 36. The app supports Android 8.0/API 26 and later.

@@ -135,6 +135,28 @@ class RoutineViewModelTest {
     }
 
     @Test
+    fun fiveSecondPracticeDoesNotCarryIntoTheConfiguredRoutine() = routineTest {
+        val configured = alarm().copy(routine = listOf(PoseStep(YogaPose.MOUNTAIN, 20)))
+        val practice = configured.copy(
+            routine = listOf(configured.routine.first().copy(durationSeconds = 5)),
+            soundEnabled = false, vibrationEnabled = false,
+        )
+        viewModel.start(practice)
+        feedFor(4_000)
+        assertFalse(viewModel.uiState.value.phase == RoutinePhase.COMPLETE)
+        feedFor(3_000)
+        assertEquals(RoutinePhase.COMPLETE, viewModel.uiState.value.phase)
+        assertFalse(viewModel.uiState.value.soundEnabled)
+
+        viewModel.start(configured)
+        assertEquals(20, viewModel.uiState.value.remainingSeconds)
+        assertTrue(viewModel.uiState.value.soundEnabled)
+        assertEquals(0f, viewModel.progress.value.hold)
+        feedFor(7_000)
+        assertFalse(viewModel.uiState.value.phase == RoutinePhase.COMPLETE)
+    }
+
+    @Test
     fun restartingSameConfigurationPreservesProgressAcrossRecreation() = routineTest {
         val config = alarm()
         viewModel.start(config)

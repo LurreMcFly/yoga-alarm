@@ -11,7 +11,7 @@ type SessionPhase = 'idle' | 'ready' | 'finding' | 'holding' | 'paused' | 'trans
 type AlarmAudio = {
   context: AudioContext;
   gain: GainNode;
-  oscillators: OscillatorNode[];
+  player: HTMLAudioElement;
 };
 
 type PoseEvaluation = {
@@ -42,6 +42,10 @@ export default function Home() {
   const [surface, setSurface] = useState<'app' | 'routine'>('app');
   const [activeAlarm, setActiveAlarm] = useState<BrowserAlarm>(createDefaultAlarm);
   const [resumeDraft, setResumeDraft] = useState<BrowserAlarm | null>(null);
+  const [practice, setPractice] = useState(false);
+  const [practiceResult, setPracticeResult] = useState<'complete' | 'cancelled' | null>(null);
+  const practiceCompleteRef = useRef<(() => void) | null>(null);
+  const cameraRequestRef = useRef(0);
   const activeRoutine = useMemo(() => activeAlarm.routine.map((step) => routine.find((pose) => pose.name === step.pose) ?? routine[0]), [activeAlarm]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const guideCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -100,6 +104,7 @@ export default function Home() {
   }, []);
 
   const stopCamera = useCallback(() => {
+    cameraRequestRef.current += 1;
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -108,7 +113,7 @@ export default function Home() {
   const stopAudio = useCallback(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.oscillators.forEach((oscillator) => oscillator.stop());
+    audio.player.pause();
     void audio.context.close();
     audioRef.current = null;
     alarmLevelRef.current = 0;
@@ -124,7 +129,7 @@ export default function Home() {
     }
     const audio = audioRef.current;
     if (!audio) return;
-    const gain = soundEnabledRef.current ? 0.085 * clamped : 0.0001;
+    const gain = soundEnabledRef.current ? 0.7 * clamped : 0.0001;
     audio.gain.gain.setTargetAtTime(Math.max(gain, 0.0001), audio.context.currentTime, 0.22);
   }, []);
 
@@ -135,18 +140,14 @@ export default function Home() {
     gain.gain.value = 0.0001;
     gain.connect(context.destination);
 
-    const oscillators = [432, 576].map((frequency, index) => {
-      const oscillator = context.createOscillator();
-      const voiceGain = context.createGain();
-      oscillator.type = index === 0 ? 'triangle' : 'sine';
-      oscillator.frequency.value = frequency;
-      voiceGain.gain.value = index === 0 ? 0.72 : 0.28;
-      oscillator.connect(voiceGain).connect(gain);
-      oscillator.start();
-      return oscillator;
+    const player = new Audio(`/sounds/${activeAlarm.alarmSound}.mp3`);
+    player.loop = true;
+    context.createMediaElementSource(player).connect(gain);
+    audioRef.current = { context, gain, player };
+    void player.play().catch(() => {
+      if (audioRef.current?.player === player) { stopAudio(); setError('Couldn’t play the alarm sound. Try again.'); }
     });
-    audioRef.current = { context, gain, oscillators };
-  }, []);
+  }, [activeAlarm.alarmSound, stopAudio]);
 
   const resetRoutine = useCallback(() => {
     detectedRef.current = false;
@@ -178,6 +179,7 @@ export default function Home() {
   }, [activeAlarm, setCurrentPose, setSessionPhase, startAudio]);
 
   const startCamera = useCallback(async () => {
+    const requestId = ++cameraRequestRef.current;
     setCameraState('loading');
     setError(null);
     try {
@@ -191,13 +193,14 @@ export default function Home() {
             resizeMode: 'none',
           }
         : { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }) as MediaTrackConstraints;
-      const [{ FilesetResolver, PoseLandmarker }, stream] = await Promise.all([
-        import('@mediapipe/tasks-vision'),
-        navigator.mediaDevices.getUserMedia({
-          video: videoConstraints,
-          audio: false,
-        }),
-      ]);
+      const { FilesetResolver, PoseLandmarker } = await import('@mediapipe/tasks-vision');
+      if (requestId !== cameraRequestRef.current) return;
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      if (requestId !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      streamRef.current = stream;
       const cameraTrack = stream.getVideoTracks()[0];
       const capabilities = cameraTrack.getCapabilities() as MediaTrackCapabilities & { zoom?: { min: number } };
       if (capabilities.zoom) {
@@ -205,13 +208,14 @@ export default function Home() {
           advanced: [{ zoom: capabilities.zoom.min } as MediaTrackConstraintSet],
         }).catch(() => undefined);
       }
-      streamRef.current = stream;
+      if (requestId !== cameraRequestRef.current) return;
       if (!videoRef.current) throw new Error('Camera preview is unavailable.');
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
 
       const vision = await FilesetResolver.forVisionTasks(`${window.location.origin}/wasm`);
-      landmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
+      if (requestId !== cameraRequestRef.current) return;
+      const landmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: `${window.location.origin}/models/pose_landmarker_full.task`,
           delegate: 'CPU',
@@ -222,8 +226,12 @@ export default function Home() {
         minPosePresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       });
+      if (requestId !== cameraRequestRef.current) { landmarker.close(); return; }
+      landmarkerRef.current?.close();
+      landmarkerRef.current = landmarker;
       setCameraState('ready');
     } catch (caught) {
+      if (requestId !== cameraRequestRef.current) return;
       stopCamera();
       stopAudio();
       setCameraState('error');
@@ -419,6 +427,10 @@ export default function Home() {
 
   const handleTestConfiguredRoutine = (alarm: BrowserAlarm, editorAlarm: BrowserAlarm = alarm) => {
     resetRoutine();
+    practiceCompleteRef.current = null;
+    setPractice(false);
+    soundEnabledRef.current = alarm.sound;
+    setSoundEnabled(alarm.sound);
     setActiveAlarm(alarm);
     setResumeDraft(editorAlarm);
     const firstDuration = alarm.routine[0]?.duration ?? 20;
@@ -428,23 +440,44 @@ export default function Home() {
   };
 
   const handleReturnToApp = () => {
+    if (practice) {
+      setPracticeResult(phase === 'complete' ? 'complete' : 'cancelled');
+      if (phase === 'complete') practiceCompleteRef.current?.();
+    }
+    practiceCompleteRef.current = null;
     stopCamera();
     resetRoutine();
+    setCameraState('idle');
+    selectMode('camera');
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     setSurface('app');
   };
 
-  if (surface === 'app') {
-    return <AlarmShell resumeDraft={resumeDraft} onTestRoutine={handleTestConfiguredRoutine} />;
-  }
-
   return (
+    <>
+    <div hidden={surface !== 'app'}>
+      <AlarmShell
+        resumeDraft={resumeDraft}
+        active={surface === 'app'}
+        onTestRoutine={handleTestConfiguredRoutine}
+        practiceResult={practiceResult}
+        onPractice={(alarm, onComplete) => {
+          handleTestConfiguredRoutine({ ...alarm, sound: false, routine: [{ ...alarm.routine[0], duration: 5 }] }, alarm);
+          practiceCompleteRef.current = onComplete;
+          setPractice(true);
+          setPracticeResult(null);
+        }}
+      />
+    </div>
+    {surface === 'routine' ? (
     <main className="minimal-routine">
       <div className={`camera-stage ${cameraState === 'ready' && mode === 'camera' ? 'camera-live' : ''}`}>
         <video ref={videoRef} className="camera-video" muted playsInline aria-label="Mirrored camera preview" />
         <canvas ref={guideCanvasRef} className="pose-guide-canvas" aria-hidden="true" />
         <canvas ref={canvasRef} className="skeleton-canvas" aria-hidden="true" />
+        {practice && (cameraState !== 'ready' || mode === 'simulation') && phase !== 'complete' ? <img className="practice-pose-guide" src={`/poses/${currentPose.name.toLowerCase().replaceAll(' ', '-').replace('ii', 'two')}.png`} alt={`${currentPose.name} pose to practise`} /> : null}
 
-        <button type="button" className="routine-back" onClick={handleReturnToApp}>‹ Alarm</button>
+        <button type="button" className="routine-back" onClick={handleReturnToApp}>{practice ? '‹ Back to setup' : '‹ Alarm'}</button>
         <div className="minimal-routine-progress">
           <span>{Math.min(poseIndex + 1, activeRoutine.length)} / {activeRoutine.length}</span>
           <div className="progress-track"><i style={{ width: `${progress * 100}%` }} /></div>
@@ -457,8 +490,8 @@ export default function Home() {
               <strong className="countdown">{remainingSeconds}</strong>
             </div>
           ) : null}
-          <strong>{phase === 'complete' ? 'Good morning ☀️' : phase === 'transition' ? `Next: ${activeRoutine[Math.min(poseIndex + 1, activeRoutine.length - 1)].name}` : status.title}</strong>
-          <span>{phase === 'transition' ? `Starting in ${transitionRemaining}` : status.detail || currentPose.cue}</span>
+          <strong>{phase === 'complete' ? practice ? 'Nice work! ✓' : 'Routine complete ✓' : phase === 'transition' ? `Next: ${activeRoutine[Math.min(poseIndex + 1, activeRoutine.length - 1)].name}` : status.title}</strong>
+          <span>{phase === 'complete' && practice ? 'Practice complete.' : phase === 'transition' ? `Starting in ${transitionRemaining}` : status.detail || currentPose.cue}</span>
         </div>
 
         {cameraState !== 'ready' && phase !== 'complete' ? (
@@ -468,16 +501,22 @@ export default function Home() {
           </div>
         ) : null}
 
-        {['idle', 'ready', 'complete'].includes(phase) || cameraState === 'loading' || cameraState === 'error' ? (
+        {['idle', 'ready', 'complete'].includes(phase) || cameraState === 'loading' || cameraState === 'error' || (practice && mode === 'simulation') ? (
           <button
             type="button"
             className="primary-button minimal-routine-action"
             disabled={cameraState === 'loading'}
-            onClick={handlePrimaryAction}
-          >{primaryLabel}</button>
+            onClick={practice && phase === 'complete' ? handleReturnToApp : handlePrimaryAction}
+          >{practice && phase === 'complete' ? 'Continue setup' : primaryLabel}</button>
         ) : null}
+        {practice ? <div className="practice-preview-controls">
+          <span>{mode === 'simulation' ? 'Simulation · no camera tracking' : '5-second practice · sound off'}</span>
+          {phase !== 'complete' ? <button type="button" disabled={cameraState === 'loading'} onClick={() => { stopCamera(); selectMode(mode === 'camera' ? 'simulation' : 'camera'); }}>{mode === 'camera' ? 'Preview without camera' : 'Use camera'}</button> : null}
+        </div> : null}
       </div>
     </main>
+    ) : null}
+    </>
   );
 }
 
@@ -492,14 +531,14 @@ function getPrimaryLabel(cameraState: CameraState, phase: SessionPhase, mode: Mo
 }
 
 function getStatus(phase: SessionPhase, framed: boolean, detected: boolean, score: number, transition: number, error: string | null, poseCue: string) {
-  if (error) return { title: 'Camera unavailable', detail: error };
-  if (phase === 'idle') return { title: 'Move when you’re ready', detail: 'Get dressed and place your phone before starting the camera' };
-  if (phase === 'ready') return { title: 'You’re ready', detail: 'Start when you want to feel the complete loop' };
+  if (error) return { title: 'Unable to start', detail: error };
+  if (phase === 'idle') return { title: 'Ready to move?', detail: 'Place your phone, then start.' };
+  if (phase === 'ready') return { title: 'You’re ready', detail: 'Start when you’re ready.' };
   if (phase === 'transition') return { title: `Starting in ${transition}`, detail: '' };
   if (!framed) return { title: 'Move into view', detail: 'Keep your head, hands, hips and knees visible' };
-  if (phase === 'holding' || detected) return { title: 'Pose found ✓', detail: 'Stay with it while the alarm fades' };
-  if (phase === 'paused') return { title: 'Hold the pose', detail: 'The timer is paused and the alarm is returning' };
-  if (phase === 'complete') return { title: 'Good morning', detail: '' };
+  if (phase === 'holding' || detected) return { title: 'Pose found ✓', detail: 'Hold until the timer ends.' };
+  if (phase === 'paused') return { title: 'Hold the pose', detail: 'Timer paused. Return to the pose.' };
+  if (phase === 'complete') return { title: 'Routine complete', detail: '' };
   if (score >= 0.55) return { title: 'Almost there', detail: poseCue };
   return { title: 'Move into the pose', detail: poseCue };
 }

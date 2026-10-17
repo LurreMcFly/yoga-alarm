@@ -8,6 +8,42 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
 
+### SYNC-016 — Guided first-use onboarding and Settings replay
+
+Status: pending — implemented on Android; awaiting iOS implementation and device verification
+Date: 2026-10-17
+Android commit: <pending>
+
+Observable behavior:
+- Use short, time-neutral copy to introduce the alarm → camera → poses → completed routine flow. Guide time, alarm name (40-character limit; generated names and blank-name fallback follow Android’s local-hour groups from SYNC-015), repeat days, sound selection, a dedicated yoga-routine introduction and each of three ordered pose slots. Back and Skip tour remain available; multi-choice steps advance with Next. Widen name, day, Sound and Test full routine highlights to nearly the editor card width and align rounded highlights with pose cards. Show a wide finger swipe without dashes or arrows.
+- Guide the real editor controls: Monday–Sunday days; Sound, Snooze and Stop button rows; Test full routine above the pose cards; no pose-reorder handle. The sound step opens Sound & vibration, offers the two free sounds (Sunbird Morning Call and Morning Temple Call), and supports ten-second local previews. Selecting a sound preserves the fully expanded sheet until Next; Pro sounds stay outside the guided selection. Stop previews when leaving the sheet or backgrounding the app. The routine introduction is a popout that scrolls through the three numbered poses before selection; reduced-motion users see a static three-pose overview.
+- Keep guided pose selection to the three free poses (Mountain, Warrior II, Tree). Explain the free 20-second holds and top-to-bottom routine order without leading users into Pro purchases.
+- Before optional practice, show the approved three-panel illustration: prop the phone upright on the floor facing the user, take about two steps back, then follow the pose. Start the camera only on explicit user action. Practice the first chosen pose for five seconds with sound, vibration and transition/completion cues off; preserve the configured routine and its durations. Practice and routine tests never record a real alarm completion or change streaks. Support retry and skipping practice. After successful practice, show a quiet completion screen with Continue setup; cancelling practice returns to placement.
+- After practice completion (or skipping practice), highlight Test full routine as the last teaching step before Save. Testing the full routine is optional and returns to this step with the draft preserved. Save explicitly through the normal persistence and OS scheduling path, then confirm the name, selected routine and durations. Show the next occurrence and “ready” only when the alarm is enabled and all existing readiness checks pass; otherwise say “saved” and direct the user to finish setup on the home screen. Preserve the existing native permissions checklist and scheduling-failure behavior (save switched off). Offer Done and Test full routine.
+- Show the introduction on first use. Persist tour completion when the user finishes or skips; allow replay through Settings → How to use Yoga Alarm without changing existing alarms automatically. Guide a new draft, restrict interactions to the highlighted control, preserve draft edits through Back and camera tests, and dismiss the keyboard when leaving the name step. Hardware Back navigates the guide or returns from practice/tests. A real ringing alarm takes priority over the guide, including during practice; it must retain the usual alarm completion/stop behavior. After the real alarm closes, an unfinished first-use introduction can restart.
+- The browser remains a design/testing harness. Its camera-free simulation is not included in native onboarding.
+
+Android references:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/Onboarding.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/res/drawable-nodpi/onboarding_phone_setup.png
+
+Prototype references:
+- web-tester/app/Onboarding.tsx
+- web-tester/app/AlarmShell.tsx
+- web-tester/app/AlarmOptions.tsx
+- web-tester/app/page.tsx
+- web-tester/app/globals.css
+- web-tester/public/onboarding/phone-setup.png
+
+Acceptance:
+- Verify first use, skip/back, sound selection and preview cleanup, each free pose selection, camera denial/retry, practice completion/cancellation, draft preservation, explicit save, next-alarm summary and Settings replay.
+- Verify highlights follow the controls on small screens and with larger text; respect reduced motion and accessible navigation. Verify rotation, background/foreground, permission changes, and a fired alarm interrupting the guide or practice. Android compilation and focused unit tests pass; native device verification remains pending.
+
 ### SYNC-015 — Local-hour defaults and varied alarm names
 
 Status: pending
