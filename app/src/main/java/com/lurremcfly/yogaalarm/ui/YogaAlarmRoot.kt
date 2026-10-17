@@ -67,6 +67,10 @@ internal fun YogaAlarmRoot(
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
     var privacySheetOpen by rememberSaveable { mutableStateOf(false) }
     var settingsSheetOpen by rememberSaveable { mutableStateOf(false) }
+    val settingsPreferences = remember { context.getSharedPreferences("app_settings", Context.MODE_PRIVATE) }
+    var weekStartsOnSunday by remember {
+        mutableStateOf(settingsPreferences.getBoolean("week_starts_on_sunday", false))
+    }
     var route by rememberSaveable { mutableStateOf("home") }
     var editingAlarmId by rememberSaveable { mutableStateOf(-1L) }
     var pendingEditorAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
@@ -213,6 +217,7 @@ internal fun YogaAlarmRoot(
                 AlarmEditorScreen(
                     initialAlarm = initial,
                     existingAlarmNames = alarms.filter { it.id != initial.id }.map { it.name },
+                    weekStartsOnSunday = weekStartsOnSunday,
                     isPro = proEntitlement != null,
                     onUpgrade = { proPaywallOpen = true },
                     onCancel = {
@@ -467,6 +472,11 @@ internal fun YogaAlarmRoot(
         AppSettingsSheet(
             entitlement = proEntitlement,
             subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
+            weekStartsOnSunday = weekStartsOnSunday,
+            onWeekStartsOnSundayChange = {
+                weekStartsOnSunday = it
+                settingsPreferences.edit().putBoolean("week_starts_on_sunday", it).apply()
+            },
             onDismiss = { settingsSheetOpen = false },
             onOpenPro = {
                 settingsSheetOpen = false

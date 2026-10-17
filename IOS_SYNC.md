@@ -8,6 +8,27 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
 
+### SYNC-017 — Configurable first day of week in the alarm editor
+
+Status: pending
+Date: 2026-10-17
+Android commit: <pending>
+
+Changes:
+- Add a free, app-wide “First day of week” setting with mutually exclusive Monday and Sunday options. Default to Monday for new and existing installations regardless of locale. Save changes immediately and retain the preference across restarts.
+- Order the repeat-day picker Monday–Sunday or Sunday–Saturday according to the preference when creating or editing an alarm, including the guided setup tour and replay.
+- Change display order only: preserve selected weekdays, weekday defaults (Monday–Friday), existing alarms, and scheduled firing days. Keep canonical weekday IDs Monday = 1 through Sunday = 7; selecting the first item in Sunday-first mode selects Sunday, not Monday. Selecting no days continues to use the existing one-time alarm behavior.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+
+iOS acceptance checks:
+- Verify Monday is initially selected; switch to Sunday, reopen Settings and restart the app, and confirm the preference persists.
+- Create and edit alarms in both modes; verify day order, selected-day highlights, Sunday selection, and unchanged saved weekday identities and next occurrences. Replay the setup tour with Sunday first.
+- Verify both options remain reachable with larger text and expose a single accessible radio selection.
+
 ### SYNC-016 — Guided first-use onboarding and Settings replay
 
 Status: pending — implemented on Android; awaiting iOS implementation and device verification

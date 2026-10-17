@@ -54,6 +54,8 @@ import java.util.Locale
 fun AppSettingsSheet(
     entitlement: ProEntitlement?,
     subscriptionAutoRenewing: Boolean?,
+    weekStartsOnSunday: Boolean,
+    onWeekStartsOnSundayChange: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onOpenPro: () -> Unit,
     onManageSubscription: () -> Unit,
@@ -70,6 +72,32 @@ fun AppSettingsSheet(
                 .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
         ) {
             Text("Settings", color = Ink, fontSize = 27.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(18.dp))
+            Text("First day of week", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Column(Modifier.selectableGroup()) {
+                listOf(false to "Monday", true to "Sunday").forEach { (startsOnSunday, label) ->
+                    val selected = weekStartsOnSunday == startsOnSunday
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .selectable(
+                                selected = selected,
+                                onClick = { onWeekStartsOnSundayChange(startsOnSunday) },
+                                role = Role.RadioButton,
+                            ),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = selected,
+                            onClick = null,
+                            colors = RadioButtonDefaults.colors(selectedColor = Forest),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(label, color = Ink)
+                    }
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            HorizontalDivider(color = Hairline)
             Spacer(Modifier.height(18.dp))
             Text("Pro", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             when (entitlement) {

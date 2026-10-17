@@ -103,6 +103,7 @@ import kotlinx.coroutines.launch
 internal fun AlarmEditorScreen(
     initialAlarm: AlarmConfig,
     existingAlarmNames: List<String>,
+    weekStartsOnSunday: Boolean,
     isPro: Boolean,
     onUpgrade: () -> Unit,
     onCancel: () -> Unit,
@@ -204,6 +205,7 @@ internal fun AlarmEditorScreen(
                     Spacer(Modifier.height(18.dp))
                     WeekdayPicker(
                         selectedDays = draft.weekdays,
+                        weekStartsOnSunday = weekStartsOnSunday,
                         onSelectionChange = { draft = draft.copy(weekdays = it) },
                         enabled = onboardingStep == null || onboardingStep == OnboardingStep.Days,
                         onboardingTargets = onboardingTargets,
@@ -482,13 +484,15 @@ private fun NumberWheel(
 @Composable
 private fun WeekdayPicker(
     selectedDays: Set<Int>,
+    weekStartsOnSunday: Boolean,
     onSelectionChange: (Set<Int>) -> Unit,
     enabled: Boolean = true,
     onboardingTargets: OnboardingTargets? = null,
 ) {
     val days = listOf(1 to "M", 2 to "T", 3 to "W", 4 to "T", 5 to "F", 6 to "S", 7 to "S")
+    val orderedDays = if (weekStartsOnSunday) days.takeLast(1) + days.dropLast(1) else days
     Row(modifier = Modifier.fillMaxWidth().onboardingTarget(OnboardingStep.Days, onboardingTargets), horizontalArrangement = Arrangement.SpaceBetween) {
-        days.forEach { (day, label) ->
+        orderedDays.forEach { (day, label) ->
             val selected = day in selectedDays
             Surface(
                 modifier = Modifier
