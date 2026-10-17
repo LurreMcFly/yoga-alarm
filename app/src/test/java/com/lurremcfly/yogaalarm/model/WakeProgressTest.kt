@@ -3,7 +3,6 @@ package com.lurremcfly.yogaalarm.model
 import java.time.LocalDate
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class WakeProgressTest {
@@ -33,11 +32,12 @@ class WakeProgressTest {
     }
 
     @Test
-    fun emergencyStopBreaksStreakAndConsumesAvailablePass() {
+    fun emergencyStopPreservesStreakForTodayAndConsumesAvailablePass() {
         val progress = WakeProgress(8, today.minusDays(1), YearMonth.from(today), 1)
             .stopAlarm(today, consumeEmergencyPass = true)
-        assertEquals(0, progress.streakDays)
-        assertNull(progress.lastCompletionDate)
+        assertEquals(8, progress.streakDays)
+        assertEquals(today.minusDays(1), progress.lastCompletionDate)
+        assertEquals(0, progress.current(today.plusDays(1)).streakDays)
         assertEquals(2, progress.emergencyPassesUsed)
         assertEquals(1, progress.emergencyPassesRemaining)
     }
@@ -57,12 +57,27 @@ class WakeProgressTest {
     }
 
     @Test
-    fun normalStopBeforeTodayCompletionBreaksStreak() {
-        val stopped = WakeProgress(8, today.minusDays(1), YearMonth.from(today))
-            .stopAlarm(today, consumeEmergencyPass = false)
-        assertEquals(0, stopped.streakDays)
-        assertNull(stopped.lastCompletionDate)
-        assertEquals(1, stopped.completeRoutine(today).streakDays)
+    fun stoppingBeforeCompletionAllowsCompletingLaterToday() {
+        for (emergency in listOf(false, true)) {
+            val stopped = WakeProgress(8, today.minusDays(1), YearMonth.from(today))
+                .stopAlarm(today, consumeEmergencyPass = emergency)
+            assertEquals(8, stopped.current(today).streakDays)
+            assertEquals(today.minusDays(1), stopped.lastCompletionDate)
+            assertEquals(setOf(today), stopped.scheduledDates)
+            assertEquals(9, stopped.completeRoutine(today).streakDays)
+            assertEquals(9, stopped.completeRoutine(today).current(today.plusDays(1)).streakDays)
+            assertEquals(if (emergency) 1 else 0, stopped.emergencyPassesUsed)
+        }
+    }
+
+    @Test
+    fun stoppingWithoutCompletingResetsStreakTheNextDay() {
+        for (emergency in listOf(false, true)) {
+            val stopped = WakeProgress(8, today.minusDays(1), YearMonth.from(today))
+                .stopAlarm(today, consumeEmergencyPass = emergency)
+            assertEquals(0, stopped.current(today.plusDays(1)).streakDays)
+            assertEquals(1, stopped.completeRoutine(today.plusDays(1)).streakDays)
+        }
     }
 
     @Test

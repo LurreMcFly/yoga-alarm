@@ -1,5 +1,7 @@
 package com.lurremcfly.yogaalarm.model
 
+import java.time.LocalTime
+
 enum class YogaPose(
     val displayName: String,
     val isFree: Boolean,
@@ -62,10 +64,41 @@ data class AlarmConfig(
     val snoozeCount: Int,
 ) : java.io.Serializable {
     companion object {
-        fun create(id: Long = System.currentTimeMillis()) = AlarmConfig(
+        private val morningNames = listOf(
+            "Rise & stretch ☀️", "Morning movement", "A fresh start 🌱", "Wake up gently",
+            "Hello, new day 🌤️", "Start with a stretch", "Meet the morning 🌅", "Your morning moment",
+        )
+        private val middayNames = listOf(
+            "Midday reset 🌿", "A little movement", "Find your balance ⚖️", "Stretch break",
+            "Pause & stretch 🧘", "Make space for you", "Refresh & refocus ✨", "Time to move",
+        )
+        private val eveningNames = listOf(
+            "Evening unwind 🌙", "Release the day", "Sunset stretch 🌅", "Room to breathe",
+            "Let the day go 🍃", "Ease into evening", "A softer pace 🌿", "Evening balance",
+        )
+        private val nightNames = listOf(
+            "Moonlight movement 🌙", "Quiet reset", "Night owl stretch 🦉", "Move at your pace",
+            "A mindful moment ✨", "Quiet strength", "Under the stars 🌌", "A gentle stretch",
+        )
+
+        internal fun defaultName(hour: Int, existingNames: Collection<String> = emptyList()): String {
+            val names = when (hour) {
+                in 5..10 -> morningNames
+                in 11..16 -> middayNames
+                in 17..21 -> eveningNames
+                else -> nightNames
+            }
+            return names.filterNot { it in existingNames }.ifEmpty { names }.random()
+        }
+
+        fun create(
+            id: Long = System.currentTimeMillis(),
+            now: LocalTime = LocalTime.now(),
+            existingNames: Collection<String> = emptyList(),
+        ) = AlarmConfig(
             id = id,
-            name = "Morning movement",
-            hour = 7,
+            name = defaultName(now.hour, existingNames),
+            hour = now.hour,
             minute = 0,
             weekdays = setOf(1, 2, 3, 4, 5),
             enabled = true,

@@ -450,7 +450,7 @@ private fun EmergencyStopDialog(
             Column {
                 Text(
                     if (completedToday) "You already completed yoga today. Stopping keeps your $streakDays-day streak."
-                    else if (streakDays > 0) "Stopping now will end your $streakDays-day yoga streak."
+                    else if (streakDays > 0) "Complete yoga before midnight to keep your $streakDays-day yoga streak."
                     else "Use this only when you cannot complete your yoga routine.",
                 )
                 Spacer(Modifier.height(8.dp))

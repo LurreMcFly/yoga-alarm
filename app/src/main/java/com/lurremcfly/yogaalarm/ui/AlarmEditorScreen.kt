@@ -93,6 +93,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun AlarmEditorScreen(
     initialAlarm: AlarmConfig,
+    existingAlarmNames: List<String>,
     isPro: Boolean,
     onUpgrade: () -> Unit,
     onCancel: () -> Unit,
@@ -284,7 +285,9 @@ fun AlarmEditorScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
             onCancel = onCancel,
             onSave = {
-                onSave(draft.copy(name = draft.name.trim().ifEmpty { "Morning movement" }))
+                onSave(draft.copy(name = draft.name.trim().ifEmpty {
+                    AlarmConfig.defaultName(draft.hour, existingAlarmNames)
+                }))
             },
         )
     }

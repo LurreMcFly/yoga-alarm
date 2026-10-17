@@ -192,6 +192,7 @@ internal fun YogaAlarmRoot(
                     ?: AlarmConfig.create(editingAlarmId)
                 AlarmEditorScreen(
                     initialAlarm = initial,
+                    existingAlarmNames = alarms.filter { it.id != initial.id }.map { it.name },
                     isPro = proEntitlement != null,
                     onUpgrade = { proPaywallOpen = true },
                     onCancel = {
@@ -335,8 +336,9 @@ internal fun YogaAlarmRoot(
                     }
                 },
                 onAddAlarm = {
-                    editingAlarmId = System.currentTimeMillis()
-                    pendingEditorAlarm = null
+                    val draft = AlarmConfig.create(existingNames = alarms.map { it.name })
+                    editingAlarmId = draft.id
+                    pendingEditorAlarm = draft
                     route = "editor"
                 },
                 onEditAlarm = {

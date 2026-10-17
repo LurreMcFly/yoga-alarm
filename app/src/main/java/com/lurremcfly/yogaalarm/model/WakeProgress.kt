@@ -47,8 +47,7 @@ data class WakeProgress(
     fun stopAlarm(today: LocalDate, consumeEmergencyPass: Boolean): WakeProgress {
         val progress = current(today)
         return progress.copy(
-            streakDays = if (progress.lastCompletionDate == today) progress.streakDays else 0,
-            lastCompletionDate = progress.lastCompletionDate?.takeIf { it == today },
+            scheduledDates = progress.scheduledDates + today,
             emergencyPassesUsed = if (consumeEmergencyPass && progress.emergencyPassesRemaining > 0) {
                 progress.emergencyPassesUsed + 1
             } else {

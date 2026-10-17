@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.billing.ProEntitlement
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.model.ProPlan
@@ -128,6 +129,12 @@ fun AppSettingsSheet(
             TextButton(onClick = onOpenPrivacy) {
                 Text("Privacy & safety", color = Forest)
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                color = MutedInk,
+                fontSize = 14.sp,
+            )
         }
     }
 }

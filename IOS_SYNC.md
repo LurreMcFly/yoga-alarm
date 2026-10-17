@@ -8,6 +8,52 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
 
+### SYNC-015 — Local-hour defaults and varied alarm names
+
+Status: pending
+Date: 2026-10-17
+Android commit: <pending>
+
+Changes:
+- When New alarm is tapped, read the device's current local time once and set the draft to that hour with minutes `00`: 14:37 → 14:00, 00:20 → 00:00, 23:59 → 23:00. Preserve the existing weekday/repeat and other defaults. A time already passed schedules the next future occurrence on a selected weekday using the existing scheduler, rather than firing immediately.
+- Randomly select a name from the matching time group below. Prefer names not already used by saved alarms; if all eight names in that group are used, allow a repeat from the same group. Use local selection with no network dependency.
+- Morning, 05:00–10:59: “Rise & stretch ☀️”; “Morning movement”; “A fresh start 🌱”; “Wake up gently”; “Hello, new day 🌤️”; “Start with a stretch”; “Meet the morning 🌅”; “Your morning moment”.
+- Midday, 11:00–16:59: “Midday reset 🌿”; “A little movement”; “Find your balance ⚖️”; “Stretch break”; “Pause & stretch 🧘”; “Make space for you”; “Refresh & refocus ✨”; “Time to move”.
+- Evening, 17:00–21:59: “Evening unwind 🌙”; “Release the day”; “Sunset stretch 🌅”; “Room to breathe”; “Let the day go 🍃”; “Ease into evening”; “A softer pace 🌿”; “Evening balance”.
+- Night, 22:00–04:59: “Moonlight movement 🌙”; “Quiet reset”; “Night owl stretch 🦉”; “Move at your pace”; “A mindful moment ✨”; “Quiet strength”; “Under the stars 🌌”; “A gentle stretch”.
+- Keep the generated draft time and name stable through redraws, rotation/restoration, and testing a routine then returning. Changing the draft time does not change its name. Users can edit the name normally; keep the existing 40-character limit.
+- On save, trim the name. If empty or whitespace-only, select a name using the final selected alarm hour and the same duplicate-avoidance rule, excluding the alarm being edited from existing names. Preserve nonblank names and do not rename existing saved alarms automatically.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmConfig.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+- app/src/test/java/com/lurremcfly/yogaalarm/model/AlarmDraftTest.kt
+
+iOS acceptance checks:
+- Create alarms around midnight and the 05:00, 11:00, 17:00, and 22:00 boundaries; confirm rounded-down local hours and matching names.
+- Verify unused names are preferred, with valid repeats after all eight names are used.
+- Change time, rotate/restore, test a routine and return, then save/reopen; confirm the draft name and selected time stay stable. Verify custom names, blank-name fallback based on the final hour, and existing saved alarms.
+- Save a past rounded-down time and confirm the next occurrence respects selected weekdays.
+
+### SYNC-014 — App version in Settings
+
+Status: pending
+Date: 2026-10-17
+Android commit: <pending>
+
+Changes:
+- Show a read-only version label below Privacy & safety at the bottom of Settings, using muted 14-point text and an 8-point gap. Keep it in the existing scrollable content so it remains reachable with larger text.
+- Format the label as `Version <release version> (<build number>)`, for example `Version 1.0.17 (18)` on the current Android build. Read both values from the installed app's build metadata so future releases update automatically; on iOS use the native app version and build number.
+- Display the installed version immediately, including offline. This does not fetch the latest store version or check for updates.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt
+- app/build.gradle.kts
+
+iOS acceptance checks:
+- Open Settings and confirm the label matches the installed iOS app's release version and build number, including offline and at larger text sizes.
+
 ### SYNC-013 — Five-second pose holds
 
 Status: pending
@@ -76,7 +122,7 @@ Validation status:
 
 Status: pending
 Date: 2026-10-04
-Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
+Android commit: <pending> (2026-10-17 pause markers; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
 iOS implementation progress (2026-10-10):
 - [x] Sunrise completion with measured whole-number docking, entrance-settled three-second hold, multi-digit/zero handling, and usable Done/back controls.
@@ -86,6 +132,7 @@ iOS implementation progress (2026-10-10):
 - [x] Saved-card entrance keyed by alarm identity, insertion/removal reflow, and enable/disable color transitions.
 - [x] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, rest-day dashes, and full accessibility descriptions.
 - [x] Add the specified 100 ms delay before the earned-count roll and coordinated flame wobble.
+- [ ] Replace rest-day dashes with yellow pause markers as specified in the 2026-10-17 update below.
 - [ ] Finish scheduled-day accounting and migration rules in SYNC-001; do not restore a previously reset streak from old completion markers.
 - [ ] Run iOS animation, recreation, rapid-tracking/toggle, midnight, large-text, and Reduce Motion acceptance checks.
 
@@ -147,7 +194,8 @@ Number sizing and edge cases:
 - Updated 2026-10-10: keep the streak card exactly 80 points tall, with 24-point corners, 82% white surface, hairline border, and 14-point horizontal/10-point vertical padding. Use two shared rows: the left “day streak” label aligns with weekday labels; the flame/count align vertically with the marker centers beneath. Keep 4 points between the rows and at least 12 points between the count group and markers. Never wrap markers underneath the count or enlarge the card. Preserve the flame-only tap wobble.
 - Flame clipping fix (2026-10-10; Android commit: <pending>): center the flame in the marker-height value row using its natural emoji font bounds and padding, rather than forcing its line height into a glyph-size square. The full emoji must remain visible at rest and during the wobble at every supported display/text scale; keep the card at 80 points and retain the existing flame size and horizontal spacing.
 - Measure the complete count and label at the current text/display scale. Prefer seven dates, with TODAY FIFTH: four previous days, today, and two upcoming days. If they do not fit, show five dates (today third), then three (today second), then only today. These are consecutive local calendar dates, not a fixed week or carousel. Shorten “day streak” to “streak” when five markers cannot fit with the full label; accessibility always announces the full count as an N-day yoga streak. Refresh on alarm edits, app resume, and local midnight; Android checks the date every minute.
-- Default label text is 12 points with a 16-point label row; count text is bold 28 points. Labels and count grow with text scale within the fixed card budget: the label row caps at 24 points, label glyph size at 22 points, and count glyph size at the marker-row height. Markers start at 28 points, increase toward 32–34 points with larger text, and are limited by the height remaining below labels and the 4-point gap. Keep at least 6 points between marker columns and distribute remaining horizontal space evenly. Marker corners are 8 points. Completed dates show green `#81BD50` squares with white checks, including completions before a streak break. Unfinished scheduled dates have empty hairline squares; dates without alarms show a muted dash for a rest day. Today's weekday uses forest text and its square has a 2-point outline (forest when unfinished, green when completed); other outlines are 1 point. Provide full-date, today, completed, rest-day, not-completed, and upcoming accessibility descriptions.
+- Default label text is 12 points with a 16-point label row; count text is bold 28 points. Labels and count grow with text scale within the fixed card budget: the label row caps at 24 points, label glyph size at 22 points, and count glyph size at the marker-row height. Markers start at 28 points, increase toward 32–34 points with larger text, and are limited by the height remaining below labels and the 4-point gap. Keep at least 6 points between marker columns and distribute remaining horizontal space evenly. Marker corners are 8 points. Completed dates show green `#81BD50` squares with white checks, including completions before a streak break. Unfinished scheduled dates have empty hairline squares; dates without alarms show the yellow pause marker described below. Today's weekday uses forest text and its square has a 2-point outline (forest when unfinished, green when completed); other outlines are 1 point. Provide full-date, today, completed, rest-day, not-completed, and upcoming accessibility descriptions.
+- Updated 2026-10-17: rest-day markers use a solid yellow `#F5BF42` fill with a centered pause icon made of two forest-colored vertical bars, replacing the muted dash. Each bar is 12% of the marker width and 46% of its height, with a 12%-width gap and 1-point rounded corners. Use a matching yellow outline except for today's forest outline. Apply this to past, current, and upcoming rest days; a completed date always retains its green check even if no alarm is currently scheduled. Preserve the existing rest-day accessibility description, adaptive sizing, and streak accounting. Relevant Android file: `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt`.
 - Persist recent actual completion dates separately from the current streak; retain today and the previous four calendar days. Stopping a later alarm or breaking a streak does not erase recent completed-day checkmarks. Multiple same-day completions produce one marker, test routines never add markers, and future dates never show checks. On upgrade with no history, reconstruct up to five known consecutive completed dates from the existing streak count and last completion date; do not invent older interrupted history. The relevant persistence/model files are listed below.
 - Initially show the previous count. After 100 ms, change to the earned count: the old number slides upward by its own height over 350 ms and fades out over 200 ms; the new number enters from one height below over 350 ms and fades in over 250 ms. Animate the entire integer string, including transitions such as 9 → 10; do not cycle through intermediate counts.
 - At the same time as the number change, rotate only the flame to −18 degrees over 100 ms, then +18 degrees over 180 ms, then spring back to zero (damping 0.45). The card and label keep their normal size and position.
@@ -449,7 +497,7 @@ iOS notes:
 
 Status: pending
 Date: 2026-09-11
-Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
+Android commit: <pending> (2026-10-17 deferred stop reset; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
 iOS implementation progress (2026-10-10):
 - [x] Sound/Snooze/Stop button editor order and copy, default-on Stop setting, vibration in Sound, conditional in-app Stop, and unrestricted test navigation.
@@ -458,7 +506,7 @@ iOS implementation progress (2026-10-10):
 - [x] Fired completions are idempotent and count once per local day; test routines do not earn days/markers; streak count is shown on home/completion/emergency UI.
 - [ ] Replace consecutive-calendar-day reset logic with scheduled-day accounting that preserves unscheduled weekends and all-disabled periods.
 - [ ] Persist exact due dates/effective first occurrences and evaluate the previous schedule before mutations; handle edits before/after due time, unchanged alarms, one-offs, firing/snooze dates, and rescheduling.
-- [ ] Make normal/emergency stops before today’s completion break the streak; current stoppingAlarm preserves it. Preserve the streak after today’s completion and keep technical/system exits neutral.
+- [ ] Normal/emergency stops must preserve the streak for the rest of today and retain today's due-date obligation. Reset on the next local day only if yoga was not completed; keep technical/system exits neutral.
 - [ ] Preserve saved progress on upgrade, start schedule tracking from the current time, and remove recovery of previously reset counts from old completion markers.
 - [ ] Support or explicitly resolve current scheduling rejection of sound-disabled/vibration-disabled combinations and system Stop/secondary-action differences.
 - [ ] Verify upcoming-shortcut routing does not start playback or mark an alarm fired, and clock/timezone rescheduling preserves snooze/count.
@@ -471,9 +519,9 @@ Changes:
 - While an alarm is ringing, its system notification offers a clear Start movement action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
 - Opening a system shortcut for an upcoming alarm opens the app without starting playback or treating the alarm as fired. Ringing notifications still open the active routine.
 - Rescheduling enabled alarms after a clock or timezone change must preserve any pending snooze and its remaining snooze count. Explicitly editing, disabling, or deleting an alarm still cancels its pending snooze.
-- A subtle Emergency stop remains available. Before today's yoga is completed, it warns that the streak will end; after completion today, it says stopping keeps the streak. It requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled. An emergency stop still consumes an available pass after today's completion.
+- A subtle Emergency stop remains available. Before today's yoga is completed, a positive streak shows "Complete yoga before midnight to keep your N-day yoga streak." After completion today, it says stopping keeps the streak. It requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled. An emergency stop still consumes an available pass after today's completion.
 - Camera permission denial or a camera failure provides an immediate technical Stop action. Technical exits do not consume a pass or break the streak.
-- Updated 2026-10-10: the global yoga streak counts completed alarm days, skipping unscheduled days. Completing at least one genuinely fired alarm through yoga starts/extends it once per local calendar day. Unscheduled days preserve the count without incrementing it, including weekends and periods with every alarm disabled. Example: Friday count 5 remains 5 over a free weekend; completing Monday gives 6. Missing a day on which at least one alarm became due resets the streak when that calendar day ends; today remains available for completion. Snoozing preserves the existing rules. A normal or emergency stop before today's completion still breaks the streak; after completion, stopping a later alarm preserves it. Test routines never count.
+- Updated 2026-10-17: the global yoga streak counts completed alarm days, skipping unscheduled days. Completing at least one genuinely fired alarm through yoga starts/extends it once per local calendar day. Unscheduled days preserve the count without incrementing it, including weekends and periods with every alarm disabled. Example: Friday count 5 remains 5 over a free weekend; completing Monday gives 6. Missing a day on which at least one alarm became due resets the streak when that calendar day ends; today remains available for completion. Snoozing preserves the existing rules. A normal or emergency stop preserves the streak and last completion date, and records today as due. Completing a later fired alarm that same day extends the existing streak; without completion it resets on the next local day, even if alarms were subsequently disabled or deleted. Repeated stops never increment the streak, and stopping after today's completion preserves it. Emergency stops still consume available monthly passes. Previously missed days still reset the streak when evaluated; stopping cannot restore an already broken streak. Test routines never count.
 - Persist due calendar dates and the active schedule's effective first occurrence. Before saving any alarm creation/edit/enable/disable/delete, evaluate the previous schedule through the current time. An alarm removed before it becomes due creates no obligation; removal after it became due cannot erase that day's obligation. Adding/changing an alarm cannot create past missed days. Union multiple alarms on the same date into one obligation. For a one-off alarm, retain only its actual scheduled date, including when it automatically disables as it fires; do not treat an empty weekday set as daily recurrence. Record the scheduler's exact trigger date after successful scheduling/rescheduling, including boot and clock-change rescheduling. Preserve unchanged alarms' occurrence dates when saving unrelated edits. Keep recent due-date and actual-completion markers independently of the streak count.
 - On upgrade without schedule history, preserve the existing saved streak and completion dates, then begin schedule tracking from the current time. A genuinely fired alarm always marks its actual firing date as scheduled, including the first alarm after upgrade and a snooze firing. Do not retroactively judge past dates using the current alarm settings or claim to restore counts already reset by the old behavior. Preserve progress over app restarts and refresh it after alarm changes, app resume, and midnight.
 - The streak appears on the alarm home screen, the completed-routine screen, and in the emergency-stop warning.

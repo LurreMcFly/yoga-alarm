@@ -426,14 +426,30 @@ private fun StreakCard(
                             )
                             Box(
                                 Modifier.size(markerSize).clip(RoundedCornerShape(8.dp))
-                                    .background(if (completed) Color(0xFF81BD50) else Color.Transparent)
+                                    .background(when {
+                                        completed -> Color(0xFF81BD50)
+                                        restDay -> Color(0xFFF5BF42)
+                                        else -> Color.Transparent
+                                    })
                                     .border(if (date == today) 2.dp else 1.dp,
-                                        if (completed) Color(0xFF81BD50) else if (date == today) Forest else Hairline,
+                                        when {
+                                            completed -> Color(0xFF81BD50)
+                                            date == today -> Forest
+                                            restDay -> Color(0xFFF5BF42)
+                                            else -> Hairline
+                                        },
                                         RoundedCornerShape(8.dp)),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (completed) Text("✓", color = Color.White, fontSize = with(density) { (markerSize * 0.7f).toSp() }, fontWeight = FontWeight.Bold)
-                                else if (restDay) Text("–", color = MutedInk, fontSize = with(density) { 18.dp.toSp() })
+                                else if (restDay) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(markerSize * 0.12f)) {
+                                        repeat(2) {
+                                            Box(Modifier.width(markerSize * 0.12f).height(markerSize * 0.46f)
+                                                .background(Forest, RoundedCornerShape(1.dp)))
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
