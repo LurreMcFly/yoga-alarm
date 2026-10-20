@@ -1,5 +1,8 @@
 package com.lurremcfly.yogaalarm.ui
 
+import android.content.Context
+import android.hardware.display.DisplayManager
+import android.view.View
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
@@ -18,16 +21,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -55,7 +60,6 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
-import androidx.core.view.doOnLayout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -98,13 +102,20 @@ fun RoutineCameraScreen(
 ) {
     var cameraAttempt by remember { mutableStateOf(0) }
     var previewReady by remember { mutableStateOf(false) }
+    var headerHeight by remember { mutableStateOf(0) }
     val guidePose = if (uiState.phase == RoutinePhase.TRANSITION) uiState.nextPose ?: uiState.pose else uiState.pose
+    val guidePoseIndex = uiState.poseIndex + if (uiState.phase == RoutinePhase.TRANSITION && uiState.nextPose != null) 1 else 0
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF07100A)),
     ) {
+        val compactLandscape = maxHeight < 600.dp && maxWidth > maxHeight
+        val density = LocalDensity.current
+        val topInset = with(density) { WindowInsets.safeDrawing.getTop(this).toDp() }
+        val bottomInset = with(density) { WindowInsets.safeDrawing.getBottom(this).toDp() }
+        val glyphSize = if (compactLandscape) 72.dp else 96.dp
         if (uiState.phase == RoutinePhase.COMPLETE) {
             RoutineCompletion(uiState, completionStreakDays, showBack, onBack)
             return@BoxWithConstraints
@@ -123,72 +134,85 @@ fun RoutineCameraScreen(
         Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(300.dp)
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)))))
 
-        if (uiState.phase != RoutinePhase.COMPLETE) {
-            key(guidePose) {
-                val arrival = remember { Animatable(0f) }
-                val density = LocalDensity.current
-                val startTranslation = with(density) {
-                    maxHeight.toPx() / 2f - WindowInsets.statusBars.getTop(density) - 56.dp.toPx()
+        Box(Modifier.align(if (compactLandscape) Alignment.TopStart else Alignment.TopCenter)
+            .fillMaxWidth(if (compactLandscape) 0.4f else 1f)
+            .onSizeChanged { headerHeight = it.height }) {
+            if (uiState.started && uiState.phase != RoutinePhase.COMPLETE) {
+                val context = LocalContext.current
+                val preferences = remember(context) {
+                    context.getSharedPreferences("pose_illustrations", Context.MODE_PRIVATE)
                 }
-                LaunchedEffect(Unit) {
-                    delay(1_000)
-                    arrival.animateTo(1f, tween(durationMillis = 650))
+                val mirrored by rememberSaveable(guidePose, guidePoseIndex) {
+                    mutableStateOf(preferences.getBoolean(guidePose.name, false))
                 }
-                PoseGlyph(
-                    guidePose,
-                    Modifier
-                        .align(Alignment.TopCenter)
-                        .statusBarsPadding()
-                        .padding(top = 8.dp)
-                        .size(96.dp)
-                        .graphicsLayer {
-                            val remaining = 1f - arrival.value
-                            val scale = 1f + remaining * 2.75f
-                            scaleX = scale
-                            scaleY = scale
-                            translationY = remaining * startTranslation
-                        },
-                )
+                LaunchedEffect(guidePose, guidePoseIndex) {
+                    // Re-saving the same next orientation after recreation does not advance it.
+                    preferences.edit().putBoolean(guidePose.name, !mirrored).apply()
+                }
+                key(guidePose, guidePoseIndex) {
+                    val arrival = remember { Animatable(0f) }
+                    val density = LocalDensity.current
+                    val startTranslation = with(density) {
+                        this@BoxWithConstraints.maxHeight.toPx() / 2f - WindowInsets.safeDrawing.getTop(density) - 56.dp.toPx()
+                    }
+                    LaunchedEffect(Unit) {
+                        delay(1_000)
+                        arrival.animateTo(1f, tween(durationMillis = 650))
+                    }
+                    PoseGlyph(
+                        guidePose,
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                            .padding(top = if (compactLandscape) 56.dp else 8.dp)
+                            .size(glyphSize)
+                            .graphicsLayer {
+                                val remaining = 1f - arrival.value
+                                val scale = 1f + remaining * 2.75f
+                                scaleX = if (mirrored) -scale else scale
+                                scaleY = scale
+                                translationY = remaining * startTranslation
+                            },
+                    )
+                }
             }
-        }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (showBack || (showStop && uiState.phase != RoutinePhase.COMPLETE)) {
-                    TextButton(onClick = if (showBack) onBack else onStop) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top))
+                    .padding(horizontal = 18.dp, vertical = 8.dp),
+            ) {
+                if (showBack || showStop) {
+                    TextButton(onClick = if (showBack) onBack else onStop, modifier = Modifier.align(Alignment.TopStart)) {
                         Text(
                             if (showBack) "‹ Alarm" else "Stop",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                         )
                     }
-                } else {
-                    Spacer(Modifier.width(64.dp))
                 }
-                Spacer(Modifier.weight(1f))
-                if (uiState.phase != RoutinePhase.COMPLETE) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Spacer(Modifier.size(96.dp))
-                        Text(guidePose.displayName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    }
+                Column(Modifier.align(Alignment.TopCenter).padding(top = if (compactLandscape) 48.dp else 0.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Spacer(Modifier.size(glyphSize))
+                    Text(guidePose.displayName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.width(64.dp))
             }
         }
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(horizontal = 28.dp, vertical = 28.dp),
+                .align(if (compactLandscape) Alignment.CenterEnd else Alignment.BottomCenter)
+                .fillMaxWidth(if (compactLandscape) 0.6f else 1f)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(
+                    if (compactLandscape) WindowInsetsSides.Vertical else WindowInsetsSides.Bottom,
+                ))
+                .heightIn(max = (maxHeight - bottomInset - if (compactLandscape) topInset else with(density) {
+                    headerHeight.toDp() + 16.dp
+                }).coerceAtLeast(48.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = if (compactLandscape) 16.dp else 28.dp, vertical = if (compactLandscape) 8.dp else 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when (uiState.phase) {
@@ -289,10 +313,38 @@ private fun SelfiePreview(onPoseFrame: (PoseFrame) -> Unit, onCameraError: (Stri
         }
     }
     DisposableEffect(controller, lifecycleOwner) {
+        val displayManager = context.getSystemService(DisplayManager::class.java)
+        var rotation = preview.display?.rotation
+        val bindCamera = Runnable { controller.bind(lifecycleOwner, preview) }
         val observer = Observer<PreviewView.StreamState> { onPreviewReady(it == PreviewView.StreamState.STREAMING) }
         preview.previewStreamState.observe(lifecycleOwner, observer)
-        preview.doOnLayout { controller.bind(lifecycleOwner, preview) }
+        val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+            if (right > left && bottom > top &&
+                (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop)) {
+                rotation = preview.display?.rotation
+                preview.removeCallbacks(bindCamera)
+                preview.postDelayed(bindCamera, 150L)
+            }
+        }
+        val displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) = Unit
+            override fun onDisplayRemoved(displayId: Int) = Unit
+            override fun onDisplayChanged(displayId: Int) {
+                val display = preview.display ?: return
+                if (display.displayId == displayId && rotation != display.rotation) {
+                    rotation = display.rotation
+                    preview.removeCallbacks(bindCamera)
+                    if (preview.isLaidOut) preview.postDelayed(bindCamera, 150L)
+                }
+            }
+        }
+        preview.addOnLayoutChangeListener(layoutListener)
+        displayManager.registerDisplayListener(displayListener, null)
+        if (preview.isLaidOut && preview.width > 0 && preview.height > 0) controller.bind(lifecycleOwner, preview)
         onDispose {
+            preview.removeCallbacks(bindCamera)
+            preview.removeOnLayoutChangeListener(layoutListener)
+            displayManager.unregisterDisplayListener(displayListener)
             preview.previewStreamState.removeObserver(observer)
             controller.close()
         }
@@ -409,7 +461,7 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
         val density = LocalDensity.current
         val widthPx = with(density) { maxWidth.toPx() }
         val heightPx = with(density) { maxHeight.toPx() }
-        val topPx = WindowInsets.statusBars.getTop(density).toFloat() + with(density) { 60.dp.toPx() }
+        val topPx = WindowInsets.safeDrawing.getTop(density).toFloat() + with(density) { 60.dp.toPx() }
         val availableHeight = (heightPx - footerSize.height - topPx).coerceAtLeast(0f)
         val diameter = minOf(with(density) { 220.dp.toPx() }, widthPx * 0.64f, availableHeight * 0.8f).coerceAtLeast(1f)
         val numberFontSize = with(density) { 16.sp.toPx() }
@@ -428,14 +480,18 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
             )
         }
         if (showBack) {
-            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(10.dp)) {
+            TextButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).padding(10.dp)) {
                 Text("‹ Alarm", color = Color.White)
             }
         }
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 .onSizeChanged { footerSize = it }
-                .navigationBarsPadding().padding(horizontal = 28.dp, vertical = 28.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom))
+                .heightIn(max = (maxHeight - with(density) { topPx.toDp() }).coerceAtLeast(48.dp))
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp, vertical = 28.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(statusTitle(state, true), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.SemiBold,

@@ -15,15 +15,18 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -132,10 +135,11 @@ internal fun AlarmEditorScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     var viewport by remember { mutableStateOf(Rect.Zero) }
     val tipHeight = onboardingTargets?.tipHeight ?: 0f
-    val navigationBottom = WindowInsets.navigationBars.getBottom(density)
-    val statusTop = WindowInsets.statusBars.getTop(density)
+    val navigationBottom = WindowInsets.safeDrawing.getBottom(density)
+    val statusTop = WindowInsets.safeDrawing.getTop(density)
+    val availableEditorHeight = viewport.height - statusTop - navigationBottom
     var routineIntroductionReady by remember(onboardingStep) { mutableStateOf(false) }
-    LaunchedEffect(onboardingStep, viewport.size, fontScale) {
+    LaunchedEffect(onboardingStep, viewport.size, fontScale, statusTop, navigationBottom) {
         if (onboardingStep != OnboardingStep.Routine) return@LaunchedEffect
         withFrameNanos { }
         val target = onboardingTargets?.bounds?.get(OnboardingStep.Pose1)
@@ -148,7 +152,7 @@ internal fun AlarmEditorScreen(
         if (coroutineContext[MotionDurationScale]?.scaleFactor != 0f) delay(200)
         routineIntroductionReady = true
     }
-    LaunchedEffect(onboardingStep, viewport.size, tipHeight, fontScale) {
+    LaunchedEffect(onboardingStep, viewport.size, tipHeight, fontScale, statusTop, navigationBottom) {
         if (onboardingStep == null || onboardingStep.isPage || onboardingStep == OnboardingStep.SoundChoice || onboardingStep == OnboardingStep.Save) return@LaunchedEffect
         withFrameNanos { }
         if (onboardingStep == OnboardingStep.Time) {
@@ -178,7 +182,8 @@ internal fun AlarmEditorScreen(
                     listOf(Color(0xFFF3F5F3), Color(0xFFF1FBF5), Color(0xFFF3EEFF)),
                 ),
             )
-            .windowInsetsPadding(WindowInsets.statusBars),
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
+            .imePadding(),
     ) {
         Column(
             modifier = Modifier
@@ -193,7 +198,8 @@ internal fun AlarmEditorScreen(
                 onHourChange = { if (onboardingStep == null || onboardingStep == OnboardingStep.Time) draft = draft.copy(hour = it) },
                 onMinuteChange = { if (onboardingStep == null || onboardingStep == OnboardingStep.Time) draft = draft.copy(minute = it) },
                 modifier = Modifier.graphicsLayer {
-                    translationY = editorScrollState.value.toFloat()
+                    // Short windows need the time picker to scroll out of the way.
+                    translationY = if (availableEditorHeight >= with(density) { 600.dp.toPx() }) editorScrollState.value.toFloat() else 0f
                 }.onboardingTarget(OnboardingStep.Time, onboardingTargets),
             )
 

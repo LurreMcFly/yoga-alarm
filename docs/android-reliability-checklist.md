@@ -67,3 +67,25 @@ until the user manually opens the app again. This cannot be bypassed by applicat
 - [ ] At least one non-Samsung Android device
 - [ ] One Android 16/API 36 device or emulator
 - [ ] One older supported device near Android 8/API 26 when available
+
+## Play compatibility and release artifact
+
+Build verification on 2026-10-17 for 19 (1.0.18): 19 focused routine/projection
+tests, debug APK packaging, minified release AAB packaging and release lint passed.
+The AAB uses AGP 8.12.2 with optimized resource shrinking; its manifest targets API
+36 and declares a resizable activity without an orientation lock. Pose models,
+audio and MediaPipe native libraries are retained. Device and Play checks below
+remain pending; the generated release AAB is unsigned.
+
+- [x] Release runtime dependency report and freshly built AAB metadata select Fragment 1.8.9, with no Fragment 1.1.0
+- [ ] Android 15 and 16: home, editor, Settings, paywall, onboarding, routine and completion work with gesture and three-button navigation
+- [ ] System bar icons remain readable on light screens and dark routine screens, including after returning, cancelling and rotating
+- [ ] Display cutouts and side navigation bars do not cover controls in either orientation
+- [ ] Editor fields, save controls and onboarding tips remain reachable with the keyboard open and large text
+- [ ] Phone and Android 16 tablet: portrait and landscape layouts have no overlapping or unreachable controls
+- [ ] Foldable unfolding and split-screen resizing preserve navigation, editor drafts and onboarding position
+- [ ] Rotate/resize during camera startup, holding, transition and completion: pose progress and completion deadline survive
+- [ ] Preview, skeleton and pose guide remain aligned and mirrored after rotation and live resizing
+- [ ] Rotation/recreation never duplicates a fired alarm, resets snoozes, restarts a completed routine or stops alarm audio unexpectedly
+- [ ] Minified release starts pose detection, loads all sounds and completes purchase/restore and real-alarm flows
+- [ ] Check the exact tested AAB in Play internal testing; inspect recommendations for that version

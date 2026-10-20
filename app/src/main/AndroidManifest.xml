@@ -37,7 +37,7 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:turnScreenOn="true"
-            android:screenOrientation="portrait">
+            android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

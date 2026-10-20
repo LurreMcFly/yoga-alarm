@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
@@ -26,9 +27,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AlarmForegroundService.ensureNotificationChannel(this)
         updateAlarmWindowState(intent)
-        firedAlarmId.value = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L).takeIf { it >= 0L }
-        firedAlarmRemainingSnoozes.value = intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
-        enableEdgeToEdge()
+        // Compose restores the current route on recreation; don't replay the launch alarm.
+        if (savedInstanceState == null) {
+            firedAlarmId.value = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L).takeIf { it >= 0L }
+            firedAlarmRemainingSnoozes.value = intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
+        }
+        // Screen backgrounds supply the bar colors, including on Android 8–14.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
         WindowCompat.getInsetsController(window, window.decorView).apply {
             isAppearanceLightStatusBars = true
             isAppearanceLightNavigationBars = true

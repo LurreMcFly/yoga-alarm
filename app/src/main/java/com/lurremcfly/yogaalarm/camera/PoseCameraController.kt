@@ -2,6 +2,7 @@ package com.lurremcfly.yogaalarm.camera
 
 import android.content.Context
 import android.util.Size
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -40,10 +41,11 @@ class PoseCameraController(
 
                 try {
                     val provider = providerFuture.get()
-                    val preview = Preview.Builder().build().also {
+                    val firstBinding = imageAnalysis == null
+                    val preview = this.preview ?: Preview.Builder().build().also {
                         it.surfaceProvider = previewView.surfaceProvider
                     }
-                    val analysis = ImageAnalysis.Builder()
+                    val analysis = imageAnalysis ?: ImageAnalysis.Builder()
                         .setResolutionSelector(
                             ResolutionSelector.Builder()
                                 .setResolutionStrategy(
@@ -57,9 +59,10 @@ class PoseCameraController(
                         .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                         .build()
-                    cameraProvider = provider
-                    imageAnalysis = analysis
-                    this.preview = preview
+                    if (!firstBinding) provider.unbind(preview, analysis)
+                    val rotation = previewView.display?.rotation ?: Surface.ROTATION_0
+                    preview.targetRotation = rotation
+                    analysis.targetRotation = rotation
                     provider.bindToLifecycle(
                         lifecycleOwner,
                         CameraSelector.DEFAULT_FRONT_CAMERA,
@@ -69,6 +72,11 @@ class PoseCameraController(
                             .apply { previewView.viewPort?.let { setViewPort(it) } }
                             .build(),
                     )
+                    cameraProvider = provider
+                    imageAnalysis = analysis
+                    this.preview = preview
+                    // Resizing changes the shared crop, not the detector or held pose time.
+                    if (!firstBinding) return@addListener
                     // Preview starts independently; loading the model must not block the UI.
                     analysisExecutor.execute {
                         if (closed) return@execute

@@ -8,6 +8,37 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
 
+### SYNC-018 — Safe areas and resizable routine screens
+
+Status: pending
+Date: 2026-10-17
+Android commit: <pending>
+
+Changes:
+- Support portrait, landscape and resizing on phones and larger screens. Keep interactive controls clear of top, bottom and side safe areas, including display cutouts and the keyboard. Screen backgrounds continue behind system bars; use dark system icons on light app screens and light icons during camera/routine presentation, restoring the prior appearance on exit.
+- Make camera-ready controls a scrollable column so permission/start, snooze, stop and emergency-stop actions remain reachable in short windows and with large text. Preserve existing availability rules, snooze limits and emergency-stop confirmation behavior.
+- In a routine window shorter than 600 dp and wider than it is tall, place the pose header in the left 40% and scrollable countdown/feedback/actions in the right 60%. Use a compact 72 dp pose glyph below Back/Stop so the controls cannot collide at narrow widths. Otherwise retain the 96 dp top glyph and bottom feedback, limiting the feedback height using the measured header height so it can scroll without covering the header at larger text sizes. Keep the camera preview and overlays behind the controls.
+- Make the completion footer scrollable below the back control in short windows. Preserve greetings, streak presentation, Done and the existing ten-second completion wake deadline.
+- Let the editor time picker scroll away when usable height, excluding safe areas and the keyboard, is shorter than 600 dp; retain its existing pinned behavior in taller windows. Keep draft edits and the current onboarding step through orientation changes. Bound full-page onboarding content to a readable 640 dp width and preserve scrolling and keyboard access.
+- Rotation/resizing must preserve accumulated pose hold time, the active pose, snooze count and completion state. Reacquire camera tracking after interruption; do not replay a previously handled alarm launch or restart a completed routine. Refresh the preview crop and orientation, including a 180-degree rotation without a size change, while retaining selfie mirroring and aligned pose overlays.
+- Keep all pose thresholds, routine durations, alarm scheduling, sound selection and purchase behavior unchanged. The Android Fragment/Gradle updates and Android-specific camera APIs need no iOS implementation.
+
+Relevant Android files:
+- app/src/main/AndroidManifest.xml
+- app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/Onboarding.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/camera/PoseCameraController.kt
+
+iOS acceptance checks:
+- Check phone and tablet portrait/landscape, live resizing, large text, side safe areas and keyboard-open editing/onboarding; all controls remain reachable without overlap.
+- Rotate during camera startup, holding, transition and completion; preserve progress and completion deadline, with no duplicate alarm presentation or completion credit.
+- Check camera alignment after resizing and 180-degree rotation. Confirm snooze, stop, emergency stop, camera retry and Done retain their existing behavior.
+- Verify readable system icons on light screens and dark routine screens and after leaving the routine.
+
 ### SYNC-017 — Structured Settings and configurable first day of week
 
 Status: pending
@@ -453,15 +484,19 @@ Relevant Android files:
 
 Status: pending
 Date: 2026-09-17
+Updated: 2026-10-20
 Android commit: <pending>
 
 iOS implementation progress (2026-10-10):
 - [x] Single illustration travels from screen center at 3.75× after a one-second hold into the 96-point header slot over 0.65 seconds; presentation is separate from routine timing.
+- [ ] Alternate each pose illustration's horizontal orientation on successive appearances, persisting the next orientation across sessions.
 - [ ] Verify rapid pose changes, recreation/rotation, Reduce Motion, accessibility, and unchanged detection/countdown/control behavior on iOS.
 
 Changes:
 - When the routine first displays a pose or advances to a new one, show that pose's existing illustration centered on screen at about 3.75 times its final size. Hold it there for 1 second, then smoothly scale and move the same image into its existing small header slot over about 0.65 seconds.
 - Render only one copy of the illustration during the transition so it appears to travel into place without flashing or overlapping a duplicate.
+- Alternate each pose independently between its original image and a horizontal mirror, starting with the original on first use. Persist the next orientation across routines and app launches; alarm routines, test routines, and onboarding practice all count when the illustration appears, even if the user exits before completing the pose. Editor/catalog thumbnails do not count.
+- Keep the chosen orientation throughout the large introduction, shrinking/moving animation, and small header display. Recomposition, rotation, background/resume, and camera retries must not advance alternation. Count the next-pose preview during the three-second transition as the start of that pose's appearance; entering its hold phase must not flip it again. Consecutive slots containing the same pose are separate appearances and restart the introduction with alternating orientation. Do not count the default placeholder pose before the routine starts or the completion screen.
 - The animation is visual only: it must not delay pose order, transition or hold timers, scoring, camera-based detection, controls, or other routine behavior. A rapid pose change should replace and restart the visual transition for the newest pose cleanly.
 - Keep the existing routine layout, wording, illustration accessibility description, and final 96-point-equivalent image slot unchanged.
 

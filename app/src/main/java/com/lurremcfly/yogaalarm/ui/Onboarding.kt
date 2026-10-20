@@ -139,13 +139,15 @@ internal fun OnboardingOverlay(
     }
     BoxWithConstraints(
         modifier.fillMaxSize().graphicsLayer { alpha = reveal.value }
+            .background(if (step.isPage && step != OnboardingStep.Routine) cream else Color.Transparent)
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .onGloballyPositioned { origin = it.positionInWindow() }
             .semantics { paneTitle = "How to use Yoga Alarm" },
     ) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
-        val topInset = WindowInsets.statusBars.getTop(density).toFloat()
-        val bottomInset = max(WindowInsets.navigationBars.getBottom(density), WindowInsets.ime.getBottom(density)).toFloat()
+        val topInset = WindowInsets.safeDrawing.getTop(density).toFloat()
+        val bottomInset = WindowInsets.safeDrawing.getBottom(density).toFloat()
         val gap = with(density) { 16.dp.toPx() }
         val target = targets.bounds[step]
         val wide = step == OnboardingStep.Name || step == OnboardingStep.Days || step == OnboardingStep.Sound
@@ -204,7 +206,7 @@ internal fun OnboardingOverlay(
                     }
                 }
             } else {
-                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()
+                Column(Modifier.align(Alignment.TopCenter).widthIn(max = 640.dp).fillMaxSize().safeDrawingPadding()
                     .verticalScroll(rememberScrollState()).padding(start = 28.dp, end = 28.dp, top = 88.dp, bottom = 28.dp)) {
                     when (step) {
                         OnboardingStep.Permissions -> {
@@ -300,7 +302,8 @@ internal fun OnboardingOverlay(
             }
         }
         if (step != OnboardingStep.Complete) {
-            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
+            Row(Modifier.align(Alignment.TopCenter).fillMaxWidth()
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)).padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Surface(shape = RoundedCornerShape(50), color = if (step.isPage && step != OnboardingStep.Routine) cream else Forest) {
                     TextButton(onClick = { if (step == OnboardingStep.Permissions || step == OnboardingStep.Welcome) onSkip() else transitionTo(step.previous()) }) {
@@ -321,12 +324,13 @@ internal fun OnboardingInvitation(cardBounds: Rect, onStart: () -> Unit, onLater
     val density = LocalDensity.current
     var origin by remember { mutableStateOf(Offset.Zero) }
     Dialog(onDismissRequest = onLater, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow() }) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .onGloballyPositioned { origin = it.positionInWindow() }) {
             Box(Modifier.fillMaxSize().pointerInput(onLater) { detectTapGestures { onLater() } })
             val width = constraints.maxWidth.toFloat()
             val height = constraints.maxHeight.toFloat()
-            val top = WindowInsets.statusBars.getTop(density).toFloat()
-            val bottom = height - WindowInsets.navigationBars.getBottom(density)
+            val top = WindowInsets.safeDrawing.getTop(density).toFloat()
+            val bottom = height - WindowInsets.safeDrawing.getBottom(density)
             val placement = if (cardBounds.width > 0f && cardBounds.height > 0f) {
                 val cardWidth = cardBounds.width.coerceAtMost(width)
                 val cardHeight = cardBounds.height.coerceAtMost((bottom - top).coerceAtLeast(1f))
@@ -414,7 +418,8 @@ private fun GuideButton(label: String, modifier: Modifier = Modifier, onClick: (
 
 @Composable
 internal fun OnboardingPracticeComplete(onContinue: () -> Unit) {
-    Column(Modifier.fillMaxSize().background(Color(0xFF07100A)).statusBarsPadding().navigationBarsPadding().padding(28.dp),
+    Column(Modifier.fillMaxSize().background(Color(0xFF07100A)).safeDrawingPadding()
+        .verticalScroll(rememberScrollState()).padding(28.dp),
         verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("Nice work! ✓", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
         Text("Practice complete.", Modifier.padding(vertical = 24.dp), color = Color.White.copy(alpha = 0.75f))

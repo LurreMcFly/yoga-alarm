@@ -12,8 +12,8 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.0.17"
+        versionCode = 20
+        versionName = "1.0.19"
     }
 
     buildTypes {
@@ -53,6 +53,12 @@ android {
 dependencies {
     val cameraXVersion = "1.4.2"
     val lifecycleVersion = "2.8.7"
+
+    constraints {
+        implementation("androidx.fragment:fragment:1.8.9") {
+            because("CameraX and Play services otherwise resolve the outdated Fragment 1.1.0")
+        }
+    }
 
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.10.0")

@@ -169,6 +169,23 @@ class RoutineViewModelTest {
     }
 
     @Test
+    fun recreatingCompletedRoutineDoesNotRestartIt() = routineTest {
+        val config = alarm().copy(routine = listOf(PoseStep(YogaPose.MOUNTAIN, 1)))
+        viewModel.start(config)
+        feedFor(3_000)
+        assertEquals(RoutinePhase.COMPLETE, viewModel.uiState.value.phase)
+
+        viewModel.pause()
+        viewModel.start(config)
+        feedFor(3_000)
+
+        assertEquals(RoutinePhase.COMPLETE, viewModel.uiState.value.phase)
+        assertEquals(0, viewModel.uiState.value.remainingSeconds)
+        assertEquals(0, viewModel.uiState.value.poseIndex)
+        assertEquals(1f, viewModel.progress.value.routine)
+    }
+
+    @Test
     fun startingDifferentAlarmClearsPriorTransitionAndCameraError() = routineTest {
         viewModel.start(alarm().copy(routine = listOf(
             PoseStep(YogaPose.MOUNTAIN, 1),
