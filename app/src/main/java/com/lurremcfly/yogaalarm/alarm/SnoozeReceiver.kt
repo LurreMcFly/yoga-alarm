@@ -10,7 +10,10 @@ class SnoozeReceiver : BroadcastReceiver() {
         val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
         val remainingSnoozes = intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0)
         if (alarmId < 0L || remainingSnoozes <= 0) return
+        // A queued notification action must not revive a stopped/replaced alarm or reuse spent snoozes.
+        if (AlarmForegroundService.ringingAlarm.value != (alarmId to remainingSnoozes)) return
         val alarm = AlarmStore(context).load().firstOrNull { it.id == alarmId } ?: return
+        if (!alarm.snoozeEnabled) return
         val scheduled = AlarmScheduler.scheduleSnooze(
             context = context,
             alarmId = alarmId,

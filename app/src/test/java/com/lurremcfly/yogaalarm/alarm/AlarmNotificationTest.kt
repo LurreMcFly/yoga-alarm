@@ -2,6 +2,7 @@ package com.lurremcfly.yogaalarm.alarm
 
 import android.app.Notification
 import android.app.NotificationManager
+import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
@@ -18,6 +19,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,6 +31,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
+import org.robolectric.shadows.ShadowAlarmManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "mdpi")
@@ -44,6 +47,7 @@ class AlarmNotificationTest {
     fun setUp() {
         context = RuntimeEnvironment.getApplication()
         manager = context.getSystemService(NotificationManager::class.java)
+        ShadowAlarmManager.setCanScheduleExactAlarms(true)
         controller = Robolectric.buildService(AlarmForegroundService::class.java).create()
         service = controller.get()
     }
@@ -155,6 +159,100 @@ class AlarmNotificationTest {
                 val view = inflate(content, 320)
                 assertEquals(View.GONE, view.findViewById<View>(R.id.notification_snooze_container).visibility)
             }
+        }
+    }
+
+    @Test
+    fun snoozeSchedulesOnceAndStopsTheActiveAlarm() {
+        val notification = ring(alarm(), remainingSnoozes = 2)
+        clickAction(notification, R.id.notification_snooze)
+
+        val alarms = shadowOf(context.getSystemService(AlarmManager::class.java))
+        val scheduled = alarms.scheduledAlarms.single()
+        val intent = shadowOf(scheduled.operation).savedIntent
+        assertEquals(1L, intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L))
+        assertEquals(1, intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, -1))
+        assertTrue(intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false))
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertEquals(1L, service.finishedAlarmId.value)
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+
+        clickAction(notification, R.id.notification_snooze)
+        assertSame(scheduled, alarms.scheduledAlarms.single())
+    }
+
+    @Test
+    fun snoozeAfterStopDoesNotScheduleAnotherAlarm() {
+        val notification = ring(alarm())
+        clickAction(notification, R.id.notification_stop)
+        clickAction(notification, R.id.notification_snooze)
+
+        assertTrue(shadowOf(context.getSystemService(AlarmManager::class.java)).scheduledAlarms.isEmpty())
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+    }
+
+    @Test
+    fun staleSnoozeDoesNotScheduleOrStopADifferentAlarm() {
+        val old = ring(alarm())
+        ring(alarm(id = 2L))
+        AlarmStore(context).save(listOf(alarm(), alarm(id = 2L)))
+
+        clickAction(old, R.id.notification_snooze)
+
+        assertTrue(shadowOf(context.getSystemService(AlarmManager::class.java)).scheduledAlarms.isEmpty())
+        assertEquals(2L to 1, AlarmForegroundService.ringingAlarm.value)
+        assertNull(service.finishedAlarmId.value)
+    }
+
+    @Test
+    fun snoozeDisabledAfterPostingDoesNotScheduleOrStopTheAlarm() {
+        val notification = ring(alarm())
+        AlarmStore(context).save(listOf(alarm().copy(snoozeEnabled = false)))
+
+        clickAction(notification, R.id.notification_snooze)
+
+        assertTrue(shadowOf(context.getSystemService(AlarmManager::class.java)).scheduledAlarms.isEmpty())
+        assertEquals(1L to 1, AlarmForegroundService.ringingAlarm.value)
+    }
+
+    @Test
+    fun exhaustedSnoozesRejectAnEarlierNotificationAction() {
+        val old = ring(alarm())
+        ring(alarm(), remainingSnoozes = 0)
+
+        clickAction(old, R.id.notification_snooze)
+
+        assertTrue(shadowOf(context.getSystemService(AlarmManager::class.java)).scheduledAlarms.isEmpty())
+        assertEquals(1L to 0, AlarmForegroundService.ringingAlarm.value)
+    }
+
+    @Test
+    fun failedSnoozeSchedulingKeepsTheAlarmAndControlsActive() {
+        val notification = ring(alarm())
+        ShadowAlarmManager.setCanScheduleExactAlarms(false)
+
+        clickAction(notification, R.id.notification_snooze)
+
+        assertEquals(1L to 1, AlarmForegroundService.ringingAlarm.value)
+        assertNull(service.finishedAlarmId.value)
+        assertNotNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+    }
+
+    private fun clickAction(notification: Notification, actionId: Int) {
+        val application = shadowOf(RuntimeEnvironment.getApplication())
+        val broadcastCount = application.broadcastIntents.size
+        assertTrue(inflate(notification.bigContentView, 320).findViewById<View>(actionId).performClick())
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(broadcastCount + 1, application.broadcastIntents.size)
+        val intent = application.broadcastIntents.last()
+        // Robolectric records explicit broadcasts but does not instantiate these manifest receivers.
+        when (intent.component?.className) {
+            SnoozeReceiver::class.java.name -> SnoozeReceiver().onReceive(context, intent)
+            StopAlarmReceiver::class.java.name -> StopAlarmReceiver().onReceive(context, intent)
+            else -> error("Unexpected notification action: $intent")
+        }
+        application.nextStartedService?.let {
+            service.onStartCommand(it, 0, 2)
         }
     }
 
