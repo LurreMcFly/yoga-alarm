@@ -154,18 +154,6 @@ internal fun CameraPermissionRoute(
             alarmService = null
         }
     }
-    DisposableEffect(activity) {
-        val window = activity?.window
-        val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
-        val lightStatusBars = insets?.isAppearanceLightStatusBars
-        val lightNavigationBars = insets?.isAppearanceLightNavigationBars
-        insets?.isAppearanceLightStatusBars = false
-        insets?.isAppearanceLightNavigationBars = false
-        onDispose {
-            lightStatusBars?.let { insets?.isAppearanceLightStatusBars = it }
-            lightNavigationBars?.let { insets?.isAppearanceLightNavigationBars = it }
-        }
-    }
     DisposableEffect(activity, alarm.id, isFiredAlarm, uiState.phase == RoutinePhase.COMPLETE) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
@@ -250,6 +238,19 @@ internal fun CameraPermissionRoute(
         }
     }
     BackHandler { if (!isFiredAlarm) onBack() }
+    val showingRingingScreen = isFiredAlarm && !(cameraStarted && hasPermission)
+    DisposableEffect(activity, showingRingingScreen) {
+        val window = activity?.window
+        val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
+        val lightStatusBars = insets?.isAppearanceLightStatusBars
+        val lightNavigationBars = insets?.isAppearanceLightNavigationBars
+        insets?.isAppearanceLightStatusBars = showingRingingScreen
+        insets?.isAppearanceLightNavigationBars = showingRingingScreen
+        onDispose {
+            lightStatusBars?.let { insets?.isAppearanceLightStatusBars = it }
+            lightNavigationBars?.let { insets?.isAppearanceLightNavigationBars = it }
+        }
+    }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF07100A))
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
@@ -275,6 +276,7 @@ internal fun CameraPermissionRoute(
             )
         } else {
             CameraReadyScreen(
+                ringingAlarm = alarm.takeIf { isFiredAlarm },
                 permissionDenied = permissionDenied,
                 showBack = !isFiredAlarm,
                 showStop = isFiredAlarm && !alarm.stopButtonDisabled,
@@ -314,6 +316,7 @@ internal fun CameraPermissionRoute(
 
 @Composable
 private fun CameraReadyScreen(
+    ringingAlarm: AlarmConfig?,
     permissionDenied: Boolean,
     showBack: Boolean,
     showStop: Boolean,
@@ -328,6 +331,20 @@ private fun CameraReadyScreen(
     onEmergencyStop: () -> Unit,
     onTechnicalStop: () -> Unit,
 ) {
+    if (ringingAlarm != null) {
+        AlarmRingingScreen(
+            alarm = ringingAlarm,
+            permissionDenied = permissionDenied,
+            showStop = showTechnicalStop || showStop,
+            showSnooze = showSnooze,
+            showEmergencyStop = showEmergencyStop,
+            onStart = onStartCamera,
+            onStop = if (showTechnicalStop) onTechnicalStop else onStop,
+            onSnooze = onSnooze,
+            onEmergencyStop = onEmergencyStop,
+        )
+        return
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()

@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="#227F8C82">
     <item>
-        <inset android:insetTop="6dp" android:insetBottom="6dp">
-            <shape android:shape="rectangle">
-                <solid android:color="@color/notification_snooze_background" />
-                <corners android:radius="12dp" />
-            </shape>
-        </inset>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/notification_snooze_background" />
+            <corners android:radius="12dp" />
+        </shape>
     </item>
 </ripple>

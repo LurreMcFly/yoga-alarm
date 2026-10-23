@@ -719,7 +719,7 @@ iOS notes:
 
 Status: pending
 Date: 2026-09-11
-Android commit: <pending> (2026-10-23 alarm notification layout; 2026-10-17 deferred stop reset; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
+Android commit: <pending> (2026-10-23 full-screen ringing and notification layouts; 2026-10-17 deferred stop reset; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
 iOS implementation progress (2026-10-23):
 - [x] Sound/Snooze/Stop button editor order and copy, default-on Stop setting, vibration in Sound, conditional in-app Stop, and unrestricted test navigation.
@@ -731,6 +731,7 @@ iOS implementation progress (2026-10-23):
 - [x] Normal/emergency stops preserve today’s streak and due obligation; prior unfinished due days reset on evaluation. Same-day recovery, next-day reset, repeated stops and completion-neutral stop regressions are authored.
 - [x] Migration preserves saved progress and begins schedule tracking from the current time; old markers do not restore previously reset counts. Migration regressions are authored.
 - [ ] Support or explicitly resolve current scheduling rejection of sound-disabled/vibration-disabled combinations and system Stop/secondary-action differences.
+- [ ] Match the dedicated full-screen ringing presentation and equal-height notification controls described in the 2026-10-23 update, within supported native alarm APIs.
 - [ ] Verify upcoming-shortcut routing does not start playback or mark an alarm fired, and clock/timezone rescheduling preserves snooze/count.
 - [x] Adaptive zero/positive markers and completion-gated yellow pauses from SYNC-011 are implemented.
 - [ ] Run the full iOS streak/lifecycle acceptance matrix, including authored `WakeProgressTests` and scheduling regressions.
@@ -741,6 +742,7 @@ Changes:
 - When "Stop button" is off for a fired alarm, the normal Stop action is hidden and Android Back remains blocked. Snooze remains available. Test routines always retain normal navigation.
 - While an alarm is ringing, its system notification offers a clear Start action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
 - Updated 2026-10-23: the expanded ringing notification uses the app's forest/lime palette, the alarm name and "Time to move," a full-width lime Start button, and a smaller secondary row. Stop alarm is outlined; "Snooze XX min" shows the configured duration (default 5 minutes; editor choices 5/10/15/20). Snooze stays narrow and is centered when Stop is disabled, with the same height whether Stop is present or absent. Hide Snooze when disabled or exhausted; hide the whole secondary row when neither secondary action is available. Start opens the existing active routine without dismissing the alarm or starting the camera automatically. Stop and Snooze keep their existing behavior and limits. Support light/dark notification appearance. Android supplies a shorter two-row heads-up layout with the same full-width Start hierarchy and a single-row compact layout so available actions do not depend solely on expansion. The system retains its header/expansion controls and decides popup size; automatic expanded presentation is not guaranteed on Samsung. Recreate the action hierarchy using supported native iOS alarm presentation rather than assuming Android custom views are available.
+- Updated 2026-10-23 after device feedback: use a dedicated full-screen ringing presentation when the system opens a fired alarm. Show a large current local clock respecting the user's 12/24-hour setting, the alarm name, "Time to move," and phone-placement guidance on the app's soft off-white surface with forest text. Put a full-width lime Start button above smaller Stop/Snooze controls; center Snooze when Stop is hidden. Start explicitly requests camera permission if needed and starts the existing camera routine after permission is granted; opening this screen never starts the camera automatically or silences playback. Preserve normal Stop availability, configured/remaining snoozes, technical Stop after camera denial, emergency-stop confirmation, disabled Back for fired alarms, lock-screen display, screen wake/keep-awake behavior, configuration restoration and scrollable safe-area layout. Test routines retain their previous preparation screen. The full-screen alarm intent is already configured: with permission the OS can open it when locked/screen off; unlocked phones retain the notification fallback. Do not promise forced full-screen takeover while unlocked. In all Android notification layouts, Start/Stop/Snooze now have equal visible heights within that layout (48 dp collapsed/expanded; 40 dp heads-up to fit the platform's 88 dp content limit), with no inset shrinking only the secondary backgrounds.
 - Opening a system shortcut for an upcoming alarm opens the app without starting playback or treating the alarm as fired. Ringing notifications still open the active routine.
 - Rescheduling enabled alarms after a clock or timezone change must preserve any pending snooze and its remaining snooze count. Explicitly editing, disabling, or deleting an alarm still cancels its pending snooze.
 - A subtle Emergency stop remains available. Before today's yoga is completed, a positive streak shows "Complete yoga before midnight to keep your N-day yoga streak." After completion today, it says stopping keeps the streak. It requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled. An emergency stop still consumes an available pass after today's completion.
@@ -760,6 +762,7 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmRingingScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
