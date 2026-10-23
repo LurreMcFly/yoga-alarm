@@ -16,6 +16,10 @@
     <style name="AlarmNotificationButton">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textSize">14sp</item>
+        <item name="android:autoSizeTextType">uniform</item>
+        <item name="android:autoSizeMinTextSize">10sp</item>
+        <item name="android:autoSizeMaxTextSize">14sp</item>
+        <item name="android:autoSizeStepGranularity">1sp</item>
         <item name="android:textColor">@color/notification_ink</item>
         <item name="android:gravity">center</item>
         <item name="android:paddingStart">12dp</item>

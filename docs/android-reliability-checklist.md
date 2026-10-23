@@ -17,6 +17,8 @@ prototype results do not replace this pass.
 - [ ] One-time alarm disables itself after firing
 - [ ] Repeating alarm schedules its next selected weekday
 - [ ] Every configured snooze works and the button disappears after the final snooze
+- [ ] Samsung compact/popup/expanded controls fit narrow/wide notification content, with equal button heights and readable labels at normal and enlarged text sizes
+- [ ] Android 14+: swiping the ringing notification restores controls silently without restarting audio, opening the app, or changing remaining snoozes; stale dismissals after Stop/Snooze/completion or a new alarm do not restore old controls
 
 An Android Settings **Force stop** intentionally prevents all app alarms and receivers
 until the user manually opens the app again. This cannot be bypassed by application code.

@@ -27,8 +27,7 @@
             android:layout_height="match_parent"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
-            android:text="@string/notification_stop"
-            android:textSize="12sp" />
+            android:text="@string/notification_stop" />
     </FrameLayout>
 
     <FrameLayout
@@ -45,7 +44,6 @@
             android:layout_height="match_parent"
             android:paddingStart="4dp"
             android:paddingEnd="4dp"
-            android:text="@string/notification_snooze"
-            android:textSize="12sp" />
+            android:text="@string/notification_snooze" />
     </FrameLayout>
 </LinearLayout>

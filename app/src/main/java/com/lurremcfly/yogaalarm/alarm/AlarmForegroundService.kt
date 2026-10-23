@@ -4,8 +4,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.Binder
@@ -16,6 +18,7 @@ import android.os.VibratorManager
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.lurremcfly.yogaalarm.MainActivity
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
@@ -28,6 +31,21 @@ class AlarmForegroundService : Service() {
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var activeAlarmId: Long? = null
+    private var activeNotificationBuilder: NotificationCompat.Builder? = null
+    private val notificationDismissedReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
+            if (intent.action != ACTION_NOTIFICATION_DISMISSED || activeAlarmId != alarmId) return
+            // Android 14+ allows ongoing notifications to be swiped away while unlocked.
+            // Restore only the active alarm's controls, without replaying its alert or UI.
+            val notification = activeNotificationBuilder
+                ?.setFullScreenIntent(null, false)
+                ?.setSilent(true)
+                ?.setOnlyAlertOnce(true)
+                ?.build() ?: return
+            getSystemService(NotificationManager::class.java).notify(AlarmScheduler.NOTIFICATION_ID, notification)
+        }
+    }
     private val mutableFinishedAlarmId = MutableStateFlow<Long?>(null)
     val finishedAlarmId = mutableFinishedAlarmId.asStateFlow()
 
@@ -43,6 +61,7 @@ class AlarmForegroundService : Service() {
         if (activeAlarmId != alarmId) return
         releasePlaybackResources()
         activeAlarmId = null
+        activeNotificationBuilder = null
         mutableRingingAlarm.value = null
         mutableFinishedAlarmId.value = alarmId
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -52,6 +71,12 @@ class AlarmForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel(this)
+        ContextCompat.registerReceiver(
+            this,
+            notificationDismissedReceiver,
+            IntentFilter(ACTION_NOTIFICATION_DISMISSED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -120,8 +145,15 @@ class AlarmForegroundService : Service() {
         if (stopAlarm == null && snooze == null) {
             expandedContent.setViewVisibility(R.id.notification_secondary_actions, View.GONE)
             headsUpContent.setViewVisibility(R.id.notification_secondary_actions, View.GONE)
+        } else {
+            val singleAction = stopAlarm == null || snooze == null
+            for (content in listOf(expandedContent, headsUpContent)) {
+                content.setViewVisibility(R.id.notification_secondary_gap, if (singleAction) View.GONE else View.VISIBLE)
+                content.setViewVisibility(R.id.notification_secondary_spacer_start, if (singleAction) View.VISIBLE else View.GONE)
+                content.setViewVisibility(R.id.notification_secondary_spacer_end, if (singleAction) View.VISIBLE else View.GONE)
+            }
         }
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_alarm)
             .setColor(0xFF274D34.toInt())
             .setContentTitle(alarm.name)
@@ -138,11 +170,21 @@ class AlarmForegroundService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setAutoCancel(false)
+            .setDeleteIntent(
+                PendingIntent.getBroadcast(
+                    this,
+                    alarmId.hashCode(),
+                    Intent(ACTION_NOTIFICATION_DISMISSED)
+                        .setPackage(packageName)
+                        .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
             .setFullScreenIntent(openAlarm, true)
             .setContentIntent(openAlarm)
-            .build()
-        startForeground(AlarmScheduler.NOTIFICATION_ID, notification)
+        activeNotificationBuilder = notificationBuilder
         activeAlarmId = alarmId
+        startForeground(AlarmScheduler.NOTIFICATION_ID, notificationBuilder.build())
         mutableFinishedAlarmId.value = null
 
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -173,6 +215,9 @@ class AlarmForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        unregisterReceiver(notificationDismissedReceiver)
+        activeNotificationBuilder = null
+        activeAlarmId = null
         mutableRingingAlarm.value = null
         releasePlaybackResources()
         super.onDestroy()
@@ -194,6 +239,7 @@ class AlarmForegroundService : Service() {
         val ringingAlarm = mutableRingingAlarm.asStateFlow()
 
         const val ACTION_STOP_ALARM = "com.lurremcfly.yogaalarm.STOP_ALARM"
+        private const val ACTION_NOTIFICATION_DISMISSED = "com.lurremcfly.yogaalarm.NOTIFICATION_DISMISSED"
         const val CHANNEL_ID = "active_alarm_v2"
 
         fun ensureNotificationChannel(context: Context) {

@@ -12,8 +12,8 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "1.0.20"
+        versionCode = 22
+        versionName = "1.0.21"
     }
 
     buildTypes {
@@ -39,6 +39,10 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 
     androidResources {
@@ -76,6 +80,7 @@ dependencies {
     implementation("com.google.mediapipe:tasks-vision:1.0.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -7,20 +7,31 @@
     android:orientation="horizontal">
 
     <FrameLayout
+        android:id="@+id/notification_secondary_spacer_start"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="0.5"
+        android:visibility="gone" />
+
+    <FrameLayout
         android:id="@+id/notification_stop_container"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginEnd="8dp"
         android:layout_weight="1">
 
         <Button
             android:id="@+id/notification_stop"
             style="@style/AlarmNotificationButton.Stop"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center"
             android:text="@string/notification_stop" />
     </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/notification_secondary_gap"
+        android:layout_width="8dp"
+        android:layout_height="match_parent" />
 
     <FrameLayout
         android:id="@+id/notification_snooze_container"
@@ -31,9 +42,16 @@
         <Button
             android:id="@+id/notification_snooze"
             style="@style/AlarmNotificationButton.Snooze"
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center"
             android:text="@string/notification_snooze" />
     </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/notification_secondary_spacer_end"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="0.5"
+        android:visibility="gone" />
 </LinearLayout>
