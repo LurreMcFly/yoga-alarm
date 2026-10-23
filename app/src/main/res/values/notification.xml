@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="notification_ink">#142018</color>
+    <color name="notification_muted_ink">#647069</color>
+    <color name="notification_lime">#BDEC68</color>
+    <color name="notification_button_ink">#142018</color>
+    <color name="notification_snooze_background">#E3F1C8</color>
+    <color name="notification_snooze_ink">#142018</color>
+    <color name="notification_border">#DDE4DE</color>
+
+    <string name="notification_start">Start</string>
+    <string name="notification_stop">Stop alarm</string>
+    <string name="notification_snooze">Snooze %1$d min</string>
+    <string name="notification_time_to_move">Time to move</string>
+
+    <style name="AlarmNotificationButton">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/notification_ink</item>
+        <item name="android:gravity">center</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingBottom">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:backgroundTint">@null</item>
+        <item name="android:stateListAnimator">@null</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+    </style>
+
+    <style name="AlarmNotificationButton.Start">
+        <item name="android:background">@drawable/notification_start_background</item>
+        <item name="android:textColor">@color/notification_button_ink</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="AlarmNotificationButton.Stop">
+        <item name="android:background">@drawable/notification_stop_background</item>
+    </style>
+
+    <style name="AlarmNotificationButton.Snooze">
+        <item name="android:background">@drawable/notification_snooze_background</item>
+        <item name="android:textColor">@color/notification_snooze_ink</item>
+    </style>
+</resources>

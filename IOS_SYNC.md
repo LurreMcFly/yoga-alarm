@@ -6,13 +6,74 @@ This file tracks Android changes that affect cross-platform app behavior and the
 
 ## Pending
 
-iOS implementation checklist (source review: 2026-10-10): checked items are implemented in the current iOS working tree, including uncommitted changes. Unchecked items identify remaining implementation or verification. Source inspection is not device verification; entries stay Pending until their acceptance checks pass.
+iOS source audit: 2026-10-23, against iOS commit `7a1e058` (clean working tree). Checked boxes below mean implementation is present in source; they do not mean acceptance checks passed. All 19 entries remain Pending because native compilation, XCTest/StoreKit execution, or device acceptance is still outstanding. Android requirements and acceptance checks remain authoritative.
+
+### Current iOS status
+
+“Implemented in source” means no additional code gap was identified in this review; it is not a declaration of verified parity. “Partial” means a concrete implementation gap or unresolved platform behavior remains.
+
+| ID | Source status | Remaining work |
+| --- | --- | --- |
+| SYNC-019 | Partial | Normal editor Save enables alarms, but only guided Save uses the saved-and-switched-off scheduling-failure path. |
+| SYNC-018 | Partial | Portrait-only app, fixed camera rotation, non-scrollable preparation, missing compact routine split and short-window time-picker behavior. |
+| SYNC-017 | Partial | Settings and weekday preference exist; M/S touch targets are 44 points, below the required 48. |
+| SYNC-016 | Partial | Main 14-step tour exists; transition, scroll, swipe and preview timings and completed-practice copy differ. |
+| SYNC-015 | Implemented in source | Run boundary/default-name regressions and draft/save/device acceptance. |
+| SYNC-014 | Implemented in source | Verify installed version/build label offline and with larger text. |
+| SYNC-013 | Implemented in source | Verify duration persistence, countdowns, Pro routing and picker accessibility. |
+| SYNC-012 | Implemented in source | Verify compact layout, larger text, safe areas and native context-menu placement. |
+| SYNC-011 | Partial | Scheduled-day/yellow pause markers now exist; pose arrival timing differs (see SYNC-007); motion/device acceptance remains. |
+| SYNC-010 | Partial | Remove Test Pro access and its entitlement bypass; run StoreKit and device acceptance. |
+| SYNC-009 | Implemented in source | Verify swipe-back selection through Save/reopen/Test and locked-pose cases. |
+| SYNC-008 | Implemented in source | Run scheduling regressions and verify actual AlarmKit DST delivery/rescheduling. |
+| SYNC-007 | Partial | Persistent mirroring exists; arrival uses 250 ms hold / 300 ms travel instead of 1,000 / 650 ms. |
+| SYNC-006 | Implemented in source | Verify permission recovery, pointer advancement, VoiceOver and Reduce Motion. |
+| SYNC-005 | Implemented in source | Verify Settings-to-privacy presentation, policy opening and text layout. |
+| SYNC-004 | Partial | Foreground ten-second grace exists; completed lock-screen presentation remains unresolved. |
+| SYNC-003 | Implemented in source | Verify explicit permission requests/recovery; tour permission prelude is governed by SYNC-016. |
+| SYNC-002 | Implemented in source | Square opaque sunrise artwork exists in all icon sizes; verify installed mask/cropping. |
+| SYNC-001 | Partial | Scheduled-day accounting/deferred reset exist; silent/vibration modes and system alarm differences remain unresolved. |
+
+Audit validation (2026-10-23):
+- `scripts/verify-corrections.sh` passed its source/project-membership checks; it does not execute tests.
+- `scripts/verify-bucket6.sh` failed its privacy-link check: it expects the policy URL in `ProPaywallView.swift`, while the current policy action is in `AlarmHomeView.swift` (`PrivacySafetyView`). This failure does not establish that all remaining privacy checks pass.
+- `scripts/test-onboarding-geometry.sh` could not run: `swiftc` is unavailable. Swift and Xcode are unavailable on this Linux host; no compilation, XCTest, StoreKit or device acceptance is claimed.
+- Icon inspection confirmed all eight PNGs are opaque RGB, including the 1,024-pixel source, with the square sunrise/Warrior II artwork. Installed-mask acceptance remains open.
+
+### SYNC-019 — Enable alarms when saving from the editor
+
+Status: pending
+Date: 2026-10-23
+Android commit: <pending>
+
+iOS implementation progress (2026-10-23):
+- [x] `AlarmEditorView.actionBar` explicitly enables both new and edited alarms on Save; Cancel and home toggles retain their separate paths.
+- [ ] Apply the scheduling-failure fallback to normal editor Save as well as guided Save. `AlarmHomeView` currently passes `disableOnSchedulingFailure: isGuidedSave`; normal failure can leave the persisted alarm enabled and needing repair.
+- [ ] Verify disabled unchanged/edited alarms, new alarms, guided Save, Cancel, home disable and permission/scheduling failure on iOS.
+
+Changes:
+- Save in the alarm editor enables and schedules both new and existing alarms, including previously disabled alarms, even when no other settings changed. This also applies to the guided onboarding Save action.
+- Preserve the existing scheduling-failure behavior: if scheduling fails, save the alarm switched off and show the existing permission guidance. The home-screen switch can still explicitly disable an alarm; canceling the editor leaves its enabled state unchanged.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+
+iOS acceptance checks:
+- Open a disabled alarm and tap Save, with and without editing settings; confirm it is enabled and its next occurrence is scheduled. Verify new alarms and onboarding Save also enable the alarm.
+- Confirm Cancel preserves a disabled alarm, the home switch can disable it, and scheduling failure leaves it switched off with accurate feedback.
 
 ### SYNC-018 — Safe areas and resizable routine screens
 
 Status: pending
 Date: 2026-10-17
 Android commit: <pending>
+
+iOS implementation progress (2026-10-23):
+- [x] Session-owned routine progress, camera reacquisition on resume, monotonic completion deadline, scrollable normal completion, bounded onboarding content and light/dark presentation are present.
+- [ ] Enable supported rotation/resizing: `Info.plist` remains portrait-only and `CameraPreview`/`CameraPipeline` hard-code 90-degree camera rotation.
+- [ ] Make camera preparation scrollable and implement the compact 40%/60% routine layout; the active routine still uses fixed vertical stacks.
+- [ ] Let the editor time picker scroll away below 600 points of usable height; it remains pinned regardless of height.
+- [ ] Verify all safe areas, large-text/keyboard reachability, rotation/progress preservation, preview alignment (including 180 degrees), completion and alarm-launch isolation on device.
 
 Changes:
 - Support portrait, landscape and resizing on phones and larger screens. Keep interactive controls clear of top, bottom and side safe areas, including display cutouts and the keyboard. Screen backgrounds continue behind system bars; use dark system icons on light app screens and light icons during camera/routine presentation, restoring the prior appearance on exit.
@@ -45,6 +106,12 @@ Status: pending
 Date: 2026-10-17
 Android commit: <pending>
 
+iOS implementation progress (2026-10-23):
+- [x] `AlarmSettingsView` has grouped cards, full-width help/privacy actions, version footer, subscription management and lifetime assurances.
+- [x] Settings/editor share persisted `first_day_of_week`, defaulting to Monday. `FirstDayOfWeek.orderedDays` changes display order while canonical weekday IDs and selections remain unchanged; a Sunday-first scheduling regression is authored in `ProductAlarmSchedulingTests.swift`.
+- [ ] Increase the M/S selector's minimum touch height from 44 to 48 points.
+- [ ] Verify persistence/restart, guided day order, mutually exclusive VoiceOver selection, larger text and all purchase states on iOS.
+
 Changes:
 - Restyle the scrollable Settings sheet with the app's cream background, white rounded cards, subtle borders, forest text/actions, and lime selection highlights. Group content into Preferences, Yoga Alarm Pro, and Help & info, with the muted app version below the cards. Help and privacy use full-width rows; preserve their existing destinations.
 - Add a free, app-wide “First day of week” setting with mutually exclusive Monday and Sunday options. Default to Monday for new and existing installations regardless of locale. Save changes immediately and retain the preference across restarts.
@@ -66,9 +133,16 @@ iOS acceptance checks:
 
 ### SYNC-016 — Guided first-use onboarding and Settings replay
 
-Status: pending — implemented on Android; awaiting iOS implementation and device verification
+Status: pending — partially implemented on iOS; timing/copy parity and native verification remain
 Date: 2026-10-17
 Android commit: <pending>
+
+iOS implementation progress (2026-10-23):
+- [x] The 14-step tour, first-use permission prelude, invitation dismissal/replay persistence, real editor controls, free-pose restrictions, quiet five-second practice, preserved draft, real-alarm priority, explicit Save and saved summary are present.
+- [ ] Match guided transition timing: `OnboardingFlow` uses 80 ms fade-out / 180 ms reveal instead of 350 / 900 ms. Home-to-editor uses 180 / 300 ms instead of 450 / 1,100 ms and lacks the 100 ms lead-in. Guided editor scrolling uses 180 ms instead of 1,000 ms; match the routine-introduction pause as well.
+- [ ] Slow the routine overview from three to six seconds per card and the 160-point finger traversal from 0.6 to 1.5 seconds.
+- [ ] Match completed-practice placement copy (“You’ve got it.”); the current heading remains “Try your first pose.” with “Practice complete.”
+- [ ] Verify invitation coverage, native spotlight interaction, sound-sheet close/scroll/reveal ordering, draft/practice isolation, accessibility, lifecycle and real-alarm interruption on iOS.
 
 Final approved flow (2026-10-17):
 - Use the native Android flow below as the current reference. The browser preview is design history and can differ from the latest native sequence.
@@ -146,6 +220,12 @@ Status: pending
 Date: 2026-10-17
 Android commit: <pending>
 
+iOS implementation progress (2026-10-23):
+- [x] `AlarmConfiguration.new` captures the local hour with minute 00 and picks an unused name from the matching eight-name group, allowing repeats after exhaustion.
+- [x] `normalizeForSave` trims/limits names and uses the final hour for blank-name fallback, excluding the edited alarm. Defaults remain in the editor draft; time changes do not rename it.
+- [x] Local-hour boundaries, name exhaustion and blank/custom-name regressions are authored in `AlarmPersistenceTests.swift`.
+- [ ] Run those tests and verify redraw/test/return/save behavior and strictly future weekday scheduling on iOS.
+
 Changes:
 - When New alarm is tapped, read the device's current local time once and set the draft to that hour with minutes `00`: 14:37 → 14:00, 00:20 → 00:00, 23:59 → 23:00. Preserve the existing weekday/repeat and other defaults. A time already passed schedules the next future occurrence on a selected weekday using the existing scheduler, rather than firing immediately.
 - Randomly select a name from the matching time group below. Prefer names not already used by saved alarms; if all eight names in that group are used, allow a repeat from the same group. Use local selection with no network dependency.
@@ -174,6 +254,10 @@ Status: pending
 Date: 2026-10-17
 Android commit: <pending>
 
+iOS implementation progress (2026-10-23):
+- [x] Settings reads `CFBundleShortVersionString` and `CFBundleVersion` locally and shows `Version <version> (<build>)` in its scrollable muted, scaled 14-point footer.
+- [ ] Verify the installed build's label offline and with larger text on iOS.
+
 Changes:
 - Show a read-only version label below Privacy & safety at the bottom of Settings, using muted 14-point text and an 8-point gap. Keep it in the existing scrollable content so it remains reachable with larger text.
 - Format the label as `Version <release version> (<build number>)`, for example `Version 1.0.17 (18)` on the current Android build. Read both values from the installed app's build metadata so future releases update automatically; on iOS use the native app version and build number.
@@ -192,7 +276,7 @@ Status: pending
 Date: 2026-10-06
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Five-second holds in the shared duration catalog; 20-second default/free choice, Pro gates, scrollable picker, and 5–60-second benefits copy.
 - [ ] Verify save/reopen, test/fired countdowns, free-user paywall routing, and all seven choices at accessibility text sizes on iOS.
 
@@ -217,11 +301,11 @@ Status: pending
 Date: 2026-10-06
 Android commit: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3 (2026-10-10 streak update; earlier changes: <pending>)
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Header Settings gear, free-user GET PRO, Pro access through Settings, adaptive title/action layout, and fixed bottom Add alarm pill.
 - [x] Compact alarm-card padding/time typography, list spacing, and scroll clearance above the add pill.
 - [x] Implement the fixed 80-point streak card and adaptive date markers specified in SYNC-011.
-- [x] Finish subscription Settings controls specified in SYNC-010.
+- [x] Subscription Settings controls are present; the consolidated Manage subscription design in SYNC-017 supersedes the older separate cancellation/date actions in SYNC-010.
 - [ ] Verify small-phone/large-text layouts, safe areas, last-card clearance, and native alarm context-menu placement relative to the add pill.
 
 Changes:
@@ -256,16 +340,18 @@ Status: pending
 Date: 2026-10-04
 Android commit: <pending> (2026-10-17 pause markers and completion-based eligibility; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Sunrise completion with measured whole-number docking, entrance-settled three-second hold, multi-digit/zero handling, and usable Done/back controls.
-- [x] Pose-complete check/glow, find/hold/return feedback, saved-progress pause/resume presentation, and traveling pose illustration.
+- [x] Pose-complete check/glow, find/hold/return feedback, saved-progress pause/resume presentation, and traveling pose illustration are present; arrival timing remains below.
 - [x] Session-owned earned-streak presentation, whole-count slide/fade, flame-only tap wobble, and Reduce Motion handling.
 - [x] Recent completed-day persistence and bounded history reconstruction from an existing positive streak; future markers do not show checks.
 - [x] Saved-card entrance keyed by alarm identity, insertion/removal reflow, and enable/disable color transitions.
-- [x] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, rest-day dashes, and full accessibility descriptions.
+- [x] Implement the fixed 80-point two-row card, scaled geometry budget, seven/five/three/one markers, label shortening, and full accessibility descriptions.
 - [x] Add the specified 100 ms delay before the earned-count roll and coordinated flame wobble.
-- [ ] Replace rest-day dashes with yellow pause markers, shown only after a completion with no intervening unfinished alarm day, as specified in the 2026-10-17 updates below.
-- [ ] Finish scheduled-day accounting and migration rules in SYNC-001; do not restore a previously reset streak from old completion markers.
+- [x] `StreakViews` renders yellow pause markers; `WakeProgress.dayMarkers` gates pauses on completion with no intervening unfinished due day. Fresh-install, missed/pending-day and older-history regressions are authored.
+- [ ] Apply the 2026-10-23 correction: pause markers appear only on or before the current local date; future dates stay empty.
+- [x] Scheduled-day accounting and migration rules in SYNC-001 are present without restoring previously reset counts.
+- [ ] Restore the specified pose arrival timing (1,000 ms hold / 650 ms travel); `TravelingPoseIllustration` currently uses 250 / 300 ms (also SYNC-007).
 - [ ] Run iOS animation, recreation, rapid-tracking/toggle, midnight, large-text, and Reduce Motion acceptance checks.
 
 Changes:
@@ -327,7 +413,7 @@ Number sizing and edge cases:
 - Flame clipping fix (2026-10-10; Android commit: <pending>): center the flame in the marker-height value row using its natural emoji font bounds and padding, rather than forcing its line height into a glyph-size square. The full emoji must remain visible at rest and during the wobble at every supported display/text scale; keep the card at 80 points and retain the existing flame size and horizontal spacing.
 - Measure the complete count and label at the current text/display scale. Prefer seven dates, with TODAY FIFTH: four previous days, today, and two upcoming days. If they do not fit, show five dates (today third), then three (today second), then only today. These are consecutive local calendar dates, not a fixed week or carousel. Shorten “day streak” to “streak” when five markers cannot fit with the full label; accessibility always announces the full count as an N-day yoga streak. Refresh on alarm edits, app resume, and local midnight; Android checks the date every minute.
 - Default label text is 12 points with a 16-point label row; count text is bold 28 points. Labels and count grow with text scale within the fixed card budget: the label row caps at 24 points, label glyph size at 22 points, and count glyph size at the marker-row height. Markers start at 28 points, increase toward 32–34 points with larger text, and are limited by the height remaining below labels and the 4-point gap. Keep at least 6 points between marker columns and distribute remaining horizontal space evenly. Marker corners are 8 points. Completed dates show green `#81BD50` squares with white checks, including completions before a streak break. Unfinished scheduled dates have empty hairline squares; dates without alarms show the yellow pause marker described below. Today's weekday uses forest text and its square has a 2-point outline (forest when unfinished, green when completed); other outlines are 1 point. Provide full-date, today, completed, rest-day, not-completed, and upcoming accessibility descriptions.
-- Updated 2026-10-17: rest-day markers use a solid yellow `#F5BF42` fill with a centered pause icon made of two forest-colored vertical bars, replacing the muted dash. Each bar is 12% of the marker width and 46% of its height, with a 12%-width gap and 1-point rounded corners. Use a matching yellow outline except for today's forest outline. Apply this to past, current, and upcoming rest days; a completed date always retains its green check even if no alarm is currently scheduled. Preserve the existing rest-day accessibility description, adaptive sizing, and streak accounting. Relevant Android file: `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt`.
+- Updated 2026-10-17 (future-date eligibility corrected 2026-10-23; Android commit: <pending>): rest-day markers use a solid yellow `#F5BF42` fill with a centered pause icon made of two forest-colored vertical bars, replacing the muted dash. Each bar is 12% of the marker width and 46% of its height, with a 12%-width gap and 1-point rounded corners. Use a matching yellow outline except for today's forest outline. Apply this only to eligible past and current rest days; future dates stay empty regardless of alarm schedule or an active streak. After completing Friday with no weekend alarms, Saturday and Sunday stay empty on Friday; Saturday becomes paused on Saturday, and Sunday becomes paused on Sunday. Refresh against the current local date using the existing resume/midnight behavior. A completed date always retains its green check even if no alarm is currently scheduled. Preserve the existing rest-day accessibility description, adaptive sizing, completion-chain eligibility, and streak accounting. Relevant Android files: `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt`, `app/src/main/java/com/lurremcfly/yogaalarm/model/WakeProgress.kt`, `app/src/test/java/com/lurremcfly/yogaalarm/model/WakeProgressTest.kt`.
 - Pause eligibility correction (2026-10-17): a date without an alarm is yellow only when it continues a chain from a completed yoga day. First install shows empty markers for past, current, and future dates. Dates before the first completion stay empty. A missed scheduled date ends the chain: later alarm-free dates stay empty until another real completion; earlier completed and paused dates remain visible. A pending alarm today or in the future is empty and does not authorize pauses after it until completed. Example: completed Friday → paused Saturday/Sunday → unfinished Monday → empty Tuesday; completing Monday allows an alarm-free Tuesday to show paused. If an active streak's last completion is older than the visible four-day history, its alarm-free days still show paused; an already broken streak must not revive pauses from an old completion. Stopping before today's completion preserves the numeric streak until midnight but does not mark today or following days as paused. This changes marker classification and its accessibility description only, not streak accounting. Relevant Android files: `app/src/main/java/com/lurremcfly/yogaalarm/model/WakeProgress.kt`, `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt`, `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt`, and `app/src/test/java/com/lurremcfly/yogaalarm/model/WakeProgressTest.kt`.
 - Persist recent actual completion dates separately from the current streak; retain today and the previous four calendar days. Stopping a later alarm or breaking a streak does not erase recent completed-day checkmarks. Multiple same-day completions produce one marker, test routines never add markers, and future dates never show checks. On upgrade with no history, reconstruct up to five known consecutive completed dates from the existing streak count and last completion date; do not invent older interrupted history. The relevant persistence/model files are listed below.
 - Initially show the previous count. After 100 ms, change to the earned count: the old number slides upward by its own height over 350 ms and fades out over 200 ms; the new number enters from one height below over 350 ms and fades in over 250 ms. Animate the entire integer string, including transitions such as 9 → 10; do not cycle through intermediate counts.
@@ -355,6 +441,7 @@ Relevant Android files:
 - app/src/test/java/com/lurremcfly/yogaalarm/model/WakeProgressTest.kt
 
 Android validation:
+- Future pause correction (2026-10-23): direct Kotlin compilation and all 31 focused `WakeProgressTest`/`StreakScheduleTest` cases passed, including Friday/Saturday/Sunday rollover. On-device midnight rollover remains unverified.
 - Rolling five-day card: debug Kotlin compilation, ten focused `WakeProgressTest` cases, and whitespace checks passed. On-device layout and midnight rollover checks remain pending.
 - Kotlin compilation and the 13 existing `RoutineViewModelTest` cases passed. On-device visual verification is still pending; no Android device was connected during implementation.
 
@@ -368,21 +455,19 @@ iOS acceptance checks:
 - Save new/existing alarms, scroll to an offscreen saved card, toggle rapidly, and delete first/middle/last cards. Confirm correct card identity, one saved entrance, smooth reflow, and immediate schedule/persistence updates. Test scheduling failure: the disabled state and existing failure message must remain accurate.
 - Repeat the flows with motion disabled/Reduce Motion. Final states should appear immediately without celebration waits, count mutations, timing changes, or blocked controls.
 
-iOS implementation update (2026-10-10): fixed-height adaptive card and delayed earned-count presentation implemented in AlarmHomeView.swift/StreakViews.swift; rest-day marker classification covered by an added WakeProgressTests regression. Scheduled-day streak accounting remains pending under SYNC-001. Structural checks and whitespace checks passed; Swift/Xcode are unavailable on this Linux host, so compilation, XCTest execution, and device layout/motion checks remain pending.
-
 ### SYNC-010 — Store purchases, localized prices, and restoration
 
 Status: pending
 Date: 2026-09-27
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] StoreKit Monthly/Yearly/Lifetime catalog, localized prices, unavailable-plan states, retry, restore with price reload, and available-plan selection fallback.
 - [x] Expanded paywall with Close, scrolling content above a fixed App Store purchase area, renewal terms, and separate selection/checkout.
 - [x] Shared verified entitlement authority, lifetime precedence, pending/canceled checkout handling, active-Pro purchase blocking, transaction updates/finish, and restore/foreground refresh.
 - [x] Verified subscription renewal/cancellation and paid-through-date text for subscription-only ownership; native subscription management is available.
-- [x] Add explicit subscription/lifetime active Settings copy, prominent Cancel subscription/Manage subscription states, cancellation explanation, and separate renewal/end-date controls.
-- [x] Show the verified localized renewal or subscription end date directly in Settings; use an App Store date/management link only when verified date information is unavailable.
+- [x] Explicit subscription/lifetime status, verified dates, cancellation explanation and management are present. Newer SYNC-017 consolidates the older cancellation/date controls into one Manage subscription action.
+- [x] Show the verified localized renewal or subscription end date directly in Settings; use the App Store management destination when verified date information is unavailable (current SYNC-017 design).
 - [x] Keep subscription status and management available when lifetime and a valid subscription coexist; explain that lifetime access is unaffected.
 - [ ] Remove sandbox/Xcode Test Pro access and its entitlement bypass; the queue requires store-only unlocking in all builds.
 - [ ] Verify real StoreKit checkout, deferred payments, restoration, expiry/grace/revocation, temporary failures, catalog IDs, and small-screen/large-text layout.
@@ -442,15 +527,13 @@ Validation status:
 - Android debug/release Kotlin compilation and eight focused billing tests passed. Real Google Play checkout still requires the Internal Testing checklist in `docs/play-billing-setup.md`.
 - iOS implementation and StoreKit/device verification remain pending. Move this entire entry to Completed only after the native behavior is implemented and verified.
 
-iOS implementation update (2026-10-10): verified subscription state is tracked separately from lifetime access, Settings/Pro show localized dates or native management fallback, and Settings uses the full-width cancellation/management control. Added cancellation/date/fallback and lifetime-plus-subscription regressions in ProPlanTests.swift. Structural checks and whitespace checks passed; Swift/Xcode are unavailable on this Linux host, so compilation, StoreKitTest execution, and device checks remain pending. The separate Test Pro access removal task remains pending.
-
 ### SYNC-009 — Save the pose selected after swiping back
 
 Status: pending
 Date: 2026-09-20
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Each idle, unlocked carousel selection updates the draft, including swiping back to the original pose; locked poses do not commit.
 - [ ] Verify Mountain → Warrior II → Mountain through Save, reopen, and Test, plus other steps and locked-pose cases on iOS.
 
@@ -467,7 +550,7 @@ Status: pending
 Date: 2026-09-20
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Per-date configured-wall-time resolution, spring-gap minute preservation, overlap offset preference, and focused Stockholm regression tests authored.
 - [ ] Run the iOS scheduling tests and verify native AlarmKit gap/overlap delivery and subsequent rescheduling; app next-occurrence calculations alone do not verify system delivery.
 
@@ -487,9 +570,10 @@ Date: 2026-09-17
 Updated: 2026-10-20
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
-- [x] Single illustration travels from screen center at 3.75× after a one-second hold into the 96-point header slot over 0.65 seconds; presentation is separate from routine timing.
-- [ ] Alternate each pose illustration's horizontal orientation on successive appearances, persisting the next orientation across sessions.
+iOS implementation progress (2026-10-23):
+- [x] One illustration travels from screen center at 3.75× into the 96-point header slot, independently of routine timing.
+- [ ] Match the one-second hold and 0.65-second travel; current `TravelingPoseIllustration` uses 250 ms and 300 ms.
+- [x] `RoutineSessionModel.presentPoseIllustration` persists alternation per pose and caches orientation per routine slot, sharing the preview/hold appearance. Cross-session/repeated-slot regressions are authored in `RoutineEngineTests.swift`.
 - [ ] Verify rapid pose changes, recreation/rotation, Reduce Motion, accessibility, and unchanged detection/countdown/control behavior on iOS.
 
 Changes:
@@ -513,7 +597,7 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] All four readiness rows remain visible while incomplete, with completed checks, actions, and a decorative bouncing pointer on only the first incomplete action.
 - [x] Pointer stops after tapping its row; existing readiness refresh and Camera/AlarmKit permission state are reused.
 - [ ] Verify grant/denial/Settings recovery, pointer advancement, app resume, VoiceOver, and Reduce Motion. AlarmKit authorization supplies the three alarm capability rows together on iOS.
@@ -537,7 +621,7 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Privacy & safety is reached through header Settings; opening it dismisses Settings and shows the scrollable explanation and scalable policy action.
 - [x] Privacy links use https://www.yogaalarm.com/privacy.
 - [ ] Verify Settings-to-privacy presentation, policy opening, and accessibility text layout on iOS.
@@ -560,7 +644,7 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Session-owned monotonic ten-second foreground idle-timer deadline, immediate media/camera stop, cancellation on exit, and resume without extending the deadline.
 - [ ] Lock-screen completion grace remains unmatched: the current iOS flow stops the system alarm before camera handoff and has no completed AlarmKit presentation.
 - [ ] Verify real/test completion, immediate single completion recording, redraw/resume, early exit, and isolation from a subsequent routine on a physical iPhone.
@@ -584,8 +668,8 @@ Status: pending
 Date: 2026-09-16
 Android commit: <pending>
 
-iOS implementation progress (2026-10-10):
-- [x] No automatic setup popup; home readiness actions and explicit camera start request access, with denial/Settings recovery and no legacy setup-flag dependency.
+iOS implementation progress (2026-10-23):
+- [x] No legacy automatic permission popup; home readiness actions and explicit camera start request access, with denial/Settings recovery and no legacy setup-flag dependency. The opt-in tour invitation and first-use permission explanation are governed by the newer SYNC-016.
 - [ ] Verify fresh/existing installs, cold-launch alarm routing, explicit permission prompts, and recovery on iOS. Separate Android alarm permissions are represented by AlarmKit authorization.
 
 Changes:
@@ -608,9 +692,10 @@ Date: 2026-09-11
 Updated: 2026-10-10
 Android commit: fcf38b3a8d17f5cbb5e073b48c26707c12827e51 (2026-10-10 artwork update; earlier changes: <pending>)
 
-iOS implementation progress (2026-10-10):
-- [ ] Replace iOS icon assets with the newly supplied square sunrise/Warrior II artwork, using a suitable high-resolution source and preserving colors, silhouette, and proportions.
-- [ ] Generate opaque iOS sizes without the old decorative frame or baked-in rounded/transparent corners; verify hands/feet remain visible under the installed platform mask.
+iOS implementation progress (2026-10-23):
+- [x] Current `AppIcon.appiconset` contains the square sunrise/Warrior II artwork, including a 1,024-pixel source; visual inspection matches the Android artwork.
+- [x] All eight current PNG sizes are opaque RGB without the old decorative frame or baked-in rounded corners.
+- [ ] Verify hands/feet and overall cropping under the installed iOS mask.
 
 Changes:
 - Replace the framed launcher artwork with the supplied square artwork: a dark navy Warrior II silhouette over a coral/orange-to-yellow sunrise and navy ground, with no decorative border or baked-in rounded corners.
@@ -634,26 +719,28 @@ iOS notes:
 
 Status: pending
 Date: 2026-09-11
-Android commit: <pending> (2026-10-17 deferred stop reset; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
+Android commit: <pending> (2026-10-23 alarm notification layout; 2026-10-17 deferred stop reset; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
-iOS implementation progress (2026-10-10):
+iOS implementation progress (2026-10-23):
 - [x] Sound/Snooze/Stop button editor order and copy, default-on Stop setting, vibration in Sound, conditional in-app Stop, and unrestricted test navigation.
 - [x] Emergency 5/15-second holds with three monthly passes, after-completion warning/pass use, immediate technical camera exits, and streak-neutral system Stop recording.
 - [x] Explicit alarm edits cancel pending snoozes with retryable cleanup; reconciliation retains pending snooze ownership/count.
 - [x] Fired completions are idempotent and count once per local day; test routines do not earn days/markers; streak count is shown on home/completion/emergency UI.
-- [ ] Replace consecutive-calendar-day reset logic with scheduled-day accounting that preserves unscheduled weekends and all-disabled periods.
-- [ ] Persist exact due dates/effective first occurrences and evaluate the previous schedule before mutations; handle edits before/after due time, unchanged alarms, one-offs, firing/snooze dates, and rescheduling.
-- [ ] Normal/emergency stops must preserve the streak for the rest of today and retain today's due-date obligation. Reset on the next local day only if yoga was not completed; keep technical/system exits neutral.
-- [ ] Preserve saved progress on upgrade, start schedule tracking from the current time, and remove recovery of previously reset counts from old completion markers.
+- [x] `WakeProgress` uses scheduled-day accounting that preserves unscheduled weekends and all-disabled periods.
+- [x] Exact due dates/effective first occurrences are tracked; `AlarmListModel` evaluates old schedules before persistence and records successful scheduling metadata, actual firing and snooze dates. Focused mutation/one-off/unchanged-schedule regressions are authored.
+- [x] Normal/emergency stops preserve today’s streak and due obligation; prior unfinished due days reset on evaluation. Same-day recovery, next-day reset, repeated stops and completion-neutral stop regressions are authored.
+- [x] Migration preserves saved progress and begins schedule tracking from the current time; old markers do not restore previously reset counts. Migration regressions are authored.
 - [ ] Support or explicitly resolve current scheduling rejection of sound-disabled/vibration-disabled combinations and system Stop/secondary-action differences.
 - [ ] Verify upcoming-shortcut routing does not start playback or mark an alarm fired, and clock/timezone rescheduling preserves snooze/count.
-- [ ] Implement the adaptive zero/positive streak markers from SYNC-011 and run the full iOS streak/lifecycle acceptance matrix.
+- [x] Adaptive zero/positive markers and completion-gated yellow pauses from SYNC-011 are implemented.
+- [ ] Run the full iOS streak/lifecycle acceptance matrix, including authored `WakeProgressTests` and scheduling regressions.
 
 Changes:
 - Alarm editing has three primary rows in this order: Sound, Snooze, and "Stop button." The Stop button option defaults to on for new and existing alarms, uses the supporting text "Allow manual alarm stop," and shows the manual Stop action when enabled. Turning it off hides the normal Stop action.
 - Vibration remains independently configurable but has moved into the Sound sheet. Sound-only, vibration-only, both, and neither are supported.
 - When "Stop button" is off for a fired alarm, the normal Stop action is hidden and Android Back remains blocked. Snooze remains available. Test routines always retain normal navigation.
-- While an alarm is ringing, its system notification offers a clear Start movement action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
+- While an alarm is ringing, its system notification offers a clear Start action, a Stop alarm action only when manual stopping is enabled, and a Snooze action only while configured snoozes remain. Stopping from the notification silences only that alarm and does not break the daily streak, so completing a later alarm that day can still continue it.
+- Updated 2026-10-23: the expanded ringing notification uses the app's forest/lime palette, the alarm name and "Time to move," a full-width lime Start button, and a smaller secondary row. Stop alarm is outlined; "Snooze XX min" shows the configured duration (default 5 minutes; editor choices 5/10/15/20). Snooze stays narrow and is centered when Stop is disabled, with the same height whether Stop is present or absent. Hide Snooze when disabled or exhausted; hide the whole secondary row when neither secondary action is available. Start opens the existing active routine without dismissing the alarm or starting the camera automatically. Stop and Snooze keep their existing behavior and limits. Support light/dark notification appearance. Android supplies a shorter two-row heads-up layout with the same full-width Start hierarchy and a single-row compact layout so available actions do not depend solely on expansion. The system retains its header/expansion controls and decides popup size; automatic expanded presentation is not guaranteed on Samsung. Recreate the action hierarchy using supported native iOS alarm presentation rather than assuming Android custom views are available.
 - Opening a system shortcut for an upcoming alarm opens the app without starting playback or treating the alarm as fired. Ringing notifications still open the active routine.
 - Rescheduling enabled alarms after a clock or timezone change must preserve any pending snooze and its remaining snooze count. Explicitly editing, disabling, or deleting an alarm still cancels its pending snooze.
 - A subtle Emergency stop remains available. Before today's yoga is completed, a positive streak shows "Complete yoga before midnight to keep your N-day yoga streak." After completion today, it says stopping keeps the streak. It requires a 5-second hold while one of three monthly passes remains. After all passes are used, it requires a 15-second hold but is never blocked or paywalled. An emergency stop still consumes an available pass after today's completion.
@@ -681,10 +768,17 @@ Relevant Android files:
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmReceiver.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmScheduler.kt
 - app/src/main/java/com/lurremcfly/yogaalarm/alarm/BootReceiver.kt
+- app/src/main/res/layout/notification_alarm_expanded.xml
+- app/src/main/res/layout/notification_alarm_heads_up.xml
+- app/src/main/res/layout/notification_alarm_compact.xml
+- app/src/main/res/layout/notification_alarm_secondary_actions.xml
+- app/src/main/res/values/notification.xml
+- app/src/main/res/values-night/notification.xml
 
 iOS notes:
 - Verify weekday-only alarms across a weekend, a missed Monday, all alarms disabled, multiple alarms on one date, edits before/after an alarm time, one-off auto-disable, migration, restart, and month/year boundaries. For this update, leave the Android commit placeholder until a commit exists.
 - Match the observable rules and copy using idiomatic iOS persistence and alarm presentation APIs.
+- Verify ringing action availability with Stop on/off, Snooze on/off and exhausted snoozes; check all supported durations, long alarm names, larger text, light/dark appearance, locked/unlocked delivery, and that Start/Stop/Snooze reach the same existing flows without duplicate actions. Confirm supported native initial presentation on device instead of claiming forced expansion.
 - System-level termination cannot be prevented; the setting controls supported in-app dismissal paths.
 
 <!--

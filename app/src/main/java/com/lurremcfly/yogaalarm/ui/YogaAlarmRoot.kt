@@ -305,7 +305,7 @@ internal fun YogaAlarmRoot(
                             route = "home"
                         },
                         onSave = { saved ->
-                            val actual = saveAlarm(saved)
+                            val actual = saveAlarm(saved.copy(enabled = true))
                             savedAlarmId = saved.id
                             pendingEditorAlarm = null
                             route = "home"

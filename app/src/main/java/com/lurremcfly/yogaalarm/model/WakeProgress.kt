@@ -40,7 +40,7 @@ data class WakeProgress(
         val alarmDates = progress.scheduledDates + progress.upcomingAlarmDates
         var continuingStreak = progress.streakDays > 0 && progress.lastCompletionDate?.isBefore(firstDate) == true
         val paused = mutableSetOf<LocalDate>()
-        for (offset in 0L..6L) {
+        for (offset in 0L..4L) {
             val date = firstDate.plusDays(offset)
             when {
                 date <= today && date in progress.completedDates -> continuingStreak = true

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="notification_ink">#F8FBF7</color>
+    <color name="notification_muted_ink">#BAC5BD</color>
+    <color name="notification_snooze_background">#405735</color>
+    <color name="notification_snooze_ink">#F8FBF7</color>
+    <color name="notification_border">#7F8C82</color>
+</resources>

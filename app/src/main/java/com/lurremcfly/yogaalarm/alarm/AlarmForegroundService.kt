@@ -13,8 +13,11 @@ import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.view.View
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import com.lurremcfly.yogaalarm.MainActivity
+import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
 import com.lurremcfly.yogaalarm.data.AlarmStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -76,30 +79,19 @@ class AlarmForegroundService : Service() {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val notificationBuilder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle(alarm.name)
-            .setContentText("Start your movement routine to stop the alarm")
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setOngoing(true)
-            .setAutoCancel(false)
-            .setFullScreenIntent(openAlarm, true)
-            .setContentIntent(openAlarm)
-            .addAction(0, "Start movement", openAlarm)
-        if (!alarm.stopButtonDisabled) {
-            val stopAlarm = PendingIntent.getBroadcast(
+        val stopAlarm = if (!alarm.stopButtonDisabled) {
+            PendingIntent.getBroadcast(
                 this,
                 alarmId.hashCode(),
                 Intent(this, StopAlarmReceiver::class.java)
                     .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            notificationBuilder.addAction(0, "Stop alarm", stopAlarm)
+        } else {
+            null
         }
-        if (remainingSnoozes > 0) {
-            val snooze = PendingIntent.getBroadcast(
+        val snooze = if (alarm.snoozeEnabled && remainingSnoozes > 0) {
+            PendingIntent.getBroadcast(
                 this,
                 alarmId.hashCode(),
                 Intent(this, SnoozeReceiver::class.java)
@@ -107,9 +99,48 @@ class AlarmForegroundService : Service() {
                     .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
-            notificationBuilder.addAction(0, "Snooze ${alarm.snoozeMinutes} min", snooze)
+        } else {
+            null
         }
-        val notification = notificationBuilder.build()
+        val compactContent = RemoteViews(packageName, R.layout.notification_alarm_compact)
+        val expandedContent = RemoteViews(packageName, R.layout.notification_alarm_expanded).apply {
+            setTextViewText(R.id.notification_alarm_name, alarm.name)
+        }
+        val headsUpContent = RemoteViews(packageName, R.layout.notification_alarm_heads_up)
+        for (content in listOf(compactContent, expandedContent, headsUpContent)) {
+            content.setOnClickPendingIntent(R.id.notification_start, openAlarm)
+            content.setViewVisibility(R.id.notification_stop_container, if (stopAlarm != null) View.VISIBLE else View.GONE)
+            content.setViewVisibility(R.id.notification_snooze_container, if (snooze != null) View.VISIBLE else View.GONE)
+            if (stopAlarm != null) content.setOnClickPendingIntent(R.id.notification_stop, stopAlarm)
+            if (snooze != null) {
+                content.setTextViewText(R.id.notification_snooze, getString(R.string.notification_snooze, alarm.snoozeMinutes))
+                content.setOnClickPendingIntent(R.id.notification_snooze, snooze)
+            }
+        }
+        if (stopAlarm == null && snooze == null) {
+            expandedContent.setViewVisibility(R.id.notification_secondary_actions, View.GONE)
+            headsUpContent.setViewVisibility(R.id.notification_secondary_actions, View.GONE)
+        }
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_alarm)
+            .setColor(0xFF274D34.toInt())
+            .setContentTitle(alarm.name)
+            .setContentText(getString(R.string.notification_time_to_move))
+            .setSubText(alarm.name)
+            .setStyle(NotificationCompat.DecoratedCustomViewStyle())
+            .setCustomContentView(compactContent)
+            .setCustomBigContentView(expandedContent)
+            // Supply controls in the initial detailed popup; the OS still controls expansion.
+            .setCustomHeadsUpContentView(headsUpContent)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setOngoing(true)
+            .setAutoCancel(false)
+            .setFullScreenIntent(openAlarm, true)
+            .setContentIntent(openAlarm)
+            .build()
         startForeground(AlarmScheduler.NOTIFICATION_ID, notification)
         activeAlarmId = alarmId
         mutableFinishedAlarmId.value = null
