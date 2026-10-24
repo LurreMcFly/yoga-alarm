@@ -62,6 +62,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -401,6 +402,7 @@ private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int,
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(176.dp)) {
+            drawCircle(Color.Black.copy(alpha = 0.6f), radius = 72.dp.toPx())
             drawCircle(Brush.radialGradient(listOf(Lime.copy(alpha = 0.28f * glow.value), Color.Transparent)))
         }
         CircularProgressIndicator(
@@ -510,20 +512,10 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
                         numberCenter = it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)
                     }) {
                         Text(
-                            streakDays.toString(), color = lerp(Color(0xFF153523), Lime, docking.value),
+                            streakDays.toString(), color = Lime,
                             fontSize = 16.sp, fontWeight = FontWeight.Bold,
                             modifier = Modifier.graphicsLayer {
-                                val remaining = 1f - docking.value
-                                val largeScale = minOf(
-                                    diameter * 0.72f / numberSize.width.coerceAtLeast(1),
-                                    diameter * 0.78f / numberFontSize,
-                                ).coerceAtLeast(1f)
-                                val pop = 0.25f + 0.75f * entrance.value
-                                scaleX = 1f + remaining * (largeScale * pop - 1f)
-                                scaleY = scaleX
-                                translationX = remaining * (origin.x + sunCenter.x - numberCenter.x)
-                                translationY = remaining * (origin.y + sunCenter.y + rise - numberCenter.y)
-                                alpha = entrance.value.coerceIn(0f, 1f)
+                                alpha = if (docking.value == 1f) 1f else 0f
                             },
                         )
                     }
@@ -535,6 +527,28 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
             Button(onClick = onBack, colors = ButtonDefaults.buttonColors(containerColor = Lime, contentColor = Color(0xFF07100A))) {
                 Text("Done", modifier = Modifier.padding(horizontal = 36.dp, vertical = 5.dp), fontWeight = FontWeight.Bold)
             }
+        }
+        // Animate outside the scrollable footer so its clip cannot hide the number in the sun.
+        if (streakDays > 0 && docking.value < 1f) {
+            Text(
+                streakDays.toString(), color = lerp(Color(0xFF153523), Lime, docking.value),
+                fontSize = 16.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.clearAndSetSemantics {}.graphicsLayer {
+                    val remaining = 1f - docking.value
+                    val largeScale = minOf(
+                        diameter * 0.72f / numberSize.width.coerceAtLeast(1),
+                        diameter * 0.78f / numberFontSize,
+                    ).coerceAtLeast(1f)
+                    val pop = 0.25f + 0.75f * entrance.value
+                    scaleX = 1f + remaining * (largeScale * pop - 1f)
+                    scaleY = scaleX
+                    translationX = numberCenter.x - origin.x - numberSize.width / 2f +
+                        remaining * (origin.x + sunCenter.x - numberCenter.x)
+                    translationY = numberCenter.y - origin.y - numberSize.height / 2f +
+                        remaining * (origin.y + sunCenter.y + rise - numberCenter.y)
+                    alpha = if (numberSize == IntSize.Zero) 0f else entrance.value.coerceIn(0f, 1f)
+                },
+            )
         }
     }
 }

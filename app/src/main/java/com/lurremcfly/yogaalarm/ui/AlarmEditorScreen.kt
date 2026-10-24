@@ -65,11 +65,13 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import kotlin.math.roundToInt
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -129,6 +131,16 @@ internal fun AlarmEditorScreen(
     var soundSheetOpen by rememberSaveable(initialAlarm.id) { mutableStateOf(onboardingStep == OnboardingStep.SoundChoice) }
     var snoozeSheetOpen by remember { mutableStateOf(false) }
     val editorScrollState = rememberScrollState()
+    var editorContentHeight by remember { mutableIntStateOf(0) }
+    var scrollToAddedPose by remember { mutableStateOf(false) }
+    LaunchedEffect(editorContentHeight) {
+        if (scrollToAddedPose) {
+            // Wait until the new card and its spacing have updated the scroll range.
+            withFrameNanos { }
+            editorScrollState.animateScrollTo(editorScrollState.maxValue, tween(300))
+            scrollToAddedPose = false
+        }
+    }
     val fontScale = LocalDensity.current.fontScale
     val density = LocalDensity.current
     val focusManager = LocalFocusManager.current
@@ -206,6 +218,7 @@ internal fun AlarmEditorScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onSizeChanged { editorContentHeight = it.height }
                     .padding(horizontal = 18.dp)
                     .clip(RoundedCornerShape(38.dp))
                     .onGloballyPositioned { onboardingTargets?.editorBounds = Rect(it.positionInWindow(), Size(it.size.width.toFloat(), it.size.height.toFloat())) }
@@ -343,6 +356,7 @@ internal fun AlarmEditorScreen(
                                     onUpgrade()
                                 } else if (draft.routine.size < 10) {
                                     val nextPose = YogaPose.entries[draft.routine.size % YogaPose.entries.size]
+                                    scrollToAddedPose = true
                                     draft = draft.copy(routine = draft.routine + PoseStep(nextPose))
                                 }
                             },

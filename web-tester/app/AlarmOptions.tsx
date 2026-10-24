@@ -18,9 +18,10 @@ export const alarmSounds = [
 
 export type AlarmSoundId = typeof alarmSounds[number]['id'];
 
-export function SoundPicker({ selected, vibration, onVibration, onSelect, onClose, onUpgrade }: {
+export function SoundPicker({ selected, vibration, proPreview = false, onVibration, onSelect, onClose, onUpgrade }: {
   selected: AlarmSoundId;
   vibration: boolean;
+  proPreview?: boolean;
   onVibration: (enabled: boolean) => void;
   onSelect: (sound: AlarmSoundId) => void;
   onClose: () => void;
@@ -72,19 +73,19 @@ export function SoundPicker({ selected, vibration, onVibration, onSelect, onClos
       <section className="choice-sheet sound-picker" role="dialog" aria-modal="true" aria-labelledby="sound-title" onClick={(event) => event.stopPropagation()}>
         <i className="sheet-handle" />
         <div className="duration-sheet-heading"><h2 id="sound-title">Sound &amp; vibration</h2><button type="button" aria-label="Close sound selection" onClick={onClose}>×</button></div>
-        <p>Upgrade to Pro to unlock the dimmed sounds.</p>
+        <p>{proPreview ? 'Choose your alarm sound.' : 'Upgrade to Pro to unlock the dimmed sounds.'}</p>
         <div className="alarm-setting"><div><strong>Vibration</strong><span>Gentle pulse</span></div><button type="button" className={`ui-switch ${vibration ? 'on' : ''}`} role="switch" aria-label="Vibration" aria-checked={vibration} onClick={() => onVibration(!vibration)}><i /></button></div>
         {error ? <p role="alert">Couldn’t play this sound. Try again.</p> : null}
         <div className="sound-options-scroll">
           <div data-tour="sound-choice" className="free-sound-options">
             {alarmSounds.filter((sound) => sound.free).map((sound) => <div key={sound.id} className={`sound-option ${selected === sound.id ? 'selected' : ''}`}>
               <button type="button" className="sound-select" aria-pressed={selected === sound.id} onClick={() => onSelect(sound.id)}>{sound.name}</button>
-              <button type="button" className="sound-preview" aria-label={`${previewing === sound.id ? 'Stop' : 'Preview'} ${sound.name}`} onClick={() => void preview(sound.id)}>{previewing === sound.id ? '♫ Stop' : '♫ Preview'}</button>
+              <button type="button" className={`sound-preview ${previewing === sound.id ? 'playing' : ''}`} aria-label={`${previewing === sound.id ? 'Stop' : 'Preview'} ${sound.name}`} onClick={() => void preview(sound.id)}>{previewing === sound.id ? '🎵 Stop' : '🎵 Preview'}</button>
             </div>)}
           </div>
-          {alarmSounds.filter((sound) => !sound.free).map((sound) => <div key={sound.id} className="sound-option locked">
-            <button type="button" className="sound-select" onClick={onUpgrade}>{sound.name}<small>PRO</small></button>
-            <button type="button" className="sound-preview" aria-label={`Unlock ${sound.name}`} onClick={onUpgrade}>♫ Preview</button>
+          {alarmSounds.filter((sound) => !sound.free).map((sound) => <div key={sound.id} className={`sound-option ${proPreview ? selected === sound.id ? 'selected' : '' : 'locked'}`}>
+            <button type="button" className="sound-select" aria-pressed={selected === sound.id} onClick={() => proPreview ? onSelect(sound.id) : onUpgrade()}>{sound.name}</button>
+            <button type="button" className={`sound-preview ${previewing === sound.id ? 'playing' : ''}`} aria-label={proPreview ? `${previewing === sound.id ? 'Stop' : 'Preview'} ${sound.name}` : `Unlock ${sound.name}`} onClick={() => proPreview ? void preview(sound.id) : onUpgrade()}>{previewing === sound.id ? '🎵 Stop' : '🎵 Preview'}</button>
           </div>)}
         </div>
       </section>

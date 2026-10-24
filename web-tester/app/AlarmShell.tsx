@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState, type UIEvent, type WheelEvent } from 'react';
 import Onboarding, { type TourStep } from './Onboarding';
 import { alarmSounds, SoundPicker, SnoozePicker, type AlarmSoundId } from './AlarmOptions';
+import RecordingPointer from './RecordingPointer';
 
 export type FreePoseName = 'Mountain' | 'Warrior II' | 'Tree';
-export type AlarmPoseStep = { pose: FreePoseName; duration: number };
+export type PoseName = FreePoseName | 'Chair' | 'Forward Fold' | 'Triangle' | 'Goddess' | 'Wide-Legged Fold';
+export type AlarmPoseStep = { pose: PoseName; duration: number };
 export type BrowserAlarm = {
   id: number;
   name: string;
@@ -24,8 +26,8 @@ export type BrowserAlarm = {
 };
 
 const freePoses: FreePoseName[] = ['Mountain', 'Warrior II', 'Tree'];
-const proPoses = ['Chair', 'Forward Fold', 'Triangle', 'Goddess', 'Wide-Legged Fold'];
-const allPoses = [...freePoses, ...proPoses];
+const proPoses: PoseName[] = ['Chair', 'Forward Fold', 'Triangle', 'Goddess', 'Wide-Legged Fold'];
+const allPoses: PoseName[] = [...freePoses, ...proPoses];
 const durations = [5, 10, 15, 20, 30, 45, 60];
 const weekdays = [
   { value: 1, label: 'M' }, { value: 2, label: 'T' }, { value: 3, label: 'W' },
@@ -85,15 +87,29 @@ export default function AlarmShell({
   const [soundPickerOpen, setSoundPickerOpen] = useState(false);
   const [snoozePickerOpen, setSnoozePickerOpen] = useState(false);
   const [proOpen, setProOpen] = useState(false);
+  const [proPreview, setProPreview] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [tourStep, setTourStep] = useState<TourStep | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [savedTourAlarm, setSavedTourAlarm] = useState<BrowserAlarm | null>(null);
-  const [practicePose, setPracticePose] = useState<FreePoseName | null>(null);
+  const [practicePose, setPracticePose] = useState<PoseName | null>(null);
   const phoneRef = useRef<HTMLElement>(null);
   const tourDraftRef = useRef<BrowserAlarm | null>(null);
+  const storageKeyRef = useRef('yoga-alarm-browser-alarms');
 
   useEffect(() => {
-    const stored = window.localStorage.getItem('yoga-alarm-browser-alarms');
+    const parameters = new URLSearchParams(window.location.search);
+    const recordingMode = process.env.NODE_ENV === 'development' && parameters.get('demo') === 'pro';
+    setProPreview(recordingMode);
+    setRecording(recordingMode);
+    storageKeyRef.current = recordingMode ? 'yoga-alarm-browser-pro-demo-v1' : 'yoga-alarm-browser-alarms';
+    if (recordingMode && parameters.get('reset') === '1') {
+      window.localStorage.removeItem(storageKeyRef.current);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('reset');
+      window.history.replaceState(null, '', url);
+    }
+    const stored = window.localStorage.getItem(storageKeyRef.current);
     if (stored) {
       try { setAlarms((JSON.parse(stored) as BrowserAlarm[]).map((alarm) => ({
         ...alarm,
@@ -102,19 +118,23 @@ export default function AlarmShell({
         snoozeCount: alarm.snoozeCount ?? 1,
         manualStop: alarm.manualStop ?? true,
       }))); } catch { setAlarms([]); }
+    } else if (recordingMode) {
+      const initial = [{ ...createDefaultAlarm(), name: 'Morning stretch', hour: 8, minute: 0 }];
+      window.localStorage.setItem(storageKeyRef.current, JSON.stringify(initial));
+      setAlarms(initial);
     }
-    if (!window.localStorage.getItem('yoga-alarm-browser-onboarding-v1')) setTourStep('welcome');
+    if (!recordingMode && !window.localStorage.getItem('yoga-alarm-browser-onboarding-v1')) setTourStep('welcome');
     setLoaded(true);
   }, []);
 
   const persist = (next: BrowserAlarm[]) => {
     setAlarms(next);
-    window.localStorage.setItem('yoga-alarm-browser-alarms', JSON.stringify(next));
+    window.localStorage.setItem(storageKeyRef.current, JSON.stringify(next));
   };
 
   const saveDraft = () => {
     if (!draft) return;
-    const saved = { ...draft, name: draft.name.trim() || defaultAlarmName(draft.hour, alarms.filter((alarm) => alarm.id !== draft.id).map((alarm) => alarm.name)) };
+    const saved = { ...draft, enabled: true, name: draft.name.trim() || defaultAlarmName(draft.hour, alarms.filter((alarm) => alarm.id !== draft.id).map((alarm) => alarm.name)) };
     persist(alarms.some((alarm) => alarm.id === saved.id)
       ? alarms.map((alarm) => alarm.id === saved.id ? saved : alarm)
       : [...alarms, saved]);
@@ -149,10 +169,12 @@ export default function AlarmShell({
   if (!loaded) return <main className="app-preview-shell" />;
 
   return (
-    <main className="app-preview-shell">
+    <main className={`app-preview-shell ${recording ? 'recording-demo' : ''}`}>
+      {recording ? <RecordingPointer /> : null}
       <section ref={phoneRef} className={`phone-app ${draft ? 'editor-open' : ''} ${tourStep ? 'tour-active' : ''}`}>
         {draft ? (
           <AlarmEditor
+            proPreview={proPreview}
             draft={draft}
             guided={tourStep !== null}
             onChange={setDraft}
@@ -167,6 +189,8 @@ export default function AlarmShell({
           />
         ) : (
           <AlarmHome
+            proPreview={proPreview}
+            demoStreak={recording}
             alarms={alarms}
             onAdd={addAlarm}
             onEdit={setDraft}
@@ -177,6 +201,7 @@ export default function AlarmShell({
         )}
         {draft && durationSlot !== null ? (
           <DurationPicker
+            proPreview={proPreview}
             selected={draft.routine[durationSlot].duration}
             onUpgrade={() => { setDurationSlot(null); setProOpen(true); }}
             onClose={() => setDurationSlot(null)}
@@ -187,6 +212,7 @@ export default function AlarmShell({
           />
         ) : null}
         {draft && soundPickerOpen ? <SoundPicker
+          proPreview={proPreview}
           selected={draft.alarmSound}
           vibration={draft.vibration}
           onVibration={(vibration) => setDraft({ ...draft, vibration })}
@@ -200,6 +226,7 @@ export default function AlarmShell({
             <section className="choice-sheet preview-settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" onClick={(event) => event.stopPropagation()}>
               <div className="duration-sheet-heading"><h2 id="settings-title">Settings</h2><button type="button" aria-label="Close Settings" onClick={() => setSettingsOpen(false)}>×</button></div>
               <h3>Pro</h3><button type="button" className="tour-text-button" onClick={() => { setSettingsOpen(false); setProOpen(true); }}>Get Pro</button>
+              {process.env.NODE_ENV === 'development' ? <div className="alarm-setting"><div><strong>Pro preview</strong><span>Local test only · no purchase.</span></div><button type="button" className={`ui-switch ${proPreview ? 'on' : ''}`} role="switch" aria-label="Pro preview" aria-checked={proPreview} onClick={() => setProPreview(!proPreview)}><i /></button></div> : null}
               <button type="button" className="settings-help" onClick={replayTour}><span>How to use Yoga Alarm</span><span aria-hidden="true">↗</span></button>
               <p>Replay the guide and practise a pose. Your saved alarms stay as they are.</p>
               <a href="/privacy">Privacy &amp; safety</a>
@@ -225,22 +252,22 @@ export default function AlarmShell({
   );
 }
 
-function AlarmHome({ alarms, onAdd, onEdit, onToggle, onSettings, onUpgrade }: {
+function AlarmHome({ alarms, proPreview, demoStreak, onAdd, onEdit, onToggle, onSettings, onUpgrade }: {
   alarms: BrowserAlarm[];
+  proPreview: boolean;
+  demoStreak: boolean;
   onAdd: () => void;
   onEdit: (alarm: BrowserAlarm) => void;
   onToggle: (id: number, enabled: boolean) => void;
   onSettings: () => void;
   onUpgrade: () => void;
 }) {
-  const today = new Date();
   return (
     <div className="alarm-home">
-      <div className="phone-status"><span>Yoga Alarm</span><span>Browser preview</span></div>
       <div className="alarm-list-toolbar">
-        <h1>Your alarms</h1><div className="home-toolbar-actions"><button type="button" className="get-pro-button" onClick={onUpgrade}>GET PRO</button><button type="button" className="settings-button" aria-label="Settings" onClick={onSettings}>⚙</button></div>
+        <h1>Your alarms</h1><div className="home-toolbar-actions">{!proPreview ? <button type="button" className="get-pro-button" onClick={onUpgrade}>GET PRO</button> : null}<button type="button" className="settings-button" aria-label="Settings" onClick={onSettings}>⚙</button></div>
       </div>
-      <section className="preview-streak" aria-label="Streak layout preview. No Android streak data is loaded."><div><small>day streak</small><strong>🔥 0</strong></div><div className="streak-dates">{[-4, -3, -2, -1, 0, 1, 2].map((offset) => { const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset); return <div key={offset} className={offset === 0 ? 'today' : ''}><small>{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</small><span>{date.getDate()}</span></div>; })}</div></section>
+      <StreakCard demo={demoStreak} />
       <div className="alarm-card-list">
         {alarms.length ? alarms.map((alarm) => (
           <article key={alarm.id} className={`alarm-summary ${alarm.enabled ? '' : 'disabled'}`} onClick={() => onEdit(alarm)}>
@@ -270,9 +297,100 @@ function AlarmHome({ alarms, onAdd, onEdit, onToggle, onSettings, onUpgrade }: {
   );
 }
 
-function AlarmEditor({ draft, guided, onChange, onCancel, onSave, onTest, onTryPose, onSelectDuration, onSound, onSnooze, onUpgrade }: {
+function StreakCard({ demo }: { demo: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [months, setMonths] = useState<1 | 3 | 12>(3);
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  const yearStart = new Date(today.getFullYear(), today.getMonth() - 11, 1, 12);
+  const lastBreak = Array.from({ length: 12 }, (_, offset) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset, 12))
+    .filter((date) => date.getDay() !== 0 && date.getDay() !== 6)[6];
+  const status = (date: Date) => {
+    if (date > today) return 'upcoming';
+    if (!demo) return 'empty';
+    if (date.getDay() === 0 || date.getDay() === 6) return 'rest';
+    if (date.getTime() === lastBreak.getTime()) return 'missed';
+    if (date > lastBreak) return 'completed';
+    return date.getDate() === 7 || date.getDate() === 19 ? 'missed' : 'completed';
+  };
+  let streak = 0;
+  let best = 0;
+  for (let date = new Date(yearStart); date <= today; date.setDate(date.getDate() + 1)) {
+    const day = status(date);
+    if (day === 'completed') { streak++; best = Math.max(best, streak); }
+    else if (day === 'missed') streak = 0;
+  }
+  const firstMonth = new Date(today.getFullYear(), today.getMonth() - months + 1, 1, 12);
+  const dayLabel = { completed: 'Yoga completed', rest: 'Rest day', missed: 'Yoga not completed', upcoming: 'Upcoming', empty: 'No history' };
+  const dayCell = (date: Date) => (
+    <span key={date.toISOString()} className={`streak-history-day ${status(date)} ${date.getTime() === today.getTime() ? 'current-day' : ''}`}
+      title={`${date.toLocaleDateString(undefined, { dateStyle: 'full' })}: ${dayLabel[status(date)]}`}>
+    </span>
+  );
+  const monthGrid = (date: Date, showDates: boolean) => {
+    const padding = (date.getDay() + 6) % 7;
+    const dayCount = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+    return <div className={`streak-month-grid ${showDates ? 'numbered' : ''}`}>
+      {showDates ? weekdays.map((day) => <small key={day.value}>{day.label}</small>) : null}
+      {Array.from({ length: padding }, (_, index) => <span key={`pad-${index}`} />)}
+      {Array.from({ length: dayCount }, (_, index) => dayCell(new Date(date.getFullYear(), date.getMonth(), index + 1, 12)))}
+    </div>;
+  };
+  const firstMonday = new Date(firstMonth);
+  firstMonday.setDate(firstMonday.getDate() - (firstMonday.getDay() + 6) % 7);
+  const lastSunday = new Date(today);
+  lastSunday.setDate(lastSunday.getDate() + (7 - lastSunday.getDay()) % 7);
+  const weeks = Math.floor((lastSunday.getTime() - firstMonday.getTime()) / 604800000) + 1;
+  const rangeLabel = months === 1
+    ? today.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+    : `${firstMonth.toLocaleDateString(undefined, { month: 'short', ...(firstMonth.getFullYear() !== today.getFullYear() ? { year: 'numeric' as const } : {}) })} – ${today.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+
+  return (
+    <section className={`preview-streak ${expanded ? 'expanded' : ''}`} aria-label={demo ? 'Sample streak history' : 'Streak preview. No Android history is loaded.'}>
+      <button type="button" className="streak-summary" aria-label={expanded ? 'Hide streak history' : 'Show streak history'} aria-expanded={expanded} aria-controls="streak-history" onClick={() => setExpanded(!expanded)}>
+        <div className="streak-count"><small>day streak</small><strong>🔥 {streak}</strong></div>
+        {expanded ? <div className="streak-personal-best"><small>Personal best</small><b>{best} days</b></div> :
+          <div className="streak-dates">{[-4, -3, -2, -1, 0, 1, 2].map((offset) => {
+            const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset, 12);
+            const day = status(date);
+            return <div key={offset} className={`${offset === 0 ? 'today' : ''} ${day}`}><small>{date.toLocaleDateString(undefined, { weekday: 'narrow' })}</small><span aria-label={dayLabel[day]}>{day === 'completed' ? '✓' : day === 'rest' ? 'Ⅱ' : date.getDate()}</span></div>;
+          })}</div>}
+        <span className="streak-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div className="streak-history-reveal" inert={!expanded}>
+        <div className="streak-history-clip">
+          <div id="streak-history" className="streak-history-inner" aria-label="Streak history">
+            <div className="streak-history-heading"><span>{rangeLabel}</span><div className="streak-history-legend"><span><i className="completed" />Yoga</span><span><i className="rest" />Rest</span><span><i className="missed" />{demo ? 'Missed' : 'No history'}</span></div></div>
+            <div className={`streak-history-plot range-${months}`} role="img" aria-label={`${rangeLabel}. ${demo ? 'Sample daily yoga and rest history. Green is completed yoga; yellow is rest; grey is missed.' : 'No streak history loaded.'}`}>
+              {months === 1 ? monthGrid(firstMonth, true) : months === 3 ?
+                <div className="streak-season-grid" style={{ gridTemplateColumns: `18px repeat(${weeks}, minmax(0, 1fr))` }}>
+                  <span />{Array.from({ length: weeks }, (_, week) => {
+                    const date = new Date(firstMonday); date.setDate(date.getDate() + week * 7);
+                    const previous = new Date(date); previous.setDate(previous.getDate() - 7);
+                    return <small key={week}>{week === 0 ? firstMonth.toLocaleDateString(undefined, { month: 'short' }) : previous.getMonth() !== date.getMonth() && date.getMonth() !== firstMonth.getMonth() ? date.toLocaleDateString(undefined, { month: 'short' }) : ''}</small>;
+                  })}
+                  {weekdays.map((day, row) => <div key={day.value} className="streak-season-row"><small>{row % 2 === 0 ? day.label : ''}</small>{Array.from({ length: weeks }, (_, week) => {
+                    const date = new Date(firstMonday); date.setDate(date.getDate() + week * 7 + row);
+                    return date < firstMonth ? <span key={week} /> : dayCell(date);
+                  })}</div>)}
+                </div> :
+                <div className="streak-year-grid">{Array.from({ length: 12 }, (_, index) => {
+                  const date = new Date(firstMonth.getFullYear(), firstMonth.getMonth() + index, 1, 12);
+                  return <div className="streak-mini-month" key={index}><small>{date.toLocaleDateString(undefined, { month: 'short' })}</small>{monthGrid(date, false)}</div>;
+                })}</div>}
+            </div>
+            <div className="streak-range-toggle" role="group" aria-label="Streak history range">{([1, 3, 12] as const).map((value) => <button key={value} type="button" aria-pressed={months === value} onClick={() => setMonths(value)}>{value === 12 ? '1 year' : value === 1 ? '1 month' : '3 months'}</button>)}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AlarmEditor({ draft, guided, proPreview, onChange, onCancel, onSave, onTest, onTryPose, onSelectDuration, onSound, onSnooze, onUpgrade }: {
   draft: BrowserAlarm;
   guided: boolean;
+  proPreview: boolean;
   onChange: (alarm: BrowserAlarm) => void;
   onCancel: () => void;
   onSave: () => void;
@@ -314,6 +432,7 @@ function AlarmEditor({ draft, guided, onChange, onCancel, onSave, onTest, onTryP
               index={index}
               step={step}
               guided={guided}
+              proPreview={proPreview}
               onSelect={(pose) => onChange({ ...draft, routine: draft.routine.map((candidate, slot) => slot === index ? { ...candidate, pose } : candidate) })}
               onDuration={() => onSelectDuration(index)}
               onTry={() => onTryPose(index)}
@@ -321,7 +440,10 @@ function AlarmEditor({ draft, guided, onChange, onCancel, onSave, onTest, onTryP
             />
           ))}
         </div>
-        <button type="button" className="add-pose-button" onClick={onUpgrade}>+ Add pose <span>PRO</span></button>
+        <div className="routine-size-actions">
+          {proPreview && draft.routine.length > 1 ? <button type="button" className="add-pose-button remove-pose-button" disabled={guided} onClick={() => onChange({ ...draft, routine: draft.routine.slice(0, -1) })}>− Remove pose</button> : null}
+          <button type="button" className="add-pose-button" disabled={guided || (proPreview && draft.routine.length >= 10)} onClick={() => proPreview ? onChange({ ...draft, routine: [...draft.routine, { pose: allPoses[draft.routine.length % allPoses.length], duration: 20 }] }) : onUpgrade()}>+ Add pose{!proPreview ? <span>PRO</span> : null}</button>
+        </div>
       </section>
 
       <div className="editor-actions">
@@ -337,6 +459,7 @@ const TIME_WHEEL_CYCLES = 5;
 function TimeColumn({ value, count, onChange }: { value: number; count: number; onChange: (value: number) => void }) {
   const columnRef = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
+  const pendingValueRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!columnRef.current || initializedRef.current) return;
@@ -348,6 +471,8 @@ function TimeColumn({ value, count, onChange }: { value: number; count: number; 
     const column = event.currentTarget;
     const row = Math.round(column.scrollTop / TIME_ROW_HEIGHT);
     const next = ((row % count) + count) % count;
+    if (pendingValueRef.current !== null && next !== pendingValueRef.current) return;
+    pendingValueRef.current = null;
     if (next !== value) onChange(next);
     if (row < count || row >= count * (TIME_WHEEL_CYCLES - 1)) {
       column.scrollTop = (count * 2 + next) * TIME_ROW_HEIGHT;
@@ -355,10 +480,11 @@ function TimeColumn({ value, count, onChange }: { value: number; count: number; 
   };
 
   return (
-    <div ref={columnRef} className="time-column" role="spinbutton" aria-label={count === 24 ? 'Hours' : 'Minutes'} aria-valuemin={0} aria-valuemax={count - 1} aria-valuenow={value} tabIndex={0} onScroll={handleScroll} onKeyDown={(event) => {
+    <div ref={columnRef} className="time-column" role="spinbutton" aria-label={count === 24 ? 'Hours' : 'Minutes'} aria-valuemin={0} aria-valuemax={count - 1} aria-valuenow={value} tabIndex={0} onScroll={handleScroll} onPointerDown={() => { pendingValueRef.current = null; }} onWheel={() => { pendingValueRef.current = null; }} onKeyDown={(event) => {
       if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
       event.preventDefault();
-      const next = (value + (event.key === 'ArrowUp' ? 1 : -1) + count) % count;
+      const next = ((pendingValueRef.current ?? value) + (event.key === 'ArrowUp' ? 1 : -1) + count) % count;
+      pendingValueRef.current = next;
       onChange(next);
       columnRef.current?.scrollTo({ top: (count * 2 + next) * TIME_ROW_HEIGHT, behavior: 'smooth' });
     }}>
@@ -369,7 +495,11 @@ function TimeColumn({ value, count, onChange }: { value: number; count: number; 
           tabIndex={-1}
           aria-hidden="true"
           className={index % count === value ? 'selected' : ''}
-          onClick={() => columnRef.current?.scrollTo({ top: index * TIME_ROW_HEIGHT, behavior: 'smooth' })}
+          onClick={() => {
+            pendingValueRef.current = index % count;
+            onChange(index % count);
+            columnRef.current?.scrollTo({ top: index * TIME_ROW_HEIGHT, behavior: 'smooth' });
+          }}
         >{two(index % count)}</button>
       ))}
     </div>
@@ -387,17 +517,20 @@ function SettingRow({ title, detail, checked, onChange, onOpen, tour }: { title:
   );
 }
 
-function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, onUpgrade }: {
+function PoseCarouselCard({ index, step, guided, proPreview, onSelect, onDuration, onTry, onUpgrade }: {
   index: number;
   step: AlarmPoseStep;
   guided: boolean;
-  onSelect: (pose: FreePoseName) => void;
+  proPreview: boolean;
+  onSelect: (pose: PoseName) => void;
   onDuration: () => void;
   onTry: () => void;
   onUpgrade: () => void;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const selectionTimerRef = useRef<number | null>(null);
+  const alignmentTargetRef = useRef<number | null>(null);
+  const hasAlignedRef = useRef(false);
   const swipeRef = useRef<{ x: number; scrollLeft: number; dragging: boolean } | null>(null);
   const suppressClickRef = useRef(false);
   const [focusedPose, setFocusedPose] = useState<string>(step.pose);
@@ -408,13 +541,21 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
     const selectedIndex = visiblePoses.indexOf(step.pose);
     const item = track?.children[selectedIndex] as HTMLElement | undefined;
     if (!track || !item) return;
-    const alignSelection = () => {
+    const alignSelection = (behavior: ScrollBehavior) => {
       if (selectionTimerRef.current !== null) window.clearTimeout(selectionTimerRef.current);
-      track.scrollTo({ left: item.offsetLeft - (track.clientWidth - item.offsetWidth) / 2, behavior: 'instant' });
+      const left = item.offsetLeft - (track.clientWidth - item.offsetWidth) / 2;
+      alignmentTargetRef.current = Math.abs(track.scrollLeft - left) > 1 ? left : null;
+      track.scrollTo({ left, behavior });
       setFocusedPose(step.pose);
     };
-    alignSelection();
-    const observer = new ResizeObserver(alignSelection);
+    alignSelection(hasAlignedRef.current ? 'smooth' : 'instant');
+    hasAlignedRef.current = true;
+    let width = track.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (track.clientWidth === width) return;
+      width = track.clientWidth;
+      alignSelection('instant');
+    });
     observer.observe(track);
     return () => observer.disconnect();
   }, [step.pose, visiblePoses]);
@@ -439,13 +580,18 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
     const pose = centeredPose();
     setFocusedPose(pose);
     if (selectionTimerRef.current !== null) window.clearTimeout(selectionTimerRef.current);
+    if (alignmentTargetRef.current !== null) {
+      if (Math.abs((trackRef.current?.scrollLeft ?? 0) - alignmentTargetRef.current) <= 1) alignmentTargetRef.current = null;
+      return;
+    }
     if (swipeRef.current?.dragging) return;
     selectionTimerRef.current = window.setTimeout(() => {
-      if (freePoses.includes(pose as FreePoseName)) onSelect(pose as FreePoseName);
+      if (proPreview || freePoses.includes(pose as FreePoseName)) onSelect(pose as PoseName);
     }, 120);
   };
 
   const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    alignmentTargetRef.current = null;
     if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
     event.preventDefault();
     event.currentTarget.scrollLeft += event.deltaY;
@@ -461,6 +607,8 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
       </header>
       <div ref={trackRef} className="inline-pose-track" onScroll={handleScroll} onWheel={handleWheel}
         onPointerDown={(event) => {
+          alignmentTargetRef.current = null;
+          if (selectionTimerRef.current !== null) window.clearTimeout(selectionTimerRef.current);
           if (event.pointerType !== 'mouse' || event.button !== 0) return;
           suppressClickRef.current = false;
           swipeRef.current = { x: event.clientX, scrollLeft: event.currentTarget.scrollLeft, dragging: false };
@@ -480,22 +628,23 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
           suppressClickRef.current = true;
           event.currentTarget.classList.remove('dragging');
           const pose = centeredPose();
-          const selectedIndex = visiblePoses.indexOf(pose);
+          const selectedIndex = visiblePoses.indexOf(pose as PoseName);
           const item = event.currentTarget.children[selectedIndex] as HTMLElement | undefined;
           if (item) event.currentTarget.scrollTo({ left: item.offsetLeft - (event.currentTarget.clientWidth - item.offsetWidth) / 2, behavior: 'smooth' });
-          if (freePoses.includes(pose as FreePoseName)) onSelect(pose as FreePoseName);
+          if (proPreview || freePoses.includes(pose as FreePoseName)) onSelect(pose as PoseName);
         }}
         onPointerCancel={(event) => { swipeRef.current = null; event.currentTarget.classList.remove('dragging'); }}
         onClickCapture={(event) => { if (suppressClickRef.current) { event.preventDefault(); event.stopPropagation(); suppressClickRef.current = false; } }}
         onKeyDown={(event) => {
           if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
           event.preventDefault();
-          const nextIndex = Math.max(0, Math.min(visiblePoses.length - 1, visiblePoses.indexOf(centeredPose()) + (event.key === 'ArrowRight' ? 1 : -1)));
+          alignmentTargetRef.current = null;
+          const nextIndex = Math.max(0, Math.min(visiblePoses.length - 1, visiblePoses.indexOf(centeredPose() as PoseName) + (event.key === 'ArrowRight' ? 1 : -1)));
           const item = event.currentTarget.children[nextIndex] as HTMLElement;
           event.currentTarget.scrollTo({ left: item.offsetLeft - (event.currentTarget.clientWidth - item.offsetWidth) / 2, behavior: 'smooth' });
         }}>
         {visiblePoses.map((pose) => {
-          const locked = !freePoses.includes(pose as FreePoseName);
+          const locked = !proPreview && !freePoses.includes(pose as FreePoseName);
           const selected = pose === step.pose;
           const focused = pose === focusedPose;
           return (
@@ -505,12 +654,12 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
               className={`inline-pose-option ${selected ? 'selected' : ''} ${focused ? 'focused' : ''} ${locked ? 'locked' : ''}`}
               role="button"
               tabIndex={locked ? -1 : 0}
-              onClick={() => { if (locked) onUpgrade(); else onSelect(pose as FreePoseName); }}
-              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (locked) onUpgrade(); else onSelect(pose as FreePoseName); } }}
+              onClick={() => { if (locked) onUpgrade(); else onSelect(pose); }}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); if (locked) onUpgrade(); else onSelect(pose); } }}
             >
               <strong>{pose === 'Wide-Legged Fold' ? 'Wide-Leg Fold' : pose}</strong>
               <PoseFigure pose={pose} />
-              {locked ? <span className="pose-lock">Unlock Pro</span> : selected ? (
+              {locked ? <span className="pose-lock">Tap to unlock Pro</span> : selected ? (
                 <div className="pose-card-actions">
                   <button type="button" disabled={guided} onClick={(event) => { event.stopPropagation(); onDuration(); }}>{step.duration} sec</button>
                   <button type="button" disabled={guided} onClick={(event) => { event.stopPropagation(); onTry(); }}>Try pose</button>
@@ -527,15 +676,15 @@ function PoseCarouselCard({ index, step, guided, onSelect, onDuration, onTry, on
   );
 }
 
-function DurationPicker({ selected, onUpgrade, onClose, onSelect }: { selected: number; onUpgrade: () => void; onClose: () => void; onSelect: (duration: number) => void }) {
+function DurationPicker({ selected, proPreview, onUpgrade, onClose, onSelect }: { selected: number; proPreview: boolean; onUpgrade: () => void; onClose: () => void; onSelect: (duration: number) => void }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <section className="choice-sheet duration-sheet" role="dialog" aria-modal="true" aria-labelledby="duration-title" onClick={(event) => event.stopPropagation()}>
         <i className="sheet-handle" />
         <div className="duration-sheet-heading"><div><h2 id="duration-title">Hold duration</h2><p>20 seconds is included in the free routine.</p></div><button type="button" onClick={onClose} aria-label="Close duration selection">×</button></div>
-        <div className="duration-choice-grid">
+        <div className="duration-choice-list">
           {durations.map((duration) => {
-            const locked = duration !== 20;
+            const locked = !proPreview && duration !== 20;
             return (
               <button
                 key={duration}

@@ -13,22 +13,25 @@ data class WakeProgress(
     val completedDates: Set<LocalDate> = emptySet(),
     val scheduledDates: Set<LocalDate> = emptySet(),
     val upcomingAlarmDates: Set<LocalDate> = emptySet(),
+    val bestStreakDays: Int = streakDays,
 ) {
     val emergencyPassesRemaining: Int
         get() = (MONTHLY_EMERGENCY_PASSES - emergencyPassesUsed).coerceAtLeast(0)
 
     fun current(today: LocalDate): WakeProgress {
         val currentMonth = YearMonth.from(today)
+        val firstDate = today.withDayOfMonth(1).minusMonths(11)
         return copy(
             completedDates = (completedDates.ifEmpty {
                 lastCompletionDate?.let { last ->
                     (0 until streakDays.coerceIn(0, 5)).map { last.minusDays(it.toLong()) }.toSet()
                 } ?: emptySet()
-            }).filterTo(mutableSetOf()) { !it.isBefore(today.minusDays(4)) },
+            }).filterTo(mutableSetOf()) { !it.isBefore(firstDate) },
+            bestStreakDays = maxOf(bestStreakDays, streakDays),
             streakDays = if (scheduledDates.any { date ->
                 date < today && (lastCompletionDate == null || date > lastCompletionDate)
             }) 0 else streakDays,
-            scheduledDates = scheduledDates.filterTo(mutableSetOf()) { it >= today.minusDays(4) },
+            scheduledDates = scheduledDates.filterTo(mutableSetOf()) { it >= firstDate },
             emergencyPassMonth = currentMonth,
             emergencyPassesUsed = if (emergencyPassMonth == currentMonth) emergencyPassesUsed else 0,
         )
@@ -36,17 +39,18 @@ data class WakeProgress(
 
     fun pausedDates(today: LocalDate): Set<LocalDate> {
         val progress = current(today)
-        val firstDate = today.minusDays(4)
+        val firstDate = today.withDayOfMonth(1).minusMonths(11)
         val alarmDates = progress.scheduledDates + progress.upcomingAlarmDates
         var continuingStreak = progress.streakDays > 0 && progress.lastCompletionDate?.isBefore(firstDate) == true
         val paused = mutableSetOf<LocalDate>()
-        for (offset in 0L..4L) {
-            val date = firstDate.plusDays(offset)
+        var date = firstDate
+        while (date <= today) {
             when {
                 date <= today && date in progress.completedDates -> continuingStreak = true
                 date in alarmDates -> continuingStreak = false
                 continuingStreak -> paused += date
             }
+            date = date.plusDays(1)
         }
         return paused
     }
@@ -56,6 +60,7 @@ data class WakeProgress(
         if (progress.lastCompletionDate == today) return progress
         return progress.copy(
             streakDays = progress.streakDays + 1,
+            bestStreakDays = maxOf(progress.bestStreakDays, progress.streakDays + 1),
             lastCompletionDate = today,
             completedDates = progress.completedDates + today,
         )

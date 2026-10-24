@@ -28,6 +28,7 @@ class WakeProgressStore(private val context: Context) {
         val dueDates = schedules.flatMap { it.datesDueBetween(checkedAt, now.toLocalDateTime()) }.toSet()
         val progress = WakeProgress(
             streakDays = preferences.getInt(KEY_STREAK_DAYS, 0),
+            bestStreakDays = preferences.getInt(KEY_BEST_STREAK_DAYS, preferences.getInt(KEY_STREAK_DAYS, 0)),
             lastCompletionDate = preferences.getString(KEY_LAST_COMPLETION_DATE, null)
                 ?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
             emergencyPassMonth = preferences.getString(KEY_EMERGENCY_PASS_MONTH, null)
@@ -107,6 +108,7 @@ class WakeProgressStore(private val context: Context) {
     private fun save(progress: WakeProgress) {
         preferences.edit()
             .putInt(KEY_STREAK_DAYS, progress.streakDays)
+            .putInt(KEY_BEST_STREAK_DAYS, progress.bestStreakDays)
             .putString(KEY_LAST_COMPLETION_DATE, progress.lastCompletionDate?.toString())
             .putString(KEY_EMERGENCY_PASS_MONTH, progress.emergencyPassMonth.toString())
             .putInt(KEY_EMERGENCY_PASSES_USED, progress.emergencyPassesUsed)
@@ -117,6 +119,7 @@ class WakeProgressStore(private val context: Context) {
 
     private companion object {
         const val KEY_STREAK_DAYS = "streak_days"
+        const val KEY_BEST_STREAK_DAYS = "best_streak_days"
         const val KEY_LAST_COMPLETION_DATE = "last_completion_date"
         const val KEY_EMERGENCY_PASS_MONTH = "emergency_pass_month"
         const val KEY_EMERGENCY_PASSES_USED = "emergency_passes_used"

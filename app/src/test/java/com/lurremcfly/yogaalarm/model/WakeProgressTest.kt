@@ -92,11 +92,11 @@ class WakeProgressTest {
     }
 
     @Test
-    fun existingStreakSeedsRecentMarkersAndOldMarkersExpire() {
+    fun existingStreakSeedsOnlyRecentMarkersAndRetainsThemForHistory() {
         val existing = WakeProgress(10, today, YearMonth.from(today)).current(today)
         assertEquals((0L..4L).map { today.minusDays(it) }.toSet(), existing.completedDates)
-        assertEquals(setOf(today), existing.current(today.plusDays(4)).completedDates)
-        assertEquals(emptySet<LocalDate>(), existing.current(today.plusDays(5)).completedDates)
+        assertEquals(existing.completedDates, existing.current(today.plusMonths(11)).completedDates)
+        assertEquals(emptySet<LocalDate>(), existing.current(today.plusMonths(12)).completedDates)
     }
 
     @Test
@@ -141,14 +141,14 @@ class WakeProgressTest {
         val resumed = progress.current(today.plusMonths(2))
         assertEquals(5, resumed.streakDays)
         assertEquals(today, resumed.lastCompletionDate)
-        assertEquals(emptySet<LocalDate>(), resumed.completedDates)
+        assertEquals(setOf(today.minusDays(4), today.minusDays(3), today.minusDays(2), today.minusDays(1), today), resumed.completedDates)
         assertEquals(6, resumed.completeRoutine(today.plusMonths(2)).streakDays)
     }
 
     @Test
     fun overdueScheduledDayIsCheckedBeforeItsHistoryExpires() {
         val progress = WakeProgress(5, today, YearMonth.from(today), scheduledDates = setOf(today.plusDays(1)))
-        val later = progress.current(today.plusMonths(1))
+        val later = progress.current(today.plusMonths(13))
         assertEquals(0, later.streakDays)
         assertEquals(emptySet<LocalDate>(), later.scheduledDates)
     }
@@ -188,9 +188,9 @@ class WakeProgressTest {
     @Test
     fun activeStreakCanPauseBeyondVisibleCompletionHistory() {
         val progress = WakeProgress(5, today.minusDays(10), YearMonth.from(today))
-        assertEquals((-4L..0L).map { today.plusDays(it) }.toSet(), progress.pausedDates(today))
+        assertEquals((-9L..0L).map { today.plusDays(it) }.toSet(), progress.pausedDates(today))
         val broken = progress.copy(scheduledDates = setOf(today.minusDays(6))).current(today)
-        assertEquals(emptySet<LocalDate>(), broken.pausedDates(today))
+        assertEquals((-9L..-7L).map { today.plusDays(it) }.toSet(), broken.pausedDates(today))
     }
 
     @Test
@@ -216,5 +216,38 @@ class WakeProgressTest {
     fun completedFridayRemainsVisibleInSevenDayWindowOnTuesday() {
         val progress = WakeProgress(5, today, YearMonth.from(today), completedDates = setOf(today))
         assertEquals(setOf(today), progress.current(today.plusDays(4)).completedDates)
+    }
+
+    @Test
+    fun historyKeepsOnlyTheTwelveDisplayedCalendarMonths() {
+        val first = today.withDayOfMonth(1).minusMonths(11)
+        val dates = setOf(first.minusDays(1), first, today.minusMonths(3), today)
+        val progress = WakeProgress(emergencyPassMonth = YearMonth.from(today), completedDates = dates, scheduledDates = dates)
+            .current(today)
+        assertEquals(dates - first.minusDays(1), progress.completedDates)
+        assertEquals(dates - first.minusDays(1), progress.scheduledDates)
+    }
+
+    @Test
+    fun personalBestSurvivesResetAndOnlyIncreasesOnANewRecord() {
+        val original = WakeProgress(8, today.minusDays(2), YearMonth.from(today), scheduledDates = setOf(today.minusDays(1)))
+        val reset = original.current(today)
+        assertEquals(0, reset.streakDays)
+        assertEquals(8, reset.bestStreakDays)
+        assertEquals(8, reset.completeRoutine(today).bestStreakDays)
+        val record = WakeProgress(8, today.minusDays(1), YearMonth.from(today), bestStreakDays = 8).completeRoutine(today)
+        assertEquals(9, record.bestStreakDays)
+        assertEquals(9, record.completeRoutine(today).bestStreakDays)
+        assertEquals(9, record.current(today.plusYears(2)).bestStreakDays)
+    }
+
+    @Test
+    fun historicalRestDaysSurviveALaterBrokenStreak() {
+        val friday = today.minusWeeks(8)
+        val monday = friday.plusDays(3)
+        val progress = WakeProgress(1, friday, YearMonth.from(today), completedDates = setOf(friday), scheduledDates = setOf(monday))
+        val current = progress.current(today)
+        assertEquals(0, current.streakDays)
+        assertEquals(setOf(friday.plusDays(1), friday.plusDays(2)), current.pausedDates(today))
     }
 }

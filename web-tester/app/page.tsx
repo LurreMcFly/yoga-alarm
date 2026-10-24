@@ -426,6 +426,10 @@ export default function Home() {
   const holdProgress = Math.min(1, holdMs / holdDurationRef.current);
 
   const handleTestConfiguredRoutine = (alarm: BrowserAlarm, editorAlarm: BrowserAlarm = alarm) => {
+    if (alarm.routine.some((step) => !routine.some((pose) => pose.name === step.pose))) {
+      window.alert('Camera testing for Pro poses is available in the Android app.');
+      return;
+    }
     resetRoutine();
     practiceCompleteRef.current = null;
     setPractice(false);

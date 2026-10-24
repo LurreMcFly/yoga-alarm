@@ -408,9 +408,12 @@ internal fun YogaAlarmRoot(
                     alarms = alarms,
                     streakDays = wakeProgress.streakDays,
                     previousStreakDays = presentedStreakDays,
+                    bestStreakDays = wakeProgress.bestStreakDays,
                     today = today,
                     completedDates = wakeProgress.completedDates,
                     pausedDates = wakeProgress.pausedDates(today),
+                    scheduledDates = wakeProgress.scheduledDates,
+                    weekStartsOnSunday = weekStartsOnSunday,
                     onStreakPresented = { presentedStreakDays = wakeProgress.streakDays },
                     savedAlarmId = savedAlarmId,
                     onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
@@ -451,6 +454,13 @@ internal fun YogaAlarmRoot(
                             wakeProgress = wakeProgressStore.load()
                         }
                     },
+                    onReorderAlarms = { reordered ->
+                        if (onboardingStep == null) {
+                            alarms = reordered
+                            store.save(alarms)
+                        }
+                    },
+                    reorderingEnabled = onboardingStep == null,
                     onboardingTargets = onboardingTargets,
                 )
             }

@@ -38,6 +38,14 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
+In local development, **Settings → Pro preview** unlocks the Android Pro setup UI: all eight poses, sound selection, hold durations, and routines of 1–10 poses, without a purchase. The browser still tracks only Mountain, Warrior II, and Tree; camera testing of other poses stays in Android. The sound previews use the matching Android audio files.
+
+For a clean recorded walkthrough, open `http://localhost:3000/?demo=pro`. This development-only profile starts with Pro enabled, one saved alarm, and a sample six-day streak. It skips onboarding and shows a blue touch indicator that glides between targets and pulses before actions. Button actions wait for the indicator to arrive, and sheets animate in and out for presentation. Its alarms persist separately from the regular browser tester. It adds no explanatory text to the app screens.
+
+Add `&reset=1` to start that demo profile again with just its initial alarm. The reset applies only to demo alarms and removes itself from the URL so subsequent reloads preserve changes.
+
+Tap the streak card to preview inline history: it expands above the alarms, shows personal best, and offers equally sized **1 month**, **3 months**, and **1 year** views, without day numbers in the monthly grid. Tap the header again to collapse it. The Pro demo uses sample yoga/rest days; the regular tester keeps an empty history. Android implements this UI with real retained activity and persistent personal best; iOS parity is tracked in `IOS_SYNC.md` (SYNC-022).
+
 Android offers a styled tour invitation on first use, with an initial permission-setup page and replay through **Settings → How to use Yoga Alarm**. Replays skip the permission introduction; missing permissions remain available in the home checklist. The tour guides time, alarm name, repeat days, sound and routine setup using the real controls, with smooth step transitions and a slow, continuous routine preview. The sound sheet closes and the editor scrolls to the poses before the routine introduction appears. The tour then offers quiet five-second pose practice and goes directly to saving. Full-routine testing remains available in the editor and saved-alarm summary. The native flow still uses the normal alarm scheduling and permissions checks.
 
 The browser tester retains the onboarding design preview. **Preview without camera** lets you test practice with simulated pose detection. Saved preview alarms stay in this browser.

@@ -14,6 +14,10 @@ iOS source audit: 2026-10-23, against iOS commit `7a1e058` (clean working tree).
 
 | ID | Source status | Remaining work |
 | --- | --- | --- |
+| SYNC-023 | Not audited | Add a dark translucent circle behind the routine countdown. |
+| SYNC-022 | Not audited | Add inline streak history, twelve-month retention and persistent personal best. |
+| SYNC-021 | Not audited | Add persistent long-press alarm reordering, drag/drop animation, edge scrolling and a bottom delete drop target. |
+| SYNC-020 | Not audited | Scroll to the bottom after adding a pose card. |
 | SYNC-019 | Partial | Normal editor Save enables alarms, but only guided Save uses the saved-and-switched-off scheduling-failure path. |
 | SYNC-018 | Partial | Portrait-only app, fixed camera rotation, non-scrollable preparation, missing compact routine split and short-window time-picker behavior. |
 | SYNC-017 | Partial | Settings and weekday preference exist; M/S touch targets are 44 points, below the required 48. |
@@ -39,6 +43,91 @@ Audit validation (2026-10-23):
 - `scripts/verify-bucket6.sh` failed its privacy-link check: it expects the policy URL in `ProPaywallView.swift`, while the current policy action is in `AlarmHomeView.swift` (`PrivacySafetyView`). This failure does not establish that all remaining privacy checks pass.
 - `scripts/test-onboarding-geometry.sh` could not run: `swiftc` is unavailable. Swift and Xcode are unavailable on this Linux host; no compilation, XCTest, StoreKit or device acceptance is claimed.
 - Icon inspection confirmed all eight PNGs are opaque RGB, including the 1,024-pixel source, with the square sunrise/Warrior II artwork. Installed-mask acceptance remains open.
+
+### SYNC-023 — Readable countdown on bright camera backgrounds
+
+Status: pending
+Date: 2026-10-24
+Android commit: <pending>
+
+Changes:
+- Show a centered black circle at 60% opacity behind the routine countdown, matching the progress ring's 144 dp diameter. The camera remains visible through the circle while the white numbers stay readable on bright backgrounds.
+- Keep the circle visible during holding, paused and transition phases, behind the numbers or transition checkmark, progress ring and completion glow. It scales with the existing timer pulse in both portrait and compact landscape layouts. No setting is required.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt
+
+iOS acceptance checks:
+- View holding, paused and transition states against bright and dark camera backgrounds in portrait and landscape. Confirm the circle remains centered beneath the ring and the numbers/checkmark, with existing animations and timing preserved.
+
+### SYNC-022 — Expandable streak history and personal best
+
+Status: pending
+Date: 2026-10-24
+Android commit: <pending>
+
+Changes:
+- Tap the home streak header to extend the same card downward in the alarm list, pushing alarms and readiness cards below it. Tap the header again to collapse. This works with a zero streak and is available without Pro. Keep the existing compact recent-day strip while collapsed; show current streak, Personal best and a collapse chevron at the top while expanded. Preserve the automatic earned-count/flame animation.
+- Start collapsed with 3 months selected. Put a 1 month / 3 months / 1 year selector at the bottom. All ranges use the same 130 dp chart height, keeping the whole expanded card approximately 300 dp tall and keeping alarms in place when switching ranges. Allow the home list to scroll on short screens. Restore expansion/range through native saved UI state and respect reduced-motion settings when resizing.
+- The monthly view is the current calendar month, with weekday labels and colored cells but **no day numbers**. Three months covers the current month plus the preceding two, in a weekly heatmap. One year covers the current month plus the preceding eleven, as twelve miniature monthly grids in four columns and three rows. Show month/range labels, respect the user's Monday/Sunday week-start setting, and keep month offsets correct across years, leap days and six-row months.
+- Green means yoga completed; yellow means an elapsed unscheduled day that preserves an existing streak. Yellow days do not increment the count. A scheduled day without completion becomes a neutral missed day only after that day ends. Future dates are pale and must never appear completed/rested. Dates with no recorded history are neutral rather than invented successes or misses. Expose date/status descriptions to accessibility, with accessible expansion and range controls.
+- Retain completed and scheduled dates from the first day of the month eleven months before today through the current month, rather than pruning after four days. Evaluate overdue scheduled days before pruning, and continue using the existing scheduled-day reset, one-completion-per-day and emergency-stop rules. Derive historical rest-day runs from retained completions/scheduled days, preserving earlier rest days even after a later missed alarm breaks the streak.
+- Persist Personal best independently of retained dates. Seed it from the saved current streak on upgrade, preserve it when the current streak resets or history ages out, and increase it only when a larger count is earned. Previously discarded activity and historical personal bests cannot be recovered; retain the existing limited recent-marker migration without manufacturing a year of history.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/StreakHistory.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/model/WakeProgress.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/data/WakeProgressStore.kt
+- app/src/test/java/com/lurremcfly/yogaalarm/model/WakeProgressTest.kt
+
+iOS acceptance checks:
+- Open/collapse from zero and nonzero streaks. Switch all three ranges and verify equal chart heights, stationary alarms, no monthly numbers, week-start preferences, accessibility, reduced motion and short-screen scrolling.
+- Check December/January, leap February and six-row months. Verify completion beats rest, unknown/future/today-pending states, historical rest runs interrupted by missed scheduled days, and retention at the twelve-month calendar boundary.
+- Relaunch after earning a new best, resetting a streak and pruning old history. Upgrade existing data and verify the saved count seeds best without fabricating old activity. Re-run scheduled-alarm, repeat completion and emergency-pass regressions.
+
+### SYNC-021 — Drag alarms to reorder or delete them
+
+Status: pending
+Date: 2026-10-24
+Android commit: <pending>
+
+Changes:
+- Long-press an alarm card, then drag vertically to change its position. Lift the held card slightly (2% scale and a soft shadow), provide long-press haptic feedback, and keep it above neighboring cards. Animate other cards into their new slots with a spring; spring the released card into place and remove its lift.
+- Scroll the list continuously when a dragged card reaches the top or bottom edge so alarms beyond the visible screen can be reached. Keep the viewport steady as the first visible alarm changes position, and account for the fixed bottom action. Headers, streak and permission cards cannot be reordered.
+- Save the final order on release and preserve it across app restarts, alarm edits and enable/disable changes. New alarms append to the list. Reordering changes presentation order only: retain every alarm's settings, enabled state, scheduled occurrence and pending snooze; do not reschedule alarms.
+- While holding an alarm, replace the bottom + Add alarm pill with a red Delete alarm target and white trash icon/text. When the dragging finger enters that target, darken its red, add a white outline and provide haptic feedback. Keep the target visible above the held card. Pause reordering and edge scrolling while hovering over Delete.
+- Delete only when a deliberate drag is released with the finger inside the visible Delete target. Reuse the existing deletion behavior, including cancellation of that alarm and its pending snooze. Releasing elsewhere saves the reordered position; entering Delete and then moving away must not delete. Restore + Add alarm when the gesture ends. Canceling a drag restores the prior order and never deletes. A single alarm can still be dragged to Delete even though it cannot be reordered.
+- Remove the former long-press action popup, including its Turn on/off action; this supersedes the popup placement described in SYNC-012. Holding and releasing without dragging does nothing. Normal taps edit an alarm, normal swipes scroll, and card switches retain enable/disable behavior. Tapping the bottom target while dragging must not add an alarm or delete one. Disable drag/reorder/delete during guided onboarding.
+- Offer accessible Move up / Move down actions only where that move is available, and a direct Delete alarm action so deletion does not require a drag gesture.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt
+- app/src/main/java/com/lurremcfly/yogaalarm/data/AlarmStore.kt
+
+iOS acceptance checks:
+- Drag the first alarm to the last position and back with several screenfuls of alarms. Verify lift, neighboring-card animation, edge scrolling, final placement, cancellation, and replacement/restoration of the bottom action.
+- Drag onto Delete and release; verify only the held alarm is deleted and its scheduling/snooze is canceled. Enter and leave Delete before releasing elsewhere; verify no deletion. Cancel while over Delete; verify no deletion or order change. Check the target's highlight, hit area, safe areas, visibility above the dragged card, and single/last-alarm deletion.
+- Relaunch, edit/toggle an alarm, add/delete an alarm, and confirm the remaining custom order persists without changing other alarms' delivery or snooze behavior. Check large text, reduced motion, VoiceOver move/delete actions, normal scrolling, and that holding and releasing no longer opens a popup.
+
+### SYNC-020 — Scroll to the newly added pose
+
+Status: pending
+Date: 2026-10-24
+Android commit: <pending>
+
+Changes:
+- After a successful + Add pose action, wait for the new card and its surrounding spacing to be laid out, then smoothly scroll the editor to its new bottom (Android: 300 ms). When already at the bottom, the scroll distance equals the newly added card plus its spacing/border area; the pose controls remain reachable above the fixed Save/Cancel bar.
+- Measure the actual content rather than assuming a fixed card height. If all content fits, no scrolling is needed. Rapid repeated additions must settle at the latest bottom. Respect native reduced-motion settings.
+- Preserve existing access and limits: adding requires Pro, free users open the upgrade flow, and routines contain at most ten poses. Opening the editor, changing a pose/duration, removing a pose, opening the paywall or attempting to add at the limit must not trigger this new auto-scroll.
+
+Relevant Android files:
+- app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt
+
+iOS acceptance checks:
+- Add one or several poses from the bottom and verify each new card and its full spacing are accounted for. Check short/tall screens, large text, the ten-pose limit, the free-user upgrade flow and disabled animations.
 
 ### SYNC-019 — Enable alarms when saving from the editor
 
@@ -338,7 +427,7 @@ Validation status:
 
 Status: pending
 Date: 2026-10-04
-Android commit: <pending> (2026-10-17 pause markers and completion-based eligibility; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
+Android commit: <pending> (2026-10-24 completion-number clipping fix; 2026-10-17 pause markers and completion-based eligibility; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
 iOS implementation progress (2026-10-23):
 - [x] Sunrise completion with measured whole-number docking, entrance-settled three-second hold, multi-digit/zero handling, and usable Done/back controls.
@@ -371,6 +460,7 @@ Trigger and layout:
 - Reserve the bottom area for the existing greeting, completed-pose count, streak label, and Done button, with safe-area insets and 28-point horizontal/vertical padding. Center the sun horizontally in the remaining space above this footer and below the top controls. Its final diameter is the smallest of 220 points, 64% of screen width, and 80% of the remaining height, so it adapts to screen size and text scaling.
 - The sun is a circle with a vertical gradient from pale yellow `#F9E4A7` to lime `#C9EE73`. A radial lime glow fades from 16% opacity at its center to transparent, extending to twice the sun radius.
 - The final label is “🔥 N-day yoga streak”. The number and suffix use the same native bold 16-point font, with lime text. Render the actual integer count as text: support every digit 0–9 and multi-digit values such as 10, 30, and 100. Do not use separately drawn numeral paths or swap font families/weights between the large and final number.
+- Completion-number visibility fix (2026-10-24): render the rising/holding/docking number above the scrollable footer, outside its clipping bounds. Keep the footer number's layout space reserved and reveal it only when docking finishes, avoiding a duplicate visible count. Positive streaks must remain visible inside the large sun throughout the entrance/three-second hold and the full move into the footer, including short windows and large text. Reduced motion still shows the final footer count immediately; zero streaks still omit the number. After docking, the count scrolls with the footer normally. Verify 1-, 2- and 3-digit counts and footer scrolling on device. Android reference: `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt`.
 
 Sequence, measured from entering COMPLETE:
 
