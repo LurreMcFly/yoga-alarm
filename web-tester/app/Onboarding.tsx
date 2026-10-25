@@ -115,7 +115,7 @@ export default function Onboarding({ step, phoneRef, alarm, practised, onStep, o
         : step === 'routine'
           ? { title: 'Build your yoga routine', detail: 'Choose the poses you’ll do when your alarm rings.' }
         : step === 'pose-1'
-          ? { title: 'Choose pose 1', detail: 'Swipe to explore your three free poses.' }
+          ? { title: 'Choose pose 1', detail: 'Swipe to explore your four free poses.' }
           : step === 'pose-2'
             ? { title: 'Choose pose 2', detail: 'Each pose lasts 20 seconds in Free.' }
             : step === 'pose-3'

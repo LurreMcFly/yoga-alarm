@@ -9,6 +9,7 @@ enum class YogaPose(
     MOUNTAIN("Mountain", true),
     WARRIOR_TWO("Warrior II", true),
     TREE("Tree", true),
+    SQUAT("Squat", true),
     CHAIR("Chair", false),
     FORWARD_FOLD("Forward Fold", false),
     TRIANGLE("Triangle", false),

@@ -14,6 +14,7 @@ iOS source audit: 2026-10-23, against iOS commit `7a1e058` (clean working tree).
 
 | ID | Source status | Remaining work |
 | --- | --- | --- |
+| SYNC-024 | Not audited | Add Squat as the fourth free pose, with side-view detection, illustration and camera guidance. |
 | SYNC-023 | Not audited | Add a dark translucent circle behind the routine countdown. |
 | SYNC-022 | Not audited | Add inline streak history, twelve-month retention and persistent personal best. |
 | SYNC-021 | Not audited | Add persistent long-press alarm reordering, drag/drop animation, edge scrolling and a bottom delete drop target. |
@@ -43,6 +44,36 @@ Audit validation (2026-10-23):
 - `scripts/verify-bucket6.sh` failed its privacy-link check: it expects the policy URL in `ProPaywallView.swift`, while the current policy action is in `AlarmHomeView.swift` (`PrivacySafetyView`). This failure does not establish that all remaining privacy checks pass.
 - `scripts/test-onboarding-geometry.sh` could not run: `swiftc` is unavailable. Swift and Xcode are unavailable on this Linux host; no compilation, XCTest, StoreKit or device acceptance is claimed.
 - Icon inspection confirmed all eight PNGs are opaque RGB, including the 1,024-pixel source, with the square sunrise/Warrior II artwork. Installed-mask acceptance remains open.
+
+### SYNC-024 — Free held Squat pose
+
+Status: pending
+Date: 2026-10-25
+Android commit: <pending>
+
+Changes:
+- Add `SQUAT`, displayed as “Squat”, as the fourth free pose after Tree. All users can select it in each of the three free routine slots, including guided setup, save/reopen it, practise it and use it in an alarm routine without a subscription. It is a held deep yoga squat (Malasana), with hips at or slightly below knee height, an upright or modestly forward-leaning torso, and hands at the chest. It does not count repetitions.
+- Keep the default Mountain → Warrior II → Tree routine and all existing saved routines. Free routines still have three slots and fixed 20-second holds; practice still uses five seconds. Pro retains the existing hold durations and routine length limits. Onboarding now says “Swipe to explore your four free poses.”
+- Show matching Squat artwork and a compact side-view camera guide. Instruction: “Face sideways, lower your hips to knee height and hold your hands at your chest”. Mirror the guide with the facing direction. One complete visible side (shoulder, elbow, wrist, hip, knee, ankle) is enough; the far limbs and head may be occluded. Pick the side with the highest minimum landmark confidence. Require both visibility and presence >= 0.38 and normalized coordinates within -0.08...1.08 for the required landmarks. When incomplete, say “Turn sideways and include one full arm and leg, including your foot”; when framed, say “Keep your side facing the camera”.
+- Score the minimum of these five requirements using 2D image landmarks and shoulder-to-hip distance as torso scale (minimum 0.08): knee angle scores 1 at <=70° and 0 at >=105°; normalized (knee.y - hip.y) scores 1 at <=0.05 and 0 at >=0.35; normalized (hip.y - shoulder.y) scores 0 at <=0.55 and 1 at >=0.85; normalized (ankle.y - hip.y) scores 0 at <=0.15 and 1 at >=0.45; hand position uses the minimum of wrist-to-shoulder distance (1 at <=0.6 torso lengths, 0 at >=1) and wrist vertical offset below shoulder (0 outside -0.2...0.85 torso lengths, 1 throughout -0.05...0.55, linear ramps). Clamp scores to 0...1 and interpolate linearly between limits. This rejects standing, shallow bends, normal chair-height sitting, floor sitting, folded torsos and raised/dropped hands. A low support hidden behind a correctly shaped squat cannot be distinguished from landmarks alone; heel contact and exact prayer-hand contact are not checked.
+- Reuse existing detection and hold behavior: enter at score >=0.68 for 300 ms; exit below 0.58 for 450 ms; an interrupted hold retains earned time. No global threshold or timer changes. Synthetic-landmark tests cover either visible side, both facing directions, occlusion, translation/scale and negative postures; real-camera thresholds still need device acceptance.
+
+Android references:
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmConfig.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/PoseScoring.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/PoseDetectionGate.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmTheme.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/Onboarding.kt`
+- `app/src/main/res/drawable-nodpi/pose_squat.webp`
+- `app/src/test/java/com/lurremcfly/yogaalarm/model/SidePoseScoringTest.kt`
+- `app/src/test/java/com/lurremcfly/yogaalarm/model/PoseFramingHintTest.kt`
+- `app/src/test/java/com/lurremcfly/yogaalarm/model/AlarmDraftTest.kt`
+
+Acceptance:
+- Without Pro, choose Squat in guided setup and the normal editor, save/reopen it, practise it and complete a routine containing it. Confirm the existing three-pose defaults, free duration restrictions and Pro poses remain correct.
+- On a device, check left/right profile, front/back camera and mirroring, far-side occlusion, missing feet/hands, readable phone distance, varied body proportions and lighting. Verify the guide, prompt, pause/resume, countdown, audio fade and transition to/from another pose.
+- Confirm standing, shallow Chair, Goddess with raised arms, chair-height sitting, floor sitting and folded postures do not advance the hold. Tune thresholds with real-camera samples if needed before marking verified.
 
 ### SYNC-023 — Readable countdown on bright camera backgrounds
 

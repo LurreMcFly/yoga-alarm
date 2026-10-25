@@ -20,9 +20,14 @@ class SidePoseScoringTest {
         23 to (0.27f to 0.80f), 25 to (0.57f to 0.82f), 27 to (0.88f to 0.84f),
     )
 
+    private fun squat() = profile(
+        11 to (0.48f to 0.40f), 13 to (0.60f to 0.58f), 15 to (0.58f to 0.46f),
+        23 to (0.40f to 0.70f), 25 to (0.65f to 0.68f), 27 to (0.53f to 0.92f),
+    )
+
     @Test
     fun sideViewsWorkWithEitherSideOccludedAndEitherFacingDirection() {
-        listOf(YogaPose.CHAIR to chair(), YogaPose.FORWARD_FOLD to seatedFold()).forEach { (pose, body) ->
+        listOf(YogaPose.CHAIR to chair(), YogaPose.FORWARD_FOLD to seatedFold(), YogaPose.SQUAT to squat()).forEach { (pose, body) ->
             for (side in 0..1) for (mirrored in listOf(false, true)) {
                 val points = MutableList(33) { BodyPoint(0f, 0f, 0f, 0f, 0f) }
                 listOf(11, 13, 15, 23, 25, 27).forEach { index ->
@@ -56,10 +61,58 @@ class SidePoseScoringTest {
 
     @Test
     fun missingBothFeetDoesNotAcceptASidePose() {
-        listOf(YogaPose.CHAIR to chair(), YogaPose.FORWARD_FOLD to seatedFold()).forEach { (pose, body) ->
+        listOf(YogaPose.CHAIR to chair(), YogaPose.FORWARD_FOLD to seatedFold(), YogaPose.SQUAT to squat()).forEach { (pose, body) ->
             val cropped = BodyLandmarks(body.points.mapIndexed { index, point -> if (index == 27) point.copy(visibility = 0f) else point })
             assertFalse(PoseScoring.evaluate(pose, cropped).framed)
         }
+    }
+
+    @Test
+    fun squatRejectsStandingShallowBendsAndChairHeightSitting() {
+        val negatives = listOf(
+            profile(11 to (0.48f to 0.25f), 13 to (0.60f to 0.43f), 15 to (0.58f to 0.31f),
+                23 to (0.48f to 0.55f), 25 to (0.48f to 0.73f), 27 to (0.48f to 0.92f)),
+            chair(),
+            profile(11 to (0.48f to 0.40f), 13 to (0.60f to 0.58f), 15 to (0.58f to 0.46f),
+                23 to (0.40f to 0.70f), 25 to (0.65f to 0.70f), 27 to (0.65f to 0.92f)),
+        )
+        negatives.forEach { body ->
+            assertTrue(PoseScoring.evaluate(YogaPose.SQUAT, body).score < 0.58f)
+        }
+    }
+
+    @Test
+    fun squatRejectsFloorSittingFoldedTorsoAndRaisedOrDroppedHands() {
+        val floor = squat().points.toMutableList().apply {
+            this[27] = this[27].copy(y = 0.70f)
+        }
+        val folded = squat().points.toMutableList().apply {
+            this[11] = this[11].copy(x = 0.65f, y = 0.65f)
+        }
+        val raised = squat().points.toMutableList().apply {
+            this[15] = this[15].copy(y = 0.20f)
+        }
+        val dropped = squat().points.toMutableList().apply {
+            this[15] = this[15].copy(y = 0.75f)
+        }
+        (listOf(floor, folded, raised, dropped).map { BodyLandmarks(it) } + seatedFold()).forEach { body ->
+            assertTrue(PoseScoring.evaluate(YogaPose.SQUAT, body).score < 0.58f)
+        }
+    }
+
+    @Test
+    fun squatScoreIsStableWhenMovedAndScaledAndRequiresVisibleLandmarks() {
+        val body = squat()
+        val moved = BodyLandmarks(body.points.map { it.copy(x = it.x * 0.7f + 0.1f, y = it.y * 0.7f + 0.1f) })
+        assertEquals(PoseScoring.evaluate(YogaPose.SQUAT, body).score,
+            PoseScoring.evaluate(YogaPose.SQUAT, moved).score, 0.001f)
+        listOf(11, 13, 15, 23, 25, 27).forEach { missing ->
+            val cropped = BodyLandmarks(body.points.mapIndexed { index, point ->
+                if (index == missing) point.copy(presence = 0f) else point
+            })
+            assertFalse(PoseScoring.evaluate(YogaPose.SQUAT, cropped).framed)
+        }
+        assertFalse(PoseScoring.evaluate(YogaPose.SQUAT, null).framed)
     }
 
     private fun wideFold() = profile(

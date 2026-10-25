@@ -38,6 +38,7 @@ internal fun PoseGlyph(pose: YogaPose, modifier: Modifier = Modifier) {
         YogaPose.MOUNTAIN -> R.drawable.pose_mountain
         YogaPose.WARRIOR_TWO -> R.drawable.pose_warrior_two
         YogaPose.TREE -> R.drawable.pose_tree
+        YogaPose.SQUAT -> R.drawable.pose_squat
         YogaPose.CHAIR -> R.drawable.pose_chair
         YogaPose.FORWARD_FOLD -> R.drawable.pose_forward_fold
         YogaPose.TRIANGLE -> R.drawable.pose_triangle

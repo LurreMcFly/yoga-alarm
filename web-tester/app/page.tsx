@@ -30,6 +30,7 @@ const routine = [
   { name: 'Mountain', cue: 'Stand tall with your arms relaxed', score: scoreMountain },
   { name: 'Warrior II', cue: 'Reach wide and bend either front knee', score: scoreWarriorTwo },
   { name: 'Tree', cue: 'Balance with one foot lifted', score: scoreTree },
+  { name: 'Squat', cue: 'Face sideways, lower your hips to knee height and hold your hands at your chest', score: scoreSquat },
 ] as const;
 
 const skeletonConnections = [
@@ -403,7 +404,7 @@ export default function Home() {
   const progress = phase === 'complete' ? 1 : (poseIndex + holdMs / holdDurationRef.current) / activeRoutine.length;
   const remainingSeconds = Math.max(0, Math.ceil((holdDurationRef.current - holdMs) / 1000));
   const primaryLabel = getPrimaryLabel(cameraState, phase, mode, simulating);
-  const status = getStatus(phase, framed, detectedRef.current, score, transitionRemaining, error, currentPose.cue);
+  const status = getStatus(phase, framed, detectedRef.current, score, transitionRemaining, error, currentPose.cue, currentPose.name);
 
   const handlePrimaryAction = () => {
     if ((cameraState === 'idle' || cameraState === 'error') && mode === 'camera') {
@@ -534,12 +535,12 @@ function getPrimaryLabel(cameraState: CameraState, phase: SessionPhase, mode: Mo
   return phase === 'holding' ? 'Keep holding' : 'Move into pose';
 }
 
-function getStatus(phase: SessionPhase, framed: boolean, detected: boolean, score: number, transition: number, error: string | null, poseCue: string) {
+function getStatus(phase: SessionPhase, framed: boolean, detected: boolean, score: number, transition: number, error: string | null, poseCue: string, pose: typeof routine[number]['name']) {
   if (error) return { title: 'Unable to start', detail: error };
   if (phase === 'idle') return { title: 'Ready to move?', detail: 'Place your phone, then start.' };
   if (phase === 'ready') return { title: 'You’re ready', detail: 'Start when you’re ready.' };
   if (phase === 'transition') return { title: `Starting in ${transition}`, detail: '' };
-  if (!framed) return { title: 'Move into view', detail: 'Keep your head, hands, hips and knees visible' };
+  if (!framed) return { title: 'Move into view', detail: pose === 'Squat' ? 'Turn sideways and include one full arm and leg, including your foot' : 'Keep your head, hands, hips and knees visible' };
   if (phase === 'holding' || detected) return { title: 'Pose found ✓', detail: 'Hold until the timer ends.' };
   if (phase === 'paused') return { title: 'Hold the pose', detail: 'Timer paused. Return to the pose.' };
   if (phase === 'complete') return { title: 'Routine complete', detail: '' };
@@ -617,6 +618,34 @@ function scoreTree(landmarks: NormalizedLandmark[] | null): PoseEvaluation {
   return { score: framed ? weighted([Math.max(leftRaised, rightRaised), upright], [0.78, 0.22]) : 0, framed };
 }
 
+function visibleSide(landmarks: NormalizedLandmark[]): number | null {
+  const sides = [0, 1].filter((side) => isPoseFramed(landmarks, [11, 13, 15, 23, 25, 27].map((index) => index + side)));
+  sides.sort((a, b) => Math.min(...[11, 13, 15, 23, 25, 27].map((index) => landmarks[index + b].visibility ?? 0))
+    - Math.min(...[11, 13, 15, 23, 25, 27].map((index) => landmarks[index + a].visibility ?? 0)));
+  return sides[0] ?? null;
+}
+
+function scoreSquat(landmarks: NormalizedLandmark[] | null): PoseEvaluation {
+  if (!landmarks) return { score: 0, framed: false };
+  const side = visibleSide(landmarks);
+  if (side === null) return { score: 0, framed: false };
+  const shoulder = landmarks[11 + side];
+  const wrist = landmarks[15 + side];
+  const hip = landmarks[23 + side];
+  const knee = landmarks[25 + side];
+  const ankle = landmarks[27 + side];
+  const torso = Math.max(distance(shoulder, hip), 0.08);
+  const bentKnee = lessScore(angle(hip, knee, ankle), 70, 105);
+  const hipsLow = lessScore((knee.y - hip.y) / torso, 0.05, 0.35);
+  const torsoUp = greaterScore((hip.y - shoulder.y) / torso, 0.55, 0.85);
+  const handAtChest = Math.min(
+    lessScore(distance(wrist, shoulder) / torso, 0.6, 1),
+    rangeScore((wrist.y - shoulder.y) / torso, -0.2, -0.05, 0.55, 0.85),
+  );
+  const feetBelowHips = greaterScore((ankle.y - hip.y) / torso, 0.15, 0.45);
+  return { score: Math.min(bentKnee, hipsLow, torsoUp, handAtChest, feetBelowHips), framed: true };
+}
+
 function warriorLegShape(landmarks: NormalizedLandmark[]) {
   const leftKnee = angle(landmarks[23], landmarks[25], landmarks[27]);
   const rightKnee = angle(landmarks[24], landmarks[26], landmarks[28]);
@@ -662,7 +691,7 @@ function drawPoseGuide(
   context.fillRect(0, 0, width, height);
 
   const layout = getVideoLayout(width, height, video);
-  const measuredAnchor = getGuideAnchor(layout, landmarks);
+  const measuredAnchor = getGuideAnchor(layout, landmarks, pose);
   const previousAnchor = anchorRef.current;
   const anchor = previousAnchor ? {
     centerX: lerp(previousAnchor.centerX, measuredAnchor.centerX, 0.18),
@@ -673,7 +702,10 @@ function drawPoseGuide(
   anchorRef.current = anchor;
 
   const geometry = getGuideGeometry(pose);
-  const point = ([x, y]: GuidePoint) => ({ x: anchor.centerX + x * anchor.shoulderWidth, y: anchor.shoulderY + y * anchor.torsoHeight });
+  const side = landmarks && pose === 'Squat' ? visibleSide(landmarks) : null;
+  const direction = landmarks && side !== null && landmarks[25 + side].x > landmarks[23 + side].x ? -1 : 1;
+  const xScale = pose === 'Squat' ? anchor.torsoHeight * direction : anchor.shoulderWidth;
+  const point = ([x, y]: GuidePoint) => ({ x: anchor.centerX + x * xScale, y: anchor.shoulderY + y * anchor.torsoHeight });
   const bodyWidth = Math.max(42, anchor.shoulderWidth * 0.72);
   const drawSegments = () => {
     geometry.segments.forEach(([from, to]) => {
@@ -710,6 +742,16 @@ function drawPoseGuide(
 }
 
 function getGuideGeometry(pose: typeof routine[number]['name']): { head: GuidePoint; segments: GuideSegment[] } {
+  if (pose === 'Squat') {
+    return {
+      head: [0.02, -0.28],
+      segments: [
+        [[0, 0], [-0.25, 0.97]],
+        [[0, 0], [0.4, 0.65]], [[0.4, 0.65], [0.35, 0.2]],
+        [[-0.25, 0.97], [0.55, 0.9]], [[0.55, 0.9], [0.15, 1.65]],
+      ],
+    };
+  }
   if (pose === 'Warrior II') {
     return {
       head: [0, -0.55],
@@ -745,7 +787,14 @@ function getGuideGeometry(pose: typeof routine[number]['name']): { head: GuidePo
   };
 }
 
-function getGuideAnchor(layout: VideoLayout, landmarks: NormalizedLandmark[] | null): GuideAnchor {
+function getGuideAnchor(layout: VideoLayout, landmarks: NormalizedLandmark[] | null, pose: typeof routine[number]['name']): GuideAnchor {
+  const side = landmarks && pose === 'Squat' ? visibleSide(landmarks) : null;
+  if (landmarks && side !== null) {
+    const shoulder = toCanvasPoint(landmarks[11 + side], layout);
+    const hip = toCanvasPoint(landmarks[23 + side], layout);
+    const torsoHeight = Math.max(distance(shoulder, hip), layout.height * 0.08);
+    return { centerX: shoulder.x, shoulderY: shoulder.y, shoulderWidth: torsoHeight * 0.45, torsoHeight };
+  }
   if (landmarks && isPoseFramed(landmarks, [11, 12, 23, 24], 0.3)) {
     const leftShoulder = toCanvasPoint(landmarks[11], layout);
     const rightShoulder = toCanvasPoint(landmarks[12], layout);
@@ -851,6 +900,10 @@ function midpoint(a: { x: number; y: number }, b: { x: number; y: number }) {
 
 function greaterScore(value: number, minimum: number, ideal: number) {
   return clamp((value - minimum) / (ideal - minimum));
+}
+
+function lessScore(value: number, goodAtOrBelow: number, zeroAtOrAbove: number) {
+  return clamp((zeroAtOrAbove - value) / (zeroAtOrAbove - goodAtOrBelow));
 }
 
 function rangeScore(value: number, outerMin: number, innerMin: number, innerMax: number, outerMax: number) {

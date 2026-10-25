@@ -290,7 +290,7 @@ internal fun OnboardingOverlay(
                         OnboardingStep.Days -> "Choose repeat days" to "Green = selected. No days = once."
                         OnboardingStep.Sound -> "Choose your alarm sound" to "Tap Sound."
                         OnboardingStep.SoundChoice -> "Find your sound" to "Preview, then choose."
-                        OnboardingStep.Pose1 -> "Choose pose 1" to "Swipe to explore your three free poses."
+                        OnboardingStep.Pose1 -> "Choose pose 1" to "Swipe to explore your four free poses."
                         OnboardingStep.Pose2 -> "Choose pose 2" to "Each pose lasts 20 seconds in Free."
                         OnboardingStep.Pose3 -> "Choose pose 3" to "Your routine plays from top to bottom."
                         else -> "Save your alarm" to "Keep your time, name and poses."

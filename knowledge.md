@@ -72,14 +72,14 @@ Free:
 
 - Unlimited alarms.
 - Exactly three poses per routine.
-- Mountain, Warrior II, and Tree.
+- Mountain, Warrior II, Tree, and Squat (a deep held squat in side view with hands at the chest).
 - Fixed 20-second holds.
 - Sunbird Morning Call and Morning Temple Call.
 - Alarm scheduling, camera validation, audio fading, vibration, and snooze.
 
 Pro:
 
-- All eight current poses.
+- All nine current poses.
 - One to ten poses per routine.
 - Hold durations of 10, 15, 20, 30, 45, or 60 seconds.
 - All ten current alarm sounds.
@@ -210,8 +210,8 @@ Implemented in the Android app:
 - Lock-screen/full-screen alarm presentation and screen wake.
 - Reboot, app-update, manual-time, and timezone rescheduling receivers.
 - Screen kept awake during the pose routine.
-- Eight pose illustrations and pose-specific camera guides.
-- On-device landmarks and scoring for all eight poses.
+- Nine pose illustrations and pose-specific camera guides.
+- On-device landmarks and scoring for all nine poses.
 - Stabilized pose entry/loss behavior.
 - Hold timer, transitions, dynamic audio, completion, and emergency stop.
 - Ten compressed alarm tracks.

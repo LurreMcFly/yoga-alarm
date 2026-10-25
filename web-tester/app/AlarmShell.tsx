@@ -5,7 +5,7 @@ import Onboarding, { type TourStep } from './Onboarding';
 import { alarmSounds, SoundPicker, SnoozePicker, type AlarmSoundId } from './AlarmOptions';
 import RecordingPointer from './RecordingPointer';
 
-export type FreePoseName = 'Mountain' | 'Warrior II' | 'Tree';
+export type FreePoseName = 'Mountain' | 'Warrior II' | 'Tree' | 'Squat';
 export type PoseName = FreePoseName | 'Chair' | 'Forward Fold' | 'Triangle' | 'Goddess' | 'Wide-Legged Fold';
 export type AlarmPoseStep = { pose: PoseName; duration: number };
 export type BrowserAlarm = {
@@ -25,7 +25,7 @@ export type BrowserAlarm = {
   manualStop: boolean;
 };
 
-const freePoses: FreePoseName[] = ['Mountain', 'Warrior II', 'Tree'];
+const freePoses: FreePoseName[] = ['Mountain', 'Warrior II', 'Tree', 'Squat'];
 const proPoses: PoseName[] = ['Chair', 'Forward Fold', 'Triangle', 'Goddess', 'Wide-Legged Fold'];
 const allPoses: PoseName[] = [...freePoses, ...proPoses];
 const durations = [5, 10, 15, 20, 30, 45, 60];
@@ -56,7 +56,7 @@ export function createDefaultAlarm(existingNames: string[] = []): BrowserAlarm {
     minute: 0,
     weekdays: [1, 2, 3, 4, 5],
     enabled: true,
-    routine: freePoses.map((pose) => ({ pose, duration: 20 })),
+    routine: (['Mountain', 'Warrior II', 'Tree'] as const).map((pose) => ({ pose, duration: 20 })),
     sound: true,
     vibration: true,
     snooze: true,

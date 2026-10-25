@@ -17,6 +17,13 @@ class AlarmDraftTest {
     }
 
     @Test
+    fun squatIsFreeWithoutChangingTheDefaultRoutine() {
+        assertTrue(YogaPose.SQUAT.isFree)
+        assertEquals(listOf(YogaPose.MOUNTAIN, YogaPose.WARRIOR_TWO, YogaPose.TREE),
+            AlarmConfig.create().routine.map { it.pose })
+    }
+
+    @Test
     fun newAlarmUsesTheCurrentLocalHourWithZeroMinutes() {
         for (hour in 0..23) {
             val alarm = AlarmConfig.create(now = LocalTime.of(hour, 37, 42))
@@ -58,7 +65,7 @@ class AlarmDraftTest {
         val edited = initial.copy(
             name = "Early workout", hour = 5, minute = 42,
             weekdays = setOf(2, 4, 7), sound = AlarmSound.RICE_PAPER_DAWN,
-            routine = listOf(PoseStep(YogaPose.TREE, 45), PoseStep(YogaPose.CHAIR, 10)),
+            routine = listOf(PoseStep(YogaPose.SQUAT, 45), PoseStep(YogaPose.CHAIR, 10)),
             snoozeMinutes = 10, snoozeCount = 3, soundEnabled = false, stopButtonDisabled = true,
         )
         for (draft in listOf(initial, edited)) {

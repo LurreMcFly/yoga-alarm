@@ -38,7 +38,7 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
-In local development, **Settings → Pro preview** unlocks the Android Pro setup UI: all eight poses, sound selection, hold durations, and routines of 1–10 poses, without a purchase. The browser still tracks only Mountain, Warrior II, and Tree; camera testing of other poses stays in Android. The sound previews use the matching Android audio files.
+In local development, **Settings → Pro preview** unlocks the Android Pro setup UI: all nine poses, sound selection, hold durations, and routines of 1–10 poses, without a purchase. The browser tracks the four free poses: Mountain, Warrior II, Tree, and Squat; camera testing of Pro poses stays in Android. Squat is a deep held pose in side view with hands at the chest. The sound previews use the matching Android audio files.
 
 For a clean recorded walkthrough, open `http://localhost:3000/?demo=pro`. This development-only profile starts with Pro enabled, one saved alarm, and a sample six-day streak. It skips onboarding and shows a blue touch indicator that glides between targets and pulses before actions. Button actions wait for the indicator to arrive, and sheets animate in and out for presentation. Its alarms persist separately from the regular browser tester. It adds no explanatory text to the app screens.
 
@@ -76,7 +76,7 @@ Use the [Android reliability checklist](docs/android-reliability-checklist.md) f
 delivery, camera recovery, audio, and device coverage. Samsung Galaxy S25 is the primary
 test device; include other manufacturers and an older supported Android version.
 
-Check all eight poses at a distance where the phone is readable, in bright and dim
+Check all nine poses at a distance where the phone is readable, in bright and dim
 bedroom lighting, with loose clothing, side-facing poses, and partially visible bodies.
 Record recognition stability and visible overlay lag. Also verify that backgrounding
 and reopening restores the camera, and that ten minutes of continuous use does not
