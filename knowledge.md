@@ -72,7 +72,7 @@ Free:
 
 - Unlimited alarms.
 - Exactly three poses per routine.
-- Mountain, Warrior II, Tree, and Squat (a deep held squat in side view with hands at the chest).
+- Mountain, Warrior II, Tree, and Squat (a deep held squat facing the camera, with wide knees and hands at the chest).
 - Fixed 20-second holds.
 - Sunbird Morning Call and Morning Temple Call.
 - Alarm scheduling, camera validation, audio fading, vibration, and snooze.

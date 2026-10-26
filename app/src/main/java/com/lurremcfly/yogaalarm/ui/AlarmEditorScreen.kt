@@ -1,11 +1,16 @@
 package com.lurremcfly.yogaalarm.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -70,10 +75,14 @@ import androidx.compose.ui.layout.positionInWindow
 import kotlin.math.roundToInt
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -85,15 +94,23 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.lurremcfly.yogaalarm.R
@@ -103,6 +120,7 @@ import com.lurremcfly.yogaalarm.model.AlarmSound
 import com.lurremcfly.yogaalarm.model.PoseStep
 import com.lurremcfly.yogaalarm.model.YogaPose
 import java.util.Locale
+import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -127,6 +145,17 @@ internal fun AlarmEditorScreen(
 ) {
     BackHandler(onBack = onCancel)
     var draft by rememberSaveable(initialAlarm.id) { mutableStateOf(initialAlarm) }
+    // Slot identity follows the card, including when multiple slots have identical poses.
+    var poseCardIds by rememberSaveable(initialAlarm.id) { mutableStateOf(draft.routine.indices.toList()) }
+    val poseCardBounds = remember { mutableStateMapOf<Int, Rect>() }
+    var routineTop by remember { mutableFloatStateOf(0f) }
+    var draggedPoseId by remember { mutableStateOf<Int?>(null) }
+    var draggedPoseTop by remember { mutableFloatStateOf(0f) }
+    var poseDragWindowY by remember { mutableFloatStateOf(0f) }
+    var poseDragTravel by remember { mutableFloatStateOf(0f) }
+    var hasDraggedPose by remember { mutableStateOf(false) }
+    var routineBeforeDrag by remember { mutableStateOf(draft.routine) }
+    var poseCardIdsBeforeDrag by remember { mutableStateOf(poseCardIds) }
     var durationSheetSlot by remember { mutableStateOf<Int?>(null) }
     var soundSheetOpen by rememberSaveable(initialAlarm.id) { mutableStateOf(onboardingStep == OnboardingStep.SoundChoice) }
     var snoozeSheetOpen by remember { mutableStateOf(false) }
@@ -149,6 +178,53 @@ internal fun AlarmEditorScreen(
     val tipHeight = onboardingTargets?.tipHeight ?: 0f
     val navigationBottom = WindowInsets.safeDrawing.getBottom(density)
     val statusTop = WindowInsets.safeDrawing.getTop(density)
+    val haptics = LocalHapticFeedback.current
+    val edgeSize = with(density) { 56.dp.toPx() }
+    val actionClearance = with(density) { 90.dp.toPx() }
+
+    fun movePose(from: Int, to: Int) {
+        draft = draft.copy(routine = draft.routine.toMutableList().apply { add(to, removeAt(from)) })
+        poseCardIds = poseCardIds.toMutableList().apply { add(to, removeAt(from)) }
+    }
+
+    fun finishPoseDrag(cancelled: Boolean) {
+        if (draggedPoseId == null) return
+        if (cancelled) {
+            draft = draft.copy(routine = routineBeforeDrag)
+            poseCardIds = poseCardIdsBeforeDrag
+        }
+        draggedPoseId = null
+    }
+
+    LaunchedEffect(draggedPoseId) {
+        val id = draggedPoseId ?: return@LaunchedEffect
+        var previousFrame = withFrameNanos { it }
+        while (true) {
+            val frame = withFrameNanos { it }
+            val seconds = ((frame - previousFrame) / 1_000_000_000f).coerceAtMost(0.032f)
+            previousFrame = frame
+            if (!hasDraggedPose) continue
+            val bounds = poseCardBounds[id] ?: continue
+            val firstBounds = poseCardBounds[poseCardIds.first()] ?: continue
+            val lastBounds = poseCardBounds[poseCardIds.last()] ?: continue
+            val center = (draggedPoseTop + bounds.height / 2f).coerceIn(firstBounds.top, lastBounds.bottom - 1f)
+            val targetId = poseCardIds.firstOrNull { candidate ->
+                candidate != id && poseCardBounds[candidate]?.let { center >= it.top && center < it.bottom } == true
+            }
+            if (targetId != null) movePose(poseCardIds.indexOf(id), poseCardIds.indexOf(targetId))
+
+            val edgeOverlap = when {
+                poseDragWindowY < viewport.top + statusTop + edgeSize ->
+                    poseDragWindowY - viewport.top - statusTop - edgeSize
+                poseDragWindowY > viewport.bottom - navigationBottom - actionClearance - edgeSize ->
+                    poseDragWindowY - viewport.bottom + navigationBottom + actionClearance + edgeSize
+                else -> 0f
+            }
+            if (edgeOverlap != 0f) {
+                draggedPoseTop += editorScrollState.scrollBy(edgeOverlap.coerceIn(-edgeSize, edgeSize) * 12f * seconds)
+            }
+        }
+    }
     val availableEditorHeight = viewport.height - statusTop - navigationBottom
     var routineIntroductionReady by remember(onboardingStep) { mutableStateOf(false) }
     LaunchedEffect(onboardingStep, viewport.size, fontScale, statusTop, navigationBottom) {
@@ -313,27 +389,100 @@ internal fun AlarmEditorScreen(
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    draft.routine.forEachIndexed { index, step ->
-                        PoseCarouselCard(
-                            index = index,
-                            step = step,
-                            isPro = isPro,
-                            onUpgrade = onUpgrade,
-                            onSelectPose = { pose ->
-                                draft = draft.copy(
-                                    routine = draft.routine.mapIndexed { slot, candidate ->
-                                        if (slot == index) candidate.copy(pose = pose) else candidate
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                            .onGloballyPositioned { routineTop = it.positionInWindow().y }
+                            .pointerInput(initialAlarm.id, onboardingStep) {
+                                if (onboardingStep != null) return@pointerInput
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { position ->
+                                        poseCardIds.firstOrNull { poseCardBounds[it]?.contains(position) == true }?.let { id ->
+                                            routineBeforeDrag = draft.routine
+                                            poseCardIdsBeforeDrag = poseCardIds
+                                            draggedPoseTop = poseCardBounds.getValue(id).top
+                                            poseDragWindowY = routineTop + position.y
+                                            poseDragTravel = 0f
+                                            hasDraggedPose = false
+                                            draggedPoseId = id
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
                                     },
+                                    onDrag = { change, amount ->
+                                        if (draggedPoseId != null) {
+                                            change.consume()
+                                            poseDragWindowY = routineTop + change.position.y
+                                            draggedPoseTop += amount.y
+                                            poseDragTravel += amount.y
+                                            if (abs(poseDragTravel) > viewConfiguration.touchSlop) hasDraggedPose = true
+                                        }
+                                    },
+                                    onDragEnd = { finishPoseDrag(cancelled = false) },
+                                    onDragCancel = { finishPoseDrag(cancelled = true) },
                                 )
                             },
-                            onSelectDuration = { durationSheetSlot = index },
-                            onTryPose = { onTestPose(draft, step) },
-                            guided = onboardingStep != null,
-                            guideSelected = onboardingStep == listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index),
-                            onboardingTargets = onboardingTargets,
-                        )
-                        Spacer(Modifier.height(12.dp))
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        draft.routine.forEachIndexed { index, step ->
+                            val id = poseCardIds[index]
+                            key(id) {
+                                val isDragging = draggedPoseId == id
+                                val top = poseCardBounds[id]?.top ?: 0f
+                                val placementTop by animateFloatAsState(
+                                    top,
+                                    animationSpec = if (draggedPoseId != null && !isDragging) spring(stiffness = 400f) else snap(),
+                                    label = "Pose placement",
+                                )
+                                val dragOffset by animateFloatAsState(
+                                    if (isDragging) draggedPoseTop - top else 0f,
+                                    animationSpec = if (isDragging) snap() else spring(dampingRatio = 0.8f, stiffness = 400f),
+                                    label = "Pose drop",
+                                )
+                                val lift by animateFloatAsState(if (isDragging) 1f else 0f, label = "Pose lift")
+                                Box(
+                                    Modifier.fillMaxWidth()
+                                        .onGloballyPositioned {
+                                            poseCardBounds[id] = Rect(it.positionInParent(), Size(it.size.width.toFloat(), it.size.height.toFloat()))
+                                        }
+                                        .zIndex(if (isDragging || abs(dragOffset) > 0.5f) 1f else 0f)
+                                        .semantics {
+                                            if (onboardingStep == null) {
+                                                customActions = listOfNotNull(
+                                                    if (index > 0) CustomAccessibilityAction("Move up") { movePose(index, index - 1); true } else null,
+                                                    if (index < draft.routine.lastIndex) CustomAccessibilityAction("Move down") { movePose(index, index + 1); true } else null,
+                                                )
+                                            }
+                                        },
+                                ) {
+                                    PoseCarouselCard(
+                                        modifier = Modifier.graphicsLayer {
+                                            translationY = placementTop - top + dragOffset
+                                            scaleX = 1f + 0.02f * lift
+                                            scaleY = scaleX
+                                            shadowElevation = 12.dp.toPx() * lift
+                                            shape = RoundedCornerShape(28.dp)
+                                        },
+                                        index = index,
+                                        step = step,
+                                        isPro = isPro,
+                                        onUpgrade = onUpgrade,
+                                        onSelectPose = { pose ->
+                                            draft = draft.copy(
+                                                routine = draft.routine.mapIndexed { slot, candidate ->
+                                                    if (slot == index) candidate.copy(pose = pose) else candidate
+                                                },
+                                            )
+                                        },
+                                        onSelectDuration = { durationSheetSlot = index },
+                                        onTryPose = { onTestPose(draft, step) },
+                                        guided = onboardingStep != null,
+                                        guideSelected = onboardingStep == listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index),
+                                        onboardingTargets = onboardingTargets,
+                                    )
+                                }
+                            }
+                        }
                     }
+                    Spacer(Modifier.height(12.dp))
                     FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -342,7 +491,11 @@ internal fun AlarmEditorScreen(
                         if (isPro && draft.routine.size > 1) {
                             OutlinedButton(
                                 enabled = onboardingStep == null,
-                                onClick = { draft = draft.copy(routine = draft.routine.dropLast(1)) },
+                                onClick = {
+                                    poseCardBounds.remove(poseCardIds.last())
+                                    poseCardIds = poseCardIds.dropLast(1)
+                                    draft = draft.copy(routine = draft.routine.dropLast(1))
+                                },
                                 modifier = Modifier.weight(1f).widthIn(min = 156.dp * fontScale),
                                 shape = RoundedCornerShape(18.dp),
                             ) {
@@ -357,6 +510,7 @@ internal fun AlarmEditorScreen(
                                 } else if (draft.routine.size < 10) {
                                     val nextPose = YogaPose.entries[draft.routine.size % YogaPose.entries.size]
                                     scrollToAddedPose = true
+                                    poseCardIds = poseCardIds + ((poseCardIds.maxOrNull() ?: -1) + 1)
                                     draft = draft.copy(routine = draft.routine + PoseStep(nextPose))
                                 }
                             },
@@ -564,11 +718,13 @@ private fun PoseCarouselCard(
     onSelectPose: (YogaPose) -> Unit,
     onSelectDuration: () -> Unit,
     onTryPose: () -> Unit,
+    modifier: Modifier = Modifier,
     guided: Boolean = false,
     guideSelected: Boolean = false,
     onboardingTargets: OnboardingTargets? = null,
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val currentOnSelectPose by rememberUpdatedState(onSelectPose)
     val poses = if (guided) YogaPose.entries.filter { it.isFree } else YogaPose.entries
     val pagerState = rememberPagerState(
         initialPage = poses.indexOf(step.pose).coerceAtLeast(0),
@@ -576,11 +732,11 @@ private fun PoseCarouselCard(
     )
     LaunchedEffect(pagerState, isPro, guided) {
         snapshotFlow { pagerState.settledPage }.collect { page ->
-            poses.getOrNull(page)?.takeIf { isPro || it.isFree }?.let(onSelectPose)
+            poses.getOrNull(page)?.takeIf { isPro || it.isFree }?.let(currentOnSelectPose)
         }
     }
     Surface(
-        modifier = Modifier.fillMaxWidth().then(listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index)?.let {
+        modifier = modifier.fillMaxWidth().then(listOf(OnboardingStep.Pose1, OnboardingStep.Pose2, OnboardingStep.Pose3).getOrNull(index)?.let {
             Modifier.onboardingTarget(it, onboardingTargets)
         } ?: Modifier),
         shape = RoundedCornerShape(28.dp),

@@ -30,16 +30,30 @@ class PoseFramingHintTest {
 
     @Test
     fun sidePosesDoNotAskForTheOccludedSide() {
-        listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD, YogaPose.SQUAT).forEach { pose ->
+        listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD).forEach { pose ->
             assertEquals("Keep your side facing the camera", PoseScoring.framingHint(pose, bodyWithout(0, 12, 14, 16, 24, 26, 28)))
         }
     }
 
     @Test
     fun sidePosesAskForOneCompleteSideWhenFeetAreMissing() {
-        listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD, YogaPose.SQUAT).forEach { pose ->
+        listOf(YogaPose.CHAIR, YogaPose.FORWARD_FOLD).forEach { pose ->
             assertEquals("Turn sideways and include one full arm and leg, including your foot",
                 PoseScoring.framingHint(pose, bodyWithout(27, 28)))
         }
+    }
+
+    @Test
+    fun squatNeedsBothLegsButNotHeadElbowsOrBothWrists() {
+        assertEquals("Keep facing the camera with both knees and feet in view",
+            PoseScoring.framingHint(YogaPose.SQUAT, bodyWithout(0, 13, 14, 15)))
+        assertEquals("Tilt the phone to include both feet",
+            PoseScoring.framingHint(YogaPose.SQUAT, bodyWithout(28)))
+        assertEquals("Tilt the phone to include both knees",
+            PoseScoring.framingHint(YogaPose.SQUAT, bodyWithout(25)))
+        assertEquals("Bring your hands to your chest in view",
+            PoseScoring.framingHint(YogaPose.SQUAT, bodyWithout(15, 16)))
+        assertEquals("Face the camera and bring both shoulders into view",
+            PoseScoring.framingHint(YogaPose.SQUAT, bodyWithout(12)))
     }
 }

@@ -13,7 +13,15 @@ object PoseScoring {
     // Keep framing guidance aligned with the landmarks used by each scorer.
     fun framingHint(pose: YogaPose, body: BodyLandmarks?): String {
         val points = body?.points ?: return "Position yourself in the camera view"
-        if (pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD || pose == YogaPose.SQUAT) {
+        if (pose == YogaPose.SQUAT) {
+            if (!framed(points, listOf(11, 12))) return "Face the camera and bring both shoulders into view"
+            if (!framed(points, listOf(23, 24))) return "Tilt the phone to include your hips"
+            if (!framed(points, listOf(25, 26))) return "Tilt the phone to include both knees"
+            if (!framed(points, listOf(27, 28))) return "Tilt the phone to include both feet"
+            if (!framed(points, listOf(15)) && !framed(points, listOf(16))) return "Bring your hands to your chest in view"
+            return "Keep facing the camera with both knees and feet in view"
+        }
+        if (pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD) {
             return if (visibleSide(points) != null) "Keep your side facing the camera"
             else "Turn sideways and include one full arm and leg, including your foot"
         }
@@ -139,23 +147,31 @@ object PoseScoring {
 
     private fun squat(body: BodyLandmarks?): PoseEvaluation {
         val points = body?.points ?: return PoseEvaluation(0f, false)
-        val side = visibleSide(points) ?: return PoseEvaluation(0f, false)
-        val shoulder = points[11 + side]
-        val wrist = points[15 + side]
-        val hip = points[23 + side]
-        val knee = points[25 + side]
-        val ankle = points[27 + side]
-        val torso = distance(shoulder, hip).coerceAtLeast(0.08f)
-        val bentKnee = lessScore(angle(hip, knee, ankle), 70f, 105f)
-        val hipsLow = lessScore((knee.y - hip.y) / torso, 0.05f, 0.35f)
-        val torsoUp = greaterScore((hip.y - shoulder.y) / torso, 0.55f, 0.85f)
-        val handAtChest = minOf(
-            lessScore(distance(wrist, shoulder) / torso, 0.6f, 1f),
-            rangeScore((wrist.y - shoulder.y) / torso, -0.2f, -0.05f, 0.55f, 0.85f),
+        if (!framed(points, listOf(11, 12, 23, 24, 25, 26, 27, 28))) return PoseEvaluation(0f, false)
+        // Prayer hands can overlap; one visible wrist is enough. Head and elbows are not scored.
+        val wrists = listOf(15, 16).filter { framed(points, listOf(it)) }
+        if (wrists.isEmpty()) return PoseEvaluation(0f, false)
+        val shoulderMid = midpoint(points[11], points[12])
+        val hipMid = midpoint(points[23], points[24])
+        val shoulderWidth = abs(points[11].x - points[12].x).coerceAtLeast(0.05f)
+        val torso = distance(shoulderMid, hipMid).coerceAtLeast(0.08f)
+        // Frontal knee angles are foreshortened; use bilateral height and stance instead.
+        val hipsLow = lessScore(maxOf(points[25].y - points[23].y, points[26].y - points[24].y) / torso, 0.1f, 0.6f)
+        val wideKnees = greaterScore(abs(points[25].x - points[26].x) / shoulderWidth, 0.85f, 1.35f)
+        val torsoUp = minOf(
+            greaterScore((hipMid.y - shoulderMid.y) / torso, 0.45f, 0.8f),
+            lessScore(abs(shoulderMid.x - hipMid.x) / shoulderWidth, 0.2f, 0.8f),
         )
-        // Exclude floor sitting, where the hips are at or below the feet.
-        val feetBelowHips = greaterScore((ankle.y - hip.y) / torso, 0.15f, 0.45f)
-        return PoseEvaluation(minOf(bentKnee, hipsLow, torsoUp, handAtChest, feetBelowHips), true)
+        val handsAtChest = wrists.maxOf { index ->
+            minOf(
+                lessScore(abs(points[index].x - shoulderMid.x) / shoulderWidth, 0.3f, 0.8f),
+                rangeScore((points[index].y - shoulderMid.y) / torso, -0.4f, -0.15f, 0.55f, 0.95f),
+            )
+        }
+        val lowerLegsDown = greaterScore(minOf(points[27].y - points[25].y, points[28].y - points[26].y) / torso, 0.05f, 0.35f)
+        // Allow a low phone angle without accepting hips resting on the floor beside the feet.
+        val feetBelowHips = greaterScore(minOf(points[27].y - points[23].y, points[28].y - points[24].y) / torso, -0.1f, 0.15f)
+        return PoseEvaluation(minOf(hipsLow, wideKnees, torsoUp, handsAtChest, lowerLegsDown, feetBelowHips), true)
     }
 
     private fun forwardFold(body: BodyLandmarks?): PoseEvaluation {

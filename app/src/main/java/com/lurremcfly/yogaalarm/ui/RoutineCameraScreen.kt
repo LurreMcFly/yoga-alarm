@@ -585,7 +585,7 @@ private fun poseInstruction(pose: YogaPose): String = when (pose) {
         YogaPose.MOUNTAIN -> "Stand tall with your arms relaxed"
         YogaPose.WARRIOR_TWO -> "Reach wide and bend either front knee"
         YogaPose.TREE -> "Balance with one foot lifted"
-        YogaPose.SQUAT -> "Face sideways, lower your hips to knee height and hold your hands at your chest"
+        YogaPose.SQUAT -> "Face the camera, lower your hips between wide knees and bring your hands to your chest"
         YogaPose.CHAIR -> "Face sideways, sit your hips back and reach both arms up"
         YogaPose.FORWARD_FOLD -> "Face sideways, sit with straight legs and reach forward"
         YogaPose.TRIANGLE -> "Reach one hand down and the other straight up"
@@ -603,7 +603,7 @@ private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
             val point = frame?.landmarks?.get(index)?.takeIf { it.isDrawable() } ?: return null
             return Offset(projection.x(point.x), projection.y(point.y))
         }
-        val sidePose = pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD || pose == YogaPose.SQUAT
+        val sidePose = pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD
         val side = if ((frame?.landmarks?.get(11)?.visibility ?: 0f) >= (frame?.landmarks?.get(12)?.visibility ?: 0f)) 0 else 1
         val leftShoulder = mapped(11)
         val rightShoulder = mapped(12)
@@ -678,11 +678,13 @@ private fun guideGeometry(pose: YogaPose): GuideGeometry = when (pose) {
         ),
     )
     YogaPose.SQUAT -> GuideGeometry(
-        Offset(0.02f, -0.28f),
+        Offset(0f, -0.45f),
         listOf(
-            Offset(0f, 0f) to Offset(-0.25f, 0.97f),
-            Offset(0f, 0f) to Offset(0.4f, 0.65f), Offset(0.4f, 0.65f) to Offset(0.35f, 0.2f),
-            Offset(-0.25f, 0.97f) to Offset(0.55f, 0.9f), Offset(0.55f, 0.9f) to Offset(0.15f, 1.65f),
+            Offset(0f, 0f) to Offset(0f, 1f),
+            Offset(-0.5f, 0f) to Offset(-0.55f, 0.6f), Offset(-0.55f, 0.6f) to Offset(-0.04f, 0.25f),
+            Offset(0.5f, 0f) to Offset(0.55f, 0.6f), Offset(0.55f, 0.6f) to Offset(0.04f, 0.25f),
+            Offset(-0.24f, 1f) to Offset(-0.9f, 0.9f), Offset(-0.9f, 0.9f) to Offset(-0.7f, 1.65f),
+            Offset(0.24f, 1f) to Offset(0.9f, 0.9f), Offset(0.9f, 0.9f) to Offset(0.7f, 1.65f),
         ),
     )
     YogaPose.FORWARD_FOLD -> GuideGeometry(

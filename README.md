@@ -38,7 +38,7 @@ Open `http://localhost:3000/`. Changes to the browser tester update automaticall
 
 The browser tester does not validate Android alarm scheduling, lock-screen behavior, or reboot reliability.
 
-In local development, **Settings → Pro preview** unlocks the Android Pro setup UI: all nine poses, sound selection, hold durations, and routines of 1–10 poses, without a purchase. The browser tracks the four free poses: Mountain, Warrior II, Tree, and Squat; camera testing of Pro poses stays in Android. Squat is a deep held pose in side view with hands at the chest. The sound previews use the matching Android audio files.
+In local development, **Settings → Pro preview** unlocks the Android Pro setup UI: all nine poses, sound selection, hold durations, and routines of 1–10 poses, without a purchase. The browser tracks the four free poses: Mountain, Warrior II, Tree, and Squat; camera testing of Pro poses stays in Android. Squat is a deep held pose facing the camera, with wide knees and hands at the chest. The sound previews use the matching Android audio files.
 
 For a clean recorded walkthrough, open `http://localhost:3000/?demo=pro`. This development-only profile starts with Pro enabled, one saved alarm, and a sample six-day streak. It skips onboarding and shows a blue touch indicator that glides between targets and pulses before actions. Button actions wait for the indicator to arrive, and sheets animate in and out for presentation. Its alarms persist separately from the regular browser tester. It adds no explanatory text to the app screens.
 

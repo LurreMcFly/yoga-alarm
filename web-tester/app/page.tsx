@@ -30,7 +30,7 @@ const routine = [
   { name: 'Mountain', cue: 'Stand tall with your arms relaxed', score: scoreMountain },
   { name: 'Warrior II', cue: 'Reach wide and bend either front knee', score: scoreWarriorTwo },
   { name: 'Tree', cue: 'Balance with one foot lifted', score: scoreTree },
-  { name: 'Squat', cue: 'Face sideways, lower your hips to knee height and hold your hands at your chest', score: scoreSquat },
+  { name: 'Squat', cue: 'Face the camera, lower your hips between wide knees and bring your hands to your chest', score: scoreSquat },
 ] as const;
 
 const skeletonConnections = [
@@ -540,7 +540,7 @@ function getStatus(phase: SessionPhase, framed: boolean, detected: boolean, scor
   if (phase === 'idle') return { title: 'Ready to move?', detail: 'Place your phone, then start.' };
   if (phase === 'ready') return { title: 'You’re ready', detail: 'Start when you’re ready.' };
   if (phase === 'transition') return { title: `Starting in ${transition}`, detail: '' };
-  if (!framed) return { title: 'Move into view', detail: pose === 'Squat' ? 'Turn sideways and include one full arm and leg, including your foot' : 'Keep your head, hands, hips and knees visible' };
+  if (!framed) return { title: 'Move into view', detail: pose === 'Squat' ? 'Face the camera with both knees and feet visible, and hands at your chest' : 'Keep your head, hands, hips and knees visible' };
   if (phase === 'holding' || detected) return { title: 'Pose found ✓', detail: 'Hold until the timer ends.' };
   if (phase === 'paused') return { title: 'Hold the pose', detail: 'Timer paused. Return to the pose.' };
   if (phase === 'complete') return { title: 'Routine complete', detail: '' };
@@ -618,32 +618,27 @@ function scoreTree(landmarks: NormalizedLandmark[] | null): PoseEvaluation {
   return { score: framed ? weighted([Math.max(leftRaised, rightRaised), upright], [0.78, 0.22]) : 0, framed };
 }
 
-function visibleSide(landmarks: NormalizedLandmark[]): number | null {
-  const sides = [0, 1].filter((side) => isPoseFramed(landmarks, [11, 13, 15, 23, 25, 27].map((index) => index + side)));
-  sides.sort((a, b) => Math.min(...[11, 13, 15, 23, 25, 27].map((index) => landmarks[index + b].visibility ?? 0))
-    - Math.min(...[11, 13, 15, 23, 25, 27].map((index) => landmarks[index + a].visibility ?? 0)));
-  return sides[0] ?? null;
-}
-
 function scoreSquat(landmarks: NormalizedLandmark[] | null): PoseEvaluation {
-  if (!landmarks) return { score: 0, framed: false };
-  const side = visibleSide(landmarks);
-  if (side === null) return { score: 0, framed: false };
-  const shoulder = landmarks[11 + side];
-  const wrist = landmarks[15 + side];
-  const hip = landmarks[23 + side];
-  const knee = landmarks[25 + side];
-  const ankle = landmarks[27 + side];
-  const torso = Math.max(distance(shoulder, hip), 0.08);
-  const bentKnee = lessScore(angle(hip, knee, ankle), 70, 105);
-  const hipsLow = lessScore((knee.y - hip.y) / torso, 0.05, 0.35);
-  const torsoUp = greaterScore((hip.y - shoulder.y) / torso, 0.55, 0.85);
-  const handAtChest = Math.min(
-    lessScore(distance(wrist, shoulder) / torso, 0.6, 1),
-    rangeScore((wrist.y - shoulder.y) / torso, -0.2, -0.05, 0.55, 0.85),
+  if (!landmarks || !isPoseFramed(landmarks, [11, 12, 23, 24, 25, 26, 27, 28])) return { score: 0, framed: false };
+  const wrists = [15, 16].filter((index) => isPoseFramed(landmarks, [index]));
+  if (!wrists.length) return { score: 0, framed: false };
+  const shoulderMid = midpoint(landmarks[11], landmarks[12]);
+  const hipMid = midpoint(landmarks[23], landmarks[24]);
+  const shoulderWidth = Math.max(Math.abs(landmarks[11].x - landmarks[12].x), 0.05);
+  const torso = Math.max(distance(shoulderMid, hipMid), 0.08);
+  const hipsLow = lessScore(Math.max(landmarks[25].y - landmarks[23].y, landmarks[26].y - landmarks[24].y) / torso, 0.1, 0.6);
+  const wideKnees = greaterScore(Math.abs(landmarks[25].x - landmarks[26].x) / shoulderWidth, 0.85, 1.35);
+  const torsoUp = Math.min(
+    greaterScore((hipMid.y - shoulderMid.y) / torso, 0.45, 0.8),
+    lessScore(Math.abs(shoulderMid.x - hipMid.x) / shoulderWidth, 0.2, 0.8),
   );
-  const feetBelowHips = greaterScore((ankle.y - hip.y) / torso, 0.15, 0.45);
-  return { score: Math.min(bentKnee, hipsLow, torsoUp, handAtChest, feetBelowHips), framed: true };
+  const handsAtChest = Math.max(...wrists.map((index) => Math.min(
+    lessScore(Math.abs(landmarks[index].x - shoulderMid.x) / shoulderWidth, 0.3, 0.8),
+    rangeScore((landmarks[index].y - shoulderMid.y) / torso, -0.4, -0.15, 0.55, 0.95),
+  )));
+  const lowerLegsDown = greaterScore(Math.min(landmarks[27].y - landmarks[25].y, landmarks[28].y - landmarks[26].y) / torso, 0.05, 0.35);
+  const feetBelowHips = greaterScore(Math.min(landmarks[27].y - landmarks[23].y, landmarks[28].y - landmarks[24].y) / torso, -0.1, 0.15);
+  return { score: Math.min(hipsLow, wideKnees, torsoUp, handsAtChest, lowerLegsDown, feetBelowHips), framed: true };
 }
 
 function warriorLegShape(landmarks: NormalizedLandmark[]) {
@@ -691,7 +686,7 @@ function drawPoseGuide(
   context.fillRect(0, 0, width, height);
 
   const layout = getVideoLayout(width, height, video);
-  const measuredAnchor = getGuideAnchor(layout, landmarks, pose);
+  const measuredAnchor = getGuideAnchor(layout, landmarks);
   const previousAnchor = anchorRef.current;
   const anchor = previousAnchor ? {
     centerX: lerp(previousAnchor.centerX, measuredAnchor.centerX, 0.18),
@@ -702,10 +697,7 @@ function drawPoseGuide(
   anchorRef.current = anchor;
 
   const geometry = getGuideGeometry(pose);
-  const side = landmarks && pose === 'Squat' ? visibleSide(landmarks) : null;
-  const direction = landmarks && side !== null && landmarks[25 + side].x > landmarks[23 + side].x ? -1 : 1;
-  const xScale = pose === 'Squat' ? anchor.torsoHeight * direction : anchor.shoulderWidth;
-  const point = ([x, y]: GuidePoint) => ({ x: anchor.centerX + x * xScale, y: anchor.shoulderY + y * anchor.torsoHeight });
+  const point = ([x, y]: GuidePoint) => ({ x: anchor.centerX + x * anchor.shoulderWidth, y: anchor.shoulderY + y * anchor.torsoHeight });
   const bodyWidth = Math.max(42, anchor.shoulderWidth * 0.72);
   const drawSegments = () => {
     geometry.segments.forEach(([from, to]) => {
@@ -744,11 +736,13 @@ function drawPoseGuide(
 function getGuideGeometry(pose: typeof routine[number]['name']): { head: GuidePoint; segments: GuideSegment[] } {
   if (pose === 'Squat') {
     return {
-      head: [0.02, -0.28],
+      head: [0, -0.45],
       segments: [
-        [[0, 0], [-0.25, 0.97]],
-        [[0, 0], [0.4, 0.65]], [[0.4, 0.65], [0.35, 0.2]],
-        [[-0.25, 0.97], [0.55, 0.9]], [[0.55, 0.9], [0.15, 1.65]],
+        [[0, 0], [0, 1]],
+        [[-0.5, 0], [-0.55, 0.6]], [[-0.55, 0.6], [-0.04, 0.25]],
+        [[0.5, 0], [0.55, 0.6]], [[0.55, 0.6], [0.04, 0.25]],
+        [[-0.24, 1], [-0.9, 0.9]], [[-0.9, 0.9], [-0.7, 1.65]],
+        [[0.24, 1], [0.9, 0.9]], [[0.9, 0.9], [0.7, 1.65]],
       ],
     };
   }
@@ -787,14 +781,7 @@ function getGuideGeometry(pose: typeof routine[number]['name']): { head: GuidePo
   };
 }
 
-function getGuideAnchor(layout: VideoLayout, landmarks: NormalizedLandmark[] | null, pose: typeof routine[number]['name']): GuideAnchor {
-  const side = landmarks && pose === 'Squat' ? visibleSide(landmarks) : null;
-  if (landmarks && side !== null) {
-    const shoulder = toCanvasPoint(landmarks[11 + side], layout);
-    const hip = toCanvasPoint(landmarks[23 + side], layout);
-    const torsoHeight = Math.max(distance(shoulder, hip), layout.height * 0.08);
-    return { centerX: shoulder.x, shoulderY: shoulder.y, shoulderWidth: torsoHeight * 0.45, torsoHeight };
-  }
+function getGuideAnchor(layout: VideoLayout, landmarks: NormalizedLandmark[] | null): GuideAnchor {
   if (landmarks && isPoseFramed(landmarks, [11, 12, 23, 24], 0.3)) {
     const leftShoulder = toCanvasPoint(landmarks[11], layout);
     const rightShoulder = toCanvasPoint(landmarks[12], layout);
