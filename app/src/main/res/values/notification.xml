@@ -12,6 +12,8 @@
     <string name="notification_stop">Stop alarm</string>
     <string name="notification_snooze">Snooze %1$d min</string>
     <string name="notification_time_to_move">Time to move</string>
+    <string name="notification_missed_alarm_title">Missed alarm: %1$s</string>
+    <string name="notification_missed_alarm_detail">Rang for %1$d minutes (%2$s–%3$s). Stopped automatically after 10 minutes without activity.</string>
 
     <style name="AlarmNotificationButton">
         <item name="android:fontFamily">sans-serif-medium</item>

@@ -6,6 +6,7 @@ import android.app.AlarmManager
 import android.content.Context
 import android.content.Intent
 import android.os.Looper
+import android.text.format.DateFormat
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
@@ -32,6 +33,8 @@ import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowAlarmManager
+import java.time.Duration
+import java.util.Date
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "mdpi")
@@ -55,6 +58,55 @@ class AlarmNotificationTest {
     @After
     fun tearDown() {
         controller.destroy()
+    }
+
+    @Test
+    fun openingAlarmDismissesPopupWhileKeepingPlaybackAndControlsActive() {
+        val notification = ring(alarm(), remainingSnoozes = 2)
+
+        service.dismissNotificationPopup(1L)
+
+        val updated = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+        assertNotNull(updated)
+        assertNull(updated.fullScreenIntent)
+        assertTrue(NotificationCompat.getOngoing(updated))
+        assertTrue(NotificationCompat.getOnlyAlertOnce(updated))
+        assertEquals(Notification.GROUP_ALERT_SUMMARY, updated.groupAlertBehavior)
+        assertEquals(notification.contentIntent, updated.contentIntent)
+        assertEquals(1L to 2, AlarmForegroundService.ringingAlarm.value)
+        assertNull(service.finishedAlarmId.value)
+        for (content in listOf(updated.contentView, updated.bigContentView, updated.headsUpContentView)) {
+            val view = inflate(content, 320)
+            for (id in listOf(R.id.notification_start, R.id.notification_stop, R.id.notification_snooze)) {
+                assertEquals(View.VISIBLE, view.findViewById<View>(id).visibility)
+            }
+        }
+    }
+
+    @Test
+    fun openingStaleAlarmDoesNotDismissNewAlarmPopup() {
+        ring(alarm())
+        service.dismissNotificationPopup(1L)
+        val notification = ring(alarm(id = 2L))
+
+        service.dismissNotificationPopup(1L)
+
+        val current = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+        assertSame(notification, current)
+        assertNotNull(current.fullScreenIntent)
+        assertFalse(NotificationCompat.getOnlyAlertOnce(current))
+        assertEquals(2L to 1, AlarmForegroundService.ringingAlarm.value)
+    }
+
+    @Test
+    fun openingFinishedAlarmDoesNotRestoreNotification() {
+        ring(alarm())
+        service.finishRoutine(1L)
+
+        service.dismissNotificationPopup(1L)
+
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+        assertNull(AlarmForegroundService.ringingAlarm.value)
     }
 
     @Test
@@ -236,6 +288,123 @@ class AlarmNotificationTest {
         assertEquals(1L to 1, AlarmForegroundService.ringingAlarm.value)
         assertNull(service.finishedAlarmId.value)
         assertNotNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+    }
+
+    @Test
+    fun unattendedAlarmStopsAtTenMinutesAndLeavesASilentMissedAlarmNotification() {
+        val startedAt = System.currentTimeMillis()
+        ring(alarm().copy(vibrationEnabled = true, stopButtonDisabled = true))
+        val wakeLock = org.robolectric.shadows.ShadowPowerManager.getLatestWakeLock()
+        assertTrue(wakeLock.isHeld)
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+        assertEquals(1L to 1, AlarmForegroundService.ringingAlarm.value)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
+
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertEquals(1L, service.finishedAlarmId.value)
+        assertFalse(wakeLock.isHeld)
+        assertFalse(shadowOf(service.getSystemService(android.os.VibratorManager::class.java).defaultVibrator).isVibrating)
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+        val notification = manager.activeNotifications.single().notification
+        val timeFormat = DateFormat.getTimeFormat(context)
+        assertTrue(notification.`when` in startedAt..System.currentTimeMillis())
+        assertEquals("Missed alarm: Morning movement", notification.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+        assertEquals(
+            context.getString(
+                R.string.notification_missed_alarm_detail,
+                10,
+                timeFormat.format(Date(startedAt)),
+                timeFormat.format(Date(notification.`when`)),
+            ),
+            notification.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString(),
+        )
+        assertEquals(NotificationManager.IMPORTANCE_LOW, manager.getNotificationChannel(notification.channelId).importance)
+        assertNull(manager.getNotificationChannel(notification.channelId).sound)
+        assertFalse(manager.getNotificationChannel(notification.channelId).shouldVibrate())
+        assertFalse(NotificationCompat.getOngoing(notification))
+        assertTrue(notification.flags and Notification.FLAG_AUTO_CANCEL != 0)
+        assertNull(notification.fullScreenIntent)
+        assertFalse(shadowOf(notification.contentIntent).savedIntent.hasExtra(AlarmScheduler.EXTRA_ALARM_ID))
+    }
+
+    @Test
+    fun activityExtendsTheWindowAndNotificationReportsTheWholeRingingDuration() {
+        ring(alarm())
+        val wakeLock = org.robolectric.shadows.ShadowPowerManager.getLatestWakeLock()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+
+        service.recordActivity(1L)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+
+        assertEquals(1L to 1, AlarmForegroundService.ringingAlarm.value)
+        assertTrue(wakeLock.isHeld)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertFalse(wakeLock.isHeld)
+        assertTrue(manager.activeNotifications.single().notification.extras
+            .getCharSequence(Notification.EXTRA_TEXT).toString().startsWith("Rang for 19 minutes"))
+    }
+
+    @Test
+    fun automaticPresentationAndStaleActivityDoNotExtendTheWindow() {
+        ring(alarm())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+
+        service.dismissNotificationPopup(1L)
+        service.setRoutineLevel(1L, 1f)
+        service.recordActivity(2L)
+        service.onStartCommand(
+            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L), 0, 2,
+        )
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
+
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertEquals(1, manager.activeNotifications.size)
+    }
+
+    @Test
+    fun stoppingOrSnoozingCancelsTheMissedAlarmNotification() {
+        for (action in listOf(R.id.notification_stop, R.id.notification_snooze)) {
+            val notification = ring(alarm())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+            clickAction(notification, action)
+
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+
+            assertNull(AlarmForegroundService.ringingAlarm.value)
+            assertTrue(manager.activeNotifications.isEmpty())
+        }
+    }
+
+    @Test
+    fun replacingAnAlarmCancelsItsOldTimeoutAndStartsAFreshWindow() {
+        ring(alarm())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+        AlarmStore(context).save(listOf(alarm(id = 2L)))
+        service.onStartCommand(
+            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 2L), 0, 2,
+        )
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
+        assertEquals(2L to 0, AlarmForegroundService.ringingAlarm.value)
+        assertEquals(1, manager.activeNotifications.size)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
+
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertEquals("2", manager.activeNotifications.single().tag)
+    }
+
+    @Test
+    fun destroyingServiceCancelsItsTimeout() {
+        ring(alarm())
+        controller.destroy()
+
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(11))
+
+        assertTrue(manager.activeNotifications.none { it.notification.channelId == "missed_alarms" })
+        controller = Robolectric.buildService(AlarmForegroundService::class.java).create()
+        service = controller.get()
     }
 
     private fun clickAction(notification: Notification, actionId: Int) {

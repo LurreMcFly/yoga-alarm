@@ -59,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -137,6 +139,7 @@ internal fun CameraPermissionRoute(
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 alarmService = (binder as? AlarmForegroundService.LocalBinder)?.service
+                alarmService?.dismissNotificationPopup(alarm.id)
             }
             override fun onServiceDisconnected(name: ComponentName?) { alarmService = null }
         }
@@ -201,9 +204,13 @@ internal fun CameraPermissionRoute(
     }
     LaunchedEffect(alarmService, previewAudio, cameraStarted, foreground, uiState.started) {
         if (cameraStarted && uiState.started && foreground) {
+            var previousProgress = viewModel.progress.value.routine
             viewModel.progress.collect { value ->
-                if (isFiredAlarm) alarmService?.setRoutineLevel(alarm.id, value.alarmLevel)
-                else previewAudio.setLevel(value.alarmLevel)
+                if (isFiredAlarm) {
+                    alarmService?.setRoutineLevel(alarm.id, value.alarmLevel)
+                    if (value.routine > previousProgress) alarmService?.recordActivity(alarm.id)
+                } else previewAudio.setLevel(value.alarmLevel)
+                previousProgress = value.routine
             }
         } else {
             alarmService?.setRoutineLevel(alarm.id, 1f)
@@ -253,6 +260,15 @@ internal fun CameraPermissionRoute(
     }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF07100A))
+        .pointerInput(alarm.id, isFiredAlarm) {
+            if (isFiredAlarm) awaitPointerEventScope {
+                while (true) {
+                    if (awaitPointerEvent(PointerEventPass.Initial).type == PointerEventType.Press) {
+                        currentService?.recordActivity(alarm.id)
+                    }
+                }
+            }
+        }
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
         if (isOnboardingPractice && uiState.phase == RoutinePhase.COMPLETE) {
             OnboardingPracticeComplete(onContinue = onBack)
@@ -286,6 +302,7 @@ internal fun CameraPermissionRoute(
                 showTechnicalStop = isFiredAlarm && permissionDenied,
                 onSnooze = onSnooze,
                 onStartCamera = {
+                    alarmService?.recordActivity(alarm.id)
                     if (hasPermission) {
                         cameraStarted = true
                     } else {

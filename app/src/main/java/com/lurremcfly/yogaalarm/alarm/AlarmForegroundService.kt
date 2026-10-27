@@ -11,12 +11,16 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.Binder
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.View
 import android.widget.RemoteViews
+import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.lurremcfly.yogaalarm.MainActivity
@@ -25,6 +29,7 @@ import com.lurremcfly.yogaalarm.audio.AlarmAudio
 import com.lurremcfly.yogaalarm.data.AlarmStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.Date
 
 class AlarmForegroundService : Service() {
     private var audio: AlarmAudio? = null
@@ -32,18 +37,16 @@ class AlarmForegroundService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var activeAlarmId: Long? = null
     private var activeNotificationBuilder: NotificationCompat.Builder? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var inactivityTimeout: Runnable? = null
+    private var lastActivityAtMs = 0L
     private val notificationDismissedReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
-            if (intent.action != ACTION_NOTIFICATION_DISMISSED || activeAlarmId != alarmId) return
+            if (intent.action != ACTION_NOTIFICATION_DISMISSED) return
             // Android 14+ allows ongoing notifications to be swiped away while unlocked.
             // Restore only the active alarm's controls, without replaying its alert or UI.
-            val notification = activeNotificationBuilder
-                ?.setFullScreenIntent(null, false)
-                ?.setSilent(true)
-                ?.setOnlyAlertOnce(true)
-                ?.build() ?: return
-            getSystemService(NotificationManager::class.java).notify(AlarmScheduler.NOTIFICATION_ID, notification)
+            dismissNotificationPopup(alarmId)
         }
     }
     private val mutableFinishedAlarmId = MutableStateFlow<Long?>(null)
@@ -55,6 +58,21 @@ class AlarmForegroundService : Service() {
 
     fun setRoutineLevel(alarmId: Long, level: Float) {
         if (activeAlarmId == alarmId) audio?.setLevel(level)
+    }
+
+    fun recordActivity(alarmId: Long) {
+        if (activeAlarmId == alarmId) lastActivityAtMs = SystemClock.elapsedRealtime()
+    }
+
+    fun dismissNotificationPopup(alarmId: Long) {
+        if (activeAlarmId != alarmId) return
+        // Keep foreground playback and shade controls, but remove the heads-up alert.
+        val notification = activeNotificationBuilder
+            ?.setFullScreenIntent(null, false)
+            ?.setSilent(true)
+            ?.setOnlyAlertOnce(true)
+            ?.build() ?: return
+        getSystemService(NotificationManager::class.java).notify(AlarmScheduler.NOTIFICATION_ID, notification)
     }
 
     fun finishRoutine(alarmId: Long) {
@@ -190,7 +208,10 @@ class AlarmForegroundService : Service() {
         wakeLock?.takeIf { it.isHeld }?.release()
         wakeLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:active-alarm")
-            .apply { acquire(WAKE_LOCK_TIMEOUT_MS) }
+            .apply {
+                setReferenceCounted(false)
+                acquire(WAKE_LOCK_TIMEOUT_MS)
+            }
 
         audio?.close()
         audio = if (alarm.soundEnabled) {
@@ -210,6 +231,51 @@ class AlarmForegroundService : Service() {
             vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 500, 350, 500), 0))
         }
 
+        inactivityTimeout?.let(handler::removeCallbacks)
+        val startedAt = System.currentTimeMillis()
+        val startedAtElapsed = SystemClock.elapsedRealtime()
+        lastActivityAtMs = startedAtElapsed
+        val timeout = object : Runnable {
+            override fun run() {
+                if (activeAlarmId != alarmId) return
+                val now = SystemClock.elapsedRealtime()
+                val remaining = INACTIVITY_TIMEOUT_MS - (now - lastActivityAtMs)
+                if (remaining > 0L) {
+                    wakeLock?.acquire(WAKE_LOCK_TIMEOUT_MS)
+                    handler.postDelayed(this, remaining)
+                    return
+                }
+                val endedAt = System.currentTimeMillis()
+                val timeFormat = DateFormat.getTimeFormat(this@AlarmForegroundService)
+                val message = getString(
+                    R.string.notification_missed_alarm_detail,
+                    (now - startedAtElapsed) / 60_000L,
+                    timeFormat.format(Date(startedAt)),
+                    timeFormat.format(Date(endedAt)),
+                )
+                finishRoutine(alarmId)
+                val openApp = PendingIntent.getActivity(
+                    this@AlarmForegroundService,
+                    0,
+                    Intent(this@AlarmForegroundService, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                )
+                val notification = NotificationCompat.Builder(this@AlarmForegroundService, MISSED_ALARM_CHANNEL_ID)
+                    .setSmallIcon(R.drawable.ic_alarm)
+                    .setContentTitle(getString(R.string.notification_missed_alarm_title, alarm.name))
+                    .setContentText(message)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                    .setContentIntent(openApp)
+                    .setAutoCancel(true)
+                    .setSilent(true)
+                    .setWhen(endedAt)
+                    .build()
+                getSystemService(NotificationManager::class.java).notify(alarmId.toString(), MISSED_ALARM_NOTIFICATION_ID, notification)
+            }
+        }
+        inactivityTimeout = timeout
+        handler.postDelayed(timeout, INACTIVITY_TIMEOUT_MS)
         mutableRingingAlarm.value = alarmId to remainingSnoozes
         return START_REDELIVER_INTENT
     }
@@ -224,6 +290,8 @@ class AlarmForegroundService : Service() {
     }
 
     private fun releasePlaybackResources() {
+        inactivityTimeout?.let(handler::removeCallbacks)
+        inactivityTimeout = null
         audio?.close()
         audio = null
         vibrator?.cancel()
@@ -241,6 +309,8 @@ class AlarmForegroundService : Service() {
         const val ACTION_STOP_ALARM = "com.lurremcfly.yogaalarm.STOP_ALARM"
         private const val ACTION_NOTIFICATION_DISMISSED = "com.lurremcfly.yogaalarm.NOTIFICATION_DISMISSED"
         const val CHANNEL_ID = "active_alarm_v2"
+        private const val MISSED_ALARM_CHANNEL_ID = "missed_alarms"
+        private const val MISSED_ALARM_NOTIFICATION_ID = 7002
 
         fun ensureNotificationChannel(context: Context) {
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -251,8 +321,16 @@ class AlarmForegroundService : Service() {
                     lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
                 },
             )
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(MISSED_ALARM_CHANNEL_ID, "Missed alarms", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Alarms stopped after ten minutes without activity"
+                    setSound(null, null)
+                    enableVibration(false)
+                },
+            )
         }
 
+        private const val INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000L
         private const val WAKE_LOCK_TIMEOUT_MS = 15 * 60 * 1000L
     }
 }
