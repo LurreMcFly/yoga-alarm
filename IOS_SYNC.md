@@ -517,7 +517,7 @@ Validation status:
 
 Status: pending
 Date: 2026-10-04
-Android commit: <pending> (2026-10-24 completion-number clipping fix; 2026-10-17 pause markers and completion-based eligibility; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
+Android commit: <pending> (2026-10-27 grey pose guide removal; 2026-10-24 completion-number clipping fix; 2026-10-17 pause markers and completion-based eligibility; previous streak update: 31375f9c24d5046f7eb1ad8dda6433d3a634f4b3)
 
 iOS implementation progress (2026-10-23):
 - [x] Sunrise completion with measured whole-number docking, entrance-settled three-second hold, multi-digit/zero handling, and usable Done/back controls.
@@ -531,6 +531,7 @@ iOS implementation progress (2026-10-23):
 - [ ] Apply the 2026-10-23 correction: pause markers appear only on or before the current local date; future dates stay empty.
 - [x] Scheduled-day accounting and migration rules in SYNC-001 are present without restoring previously reset counts.
 - [ ] Restore the specified pose arrival timing (1,000 ms hold / 650 ms travel); `TravelingPoseIllustration` currently uses 250 / 300 ms (also SYNC-007).
+- [ ] Apply the 2026-10-27 grey pose guide removal for all nine poses and verify it stays absent throughout finding, holding, tracking loss, transitions, and camera retry.
 - [ ] Run iOS animation, recreation, rapid-tracking/toggle, midnight, large-text, and Reduce Motion acceptance checks.
 
 Changes:
@@ -579,7 +580,7 @@ Number sizing and edge cases:
 
 #### 3. Find → hold → return
 
-- Keep the existing finding guidance and camera preview. The pose target overlay fades out when detection locks, using 220 ms; it remains visible while finding, with its existing lower opacity when almost matched.
+- Updated 2026-10-27: remove the grey target-pose silhouette from the camera preview for all nine poses (Mountain, Warrior II, Tree, Squat, Chair, Forward Fold, Triangle, Goddess, and Wide Leg Fold), in both alarm and test routines. It must never appear, including before tracking starts, while finding or almost matched, during holds, after tracking loss, between poses, or after camera retry. This is unconditional, with no setting to restore it. Preserve the thin white/green live body-tracking lines, pose illustrations and their arrival animation, instructions, framing/error guidance, detection thresholds, hold progress, and countdown behavior. Android reference: `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineCameraScreen.kt` (`RoutineOverlays` and `RoutineSkeletonOverlay`).
 - On entering HOLDING, show the existing countdown in 84-point medium text inside a 144-point progress ring, with a 2-point round-capped stroke. The ring is lime `#C9EE73`; its track is white at 12% opacity. Pulse the container once to 107% over 160 ms, then spring to 100% (damping 0.6).
 - Under the ring, show “Hold” and “Stay with it while the alarm fades”. Keep the feedback centered and reserve at least 100 points of vertical space to reduce ring movement when the message changes.
 - On tracking loss, retain the ring and countdown with the saved hold progress. Stop counting down; do not reset, drain, hide, or continue filling the ring. Settle any active pulse to normal size and transition the ring color to white at 45% opacity over 220 ms.

@@ -10,7 +10,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -81,7 +80,6 @@ import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlin.math.hypot
 
 @Composable
 fun RoutineCameraScreen(
@@ -128,7 +126,7 @@ fun RoutineCameraScreen(
         }
 
         if (uiState.phase != RoutinePhase.COMPLETE) {
-            RoutineOverlays(frames, guidePose, uiState)
+            RoutineOverlays(frames, uiState)
         }
         Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(210.dp)
             .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Black.copy(alpha = 0.3f), Color.Transparent))))
@@ -354,18 +352,9 @@ private fun SelfiePreview(onPoseFrame: (PoseFrame) -> Unit, onCameraError: (Stri
 }
 
 @Composable
-private fun RoutineOverlays(frames: StateFlow<PoseFrame?>, pose: YogaPose, state: RoutineUiState) {
+private fun RoutineOverlays(frames: StateFlow<PoseFrame?>, state: RoutineUiState) {
     val frame by frames.collectAsStateWithLifecycle()
     val locked = state.detected && state.phase != RoutinePhase.TRANSITION
-    val targetAlpha by animateFloatAsState(
-        targetValue = when {
-            locked || !state.cameraReady || state.error != null -> 0f
-            state.almostThere && state.phase != RoutinePhase.TRANSITION -> 0.2f
-            else -> 1f
-        },
-        animationSpec = tween(220), label = "Target visibility",
-    )
-    if (targetAlpha > 0.01f) RoutinePoseGuide(pose, frame, targetAlpha)
     RoutineSkeletonOverlay(frame, locked)
 }
 
@@ -592,152 +581,6 @@ private fun poseInstruction(pose: YogaPose): String = when (pose) {
         YogaPose.GODDESS -> "Bend both knees wide and lift your hands"
         YogaPose.WIDE_LEG_FOLD -> "Fold between wide, straight legs"
 }
-
-@Composable
-private fun RoutinePoseGuide(pose: YogaPose, frame: PoseFrame?, alpha: Float) {
-    val geometry = remember(pose) { guideGeometry(pose) }
-    Canvas(modifier = Modifier.fillMaxSize()) {
-        val projection = frame?.let { PreviewProjection(it, size.width, size.height) }
-        fun mapped(index: Int): Offset? {
-            if (projection == null) return null
-            val point = frame?.landmarks?.get(index)?.takeIf { it.isDrawable() } ?: return null
-            return Offset(projection.x(point.x), projection.y(point.y))
-        }
-        val sidePose = pose == YogaPose.CHAIR || pose == YogaPose.FORWARD_FOLD
-        val side = if ((frame?.landmarks?.get(11)?.visibility ?: 0f) >= (frame?.landmarks?.get(12)?.visibility ?: 0f)) 0 else 1
-        val leftShoulder = mapped(11)
-        val rightShoulder = mapped(12)
-        val leftHip = mapped(23)
-        val rightHip = mapped(24)
-        val shoulderMid = if (sidePose) mapped(11 + side) ?: Offset(size.width / 2f, size.height * 0.4f)
-            else if (leftShoulder != null && rightShoulder != null) midpoint(leftShoulder, rightShoulder)
-            else Offset(size.width / 2f, size.height * 0.4f)
-        val hipMid = if (sidePose) mapped(23 + side) ?: Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
-            else if (leftHip != null && rightHip != null) midpoint(leftHip, rightHip)
-            else Offset(shoulderMid.x, shoulderMid.y + size.height * 0.17f)
-        val shoulderWidth = if (leftShoulder != null && rightShoulder != null)
-            distance(leftShoulder, rightShoulder).coerceAtLeast(size.width * 0.12f) else size.width * 0.2f
-        val torsoHeight = distance(shoulderMid, hipMid).coerceAtLeast(shoulderWidth * 0.8f)
-        var origin = shoulderMid
-        var xScale = if (sidePose) torsoHeight else shoulderWidth
-        var yScale = torsoHeight
-        if (sidePose) {
-            val forwardPoint = mapped(if (pose == YogaPose.FORWARD_FOLD) 27 + side else 25 + side)
-            if (forwardPoint != null && forwardPoint.x < hipMid.x) xScale = -xScale
-        }
-        if (pose == YogaPose.WIDE_LEG_FOLD) {
-            origin = hipMid
-            val leftFoot = mapped(27)
-            val rightFoot = mapped(28)
-            xScale = if (leftFoot != null && rightFoot != null) distance(leftFoot, rightFoot) / 2.5f else shoulderWidth
-            yScale = if (leftFoot != null && rightFoot != null)
-                ((midpoint(leftFoot, rightFoot).y - hipMid.y) / 1.8f).coerceAtLeast(shoulderWidth * 0.4f) else torsoHeight
-        }
-        fun guidePoint(point: Offset) = Offset(origin.x + point.x * xScale, origin.y + point.y * yScale)
-        val bodyWidth = maxOf(26.dp.toPx(), shoulderWidth * 0.5f)
-        val guideColor = Color(0xFFB7BDB8).copy(alpha = 0.32f * alpha)
-        geometry.segments.forEach { (from, to) ->
-            drawLine(guideColor, guidePoint(from), guidePoint(to), bodyWidth, StrokeCap.Round)
-        }
-        drawCircle(guideColor, bodyWidth * 0.52f, guidePoint(geometry.head))
-    }
-}
-
-private data class GuideGeometry(
-    val head: Offset,
-    val segments: List<Pair<Offset, Offset>>,
-)
-
-private fun guideGeometry(pose: YogaPose): GuideGeometry = when (pose) {
-    YogaPose.WARRIOR_TWO -> GuideGeometry(
-        Offset(0f, -0.55f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 1f),
-            Offset(-0.5f, 0f) to Offset(-1.05f, 0f), Offset(-1.05f, 0f) to Offset(-1.65f, 0f),
-            Offset(0.5f, 0f) to Offset(1.05f, 0f), Offset(1.05f, 0f) to Offset(1.65f, 0f),
-            Offset(-0.24f, 1f) to Offset(-0.95f, 1.75f), Offset(-0.95f, 1.75f) to Offset(-1.45f, 2.55f),
-            Offset(0.24f, 1f) to Offset(0.9f, 1.65f), Offset(0.9f, 1.65f) to Offset(1.45f, 2.45f),
-        ),
-    )
-    YogaPose.TREE -> GuideGeometry(
-        Offset(0f, -0.55f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 1f),
-            Offset(-0.5f, 0f) to Offset(-0.78f, -0.55f), Offset(-0.78f, -0.55f) to Offset(-0.18f, -1.02f),
-            Offset(0.5f, 0f) to Offset(0.78f, -0.55f), Offset(0.78f, -0.55f) to Offset(0.18f, -1.02f),
-            Offset(-0.24f, 1f) to Offset(-0.25f, 2.55f),
-            Offset(0.24f, 1f) to Offset(0.9f, 1.62f), Offset(0.9f, 1.62f) to Offset(-0.12f, 1.95f),
-        ),
-    )
-    YogaPose.CHAIR -> GuideGeometry(
-        Offset(0.02f, -0.28f),
-        listOf(
-            Offset(0f, 0f) to Offset(-0.35f, 0.92f),
-            Offset(0f, 0f) to Offset(0.38f, -0.48f), Offset(0.38f, -0.48f) to Offset(0.75f, -0.95f),
-            Offset(-0.35f, 0.92f) to Offset(0.2f, 1.45f), Offset(0.2f, 1.45f) to Offset(-0.15f, 2.2f),
-        ),
-    )
-    YogaPose.SQUAT -> GuideGeometry(
-        Offset(0f, -0.45f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 1f),
-            Offset(-0.5f, 0f) to Offset(-0.55f, 0.6f), Offset(-0.55f, 0.6f) to Offset(-0.04f, 0.25f),
-            Offset(0.5f, 0f) to Offset(0.55f, 0.6f), Offset(0.55f, 0.6f) to Offset(0.04f, 0.25f),
-            Offset(-0.24f, 1f) to Offset(-0.9f, 0.9f), Offset(-0.9f, 0.9f) to Offset(-0.7f, 1.65f),
-            Offset(0.24f, 1f) to Offset(0.9f, 0.9f), Offset(0.9f, 0.9f) to Offset(0.7f, 1.65f),
-        ),
-    )
-    YogaPose.FORWARD_FOLD -> GuideGeometry(
-        Offset(0.12f, -0.25f),
-        listOf(
-            Offset(0f, 0f) to Offset(-0.55f, 0.8f),
-            Offset(0f, 0f) to Offset(0.65f, 0.15f), Offset(0.65f, 0.15f) to Offset(1.1f, 0.23f),
-            Offset(-0.55f, 0.8f) to Offset(0.35f, 0.85f), Offset(0.35f, 0.85f) to Offset(1.25f, 0.9f),
-        ),
-    )
-    YogaPose.TRIANGLE -> GuideGeometry(
-        Offset(-0.42f, -0.34f),
-        listOf(
-            Offset(0f, 0f) to Offset(0.72f, 1f),
-            Offset(-0.12f, 0f) to Offset(-0.15f, -0.75f), Offset(-0.15f, -0.75f) to Offset(-0.18f, -1.55f),
-            Offset(0.12f, 0f) to Offset(0.16f, 0.8f), Offset(0.16f, 0.8f) to Offset(0.18f, 1.62f),
-            Offset(0.52f, 1f) to Offset(-0.72f, 1.75f), Offset(-0.72f, 1.75f) to Offset(-1.45f, 2.45f),
-            Offset(0.92f, 1f) to Offset(1.35f, 1.75f), Offset(1.35f, 1.75f) to Offset(1.8f, 2.42f),
-        ),
-    )
-    YogaPose.GODDESS -> GuideGeometry(
-        Offset(0f, -0.55f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 1f),
-            Offset(-0.5f, 0f) to Offset(-1.0f, 0.38f), Offset(-1.0f, 0.38f) to Offset(-0.98f, -0.45f),
-            Offset(0.5f, 0f) to Offset(1.0f, 0.38f), Offset(1.0f, 0.38f) to Offset(0.98f, -0.45f),
-            Offset(-0.24f, 1f) to Offset(-1.15f, 1.55f), Offset(-1.15f, 1.55f) to Offset(-1.52f, 2.35f),
-            Offset(0.24f, 1f) to Offset(1.15f, 1.55f), Offset(1.15f, 1.55f) to Offset(1.52f, 2.35f),
-        ),
-    )
-    YogaPose.WIDE_LEG_FOLD -> GuideGeometry(
-        Offset(0f, 0.8f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 0.5f),
-            Offset(-0.5f, 0.5f) to Offset(-0.5f, 1.1f), Offset(-0.5f, 1.1f) to Offset(-0.5f, 1.7f),
-            Offset(0.5f, 0.5f) to Offset(0.5f, 1.1f), Offset(0.5f, 1.1f) to Offset(0.5f, 1.7f),
-            Offset(-0.2f, 0f) to Offset(-0.75f, 0.9f), Offset(-0.75f, 0.9f) to Offset(-1.25f, 1.8f),
-            Offset(0.2f, 0f) to Offset(0.75f, 0.9f), Offset(0.75f, 0.9f) to Offset(1.25f, 1.8f),
-        ),
-    )
-    YogaPose.MOUNTAIN -> GuideGeometry(
-        Offset(0f, -0.55f),
-        listOf(
-            Offset(0f, 0f) to Offset(0f, 1f),
-            Offset(-0.5f, 0f) to Offset(-0.62f, 0.7f), Offset(-0.62f, 0.7f) to Offset(-0.52f, 1.4f),
-            Offset(0.5f, 0f) to Offset(0.62f, 0.7f), Offset(0.62f, 0.7f) to Offset(0.52f, 1.4f),
-            Offset(-0.24f, 1f) to Offset(-0.3f, 2.55f), Offset(0.24f, 1f) to Offset(0.3f, 2.55f),
-        ),
-    )
-}
-
-private fun midpoint(a: Offset, b: Offset) = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
-private fun distance(a: Offset, b: Offset) = hypot(a.x - b.x, a.y - b.y)
 
 @Composable
 private fun RoutineSkeletonOverlay(frame: PoseFrame?, detected: Boolean) {
