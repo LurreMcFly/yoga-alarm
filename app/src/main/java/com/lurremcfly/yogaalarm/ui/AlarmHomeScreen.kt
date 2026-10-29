@@ -55,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -140,6 +141,13 @@ internal fun AlarmHomeScreen(
     onReorderAlarms: (List<AlarmConfig>) -> Unit,
     reorderingEnabled: Boolean = true,
     onboardingTargets: OnboardingTargets? = null,
+    trialStatus: String? = null,
+    trialMilestone: Int? = null,
+    offerAvailable: Boolean = false,
+    onTrialMilestonePresented: (Int) -> Unit = {},
+    onDismissTrialMilestone: () -> Unit = {},
+    onViewFreeSettings: () -> Unit = {},
+    onRetryOffer: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     var displayedAlarms by remember(alarms) { mutableStateOf(alarms) }
@@ -300,7 +308,7 @@ internal fun AlarmHomeScreen(
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        "GET PRO",
+                                        if (trialStatus != null) "KEEP PRO" else "GET PRO",
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                         color = Forest,
                                         fontSize = 10.sp,
@@ -318,6 +326,28 @@ internal fun AlarmHomeScreen(
                 }
             }
 
+            if (!isPro && trialStatus != null) item(key = "preview") {
+                Column(Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+                    Text(trialStatus, color = Forest, fontWeight = FontWeight.SemiBold)
+                    if (trialMilestone == 2 && offerAvailable) {
+                        LaunchedEffect(trialMilestone) { onTrialMilestonePresented(2) }
+                        Text("Make this routine yours. Keep Pro with a one-time purchase or subscription.", color = MutedInk)
+                        Row {
+                            TextButton(onClick = onOpenPro) { Text("Keep Pro") }
+                            TextButton(onClick = onDismissTrialMilestone) { Text("Not now") }
+                        }
+                    } else if (trialMilestone == 4) {
+                        LaunchedEffect(trialMilestone) { onTrialMilestonePresented(4) }
+                        Text("1 Pro alarm day left. After your next qualifying completion, future alarms use your free routine unless you buy Pro.", color = MutedInk)
+                        TextButton(onClick = onDismissTrialMilestone) { Text("Got it") }
+                    }
+                    TextButton(onClick = onViewFreeSettings) { Text("View free settings") }
+                    if (trialMilestone in listOf(2, 5) && !offerAvailable) {
+                        Text("Purchase offers are unavailable. Your alarms remain ready.", color = MutedInk)
+                        TextButton(onClick = onRetryOffer) { Text("Retry offers") }
+                    }
+                }
+            }
             item(key = "streak") {
                 Column {
                     StreakCard(streakDays, previousStreakDays, bestStreakDays, today, completedDates, pausedDates, scheduledDates, weekStartsOnSunday, onStreakPresented)

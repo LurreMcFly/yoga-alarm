@@ -4,10 +4,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.lurremcfly.yogaalarm.data.AlarmStore
+import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in supportedActions) return
+        if (intent.action == Intent.ACTION_BOOT_COMPLETED) AlarmOccurrenceStore(context).clearSnoozes()
         AlarmStore(context).load().filter { it.enabled }.forEach {
             AlarmScheduler.schedule(context, it, preserveSnooze = true)
         }

@@ -1,5 +1,29 @@
 # Android simplification review and plan
 
+## Cleanup follow-up — 2026-10-29
+
+Reviewed the current uncommitted monetization implementation, with an independent sol-agent reference/diff review. This follow-up covers Android source and resource references; it is not a separate audit of the website/video projects. The historical findings below are not a current deletion list.
+
+Implemented:
+
+- Removed private `PosePickerSheet` and its `LazyRow` import from `ui/AlarmEditorScreen.kt`. It has no callers; the active editor uses `PoseCarouselCard`. This removes a superseded selection implementation and its outdated three-free-poses copy. The diagnostic prototype remains intentionally retained under the earlier preservation decision.
+- Removed `MainActivity`'s unused `firedAlarmRemainingSnoozes` state, its writes, and the unused root parameter. `YogaAlarmRoot` already reads the actual remaining count from the durable occurrence snapshot. Notification/service snooze extras and validation remain active and are retained.
+- Consolidated the three identical restoration acknowledgments and the two completion-to-streak recovery paths in `ui/YogaAlarmRoot.kt`. Recovery still records the original timestamp before acknowledging the occurrence journal, and failures remain retryable. Removed an implied rollout check and an unused default token argument; every close call supplies its occurrence token explicitly.
+- Removed an unused import and nullable assertions/unreachable null copy in `ui/AppInfoSheets.kt`, using an immutable snapshot of the selected plan for display. Selection, checkout guards and localized prices are unchanged.
+
+Remaining technical debt, with concrete boundaries:
+
+| Finding | Evidence and next step |
+| --- | --- |
+| Persistence work during composition | `YogaAlarmRoot.safeHome` calls `AlarmOccurrenceStore.hasInFlight()`, which decodes stored occurrence JSON and alarm snapshots. Move this to explicitly refreshed/observable state only with coverage for delivery, snooze, completion, cancellation and resume; simply caching it could expose commerce over an active alarm. |
+| UI owns several coordinated state transitions | `YogaAlarmRoot` still coordinates billing reconciliation, editor rebasing, completion persistence and milestone presentation through multiple effects. Future changes should consolidate the relevant transition and its failure handling at the existing store boundary, preserving occurrence priority and transaction ordering, rather than adding more unrelated flags or a general repository framework. |
+| Intentionally retained diagnostic code | `CameraSpikeScreen`, `PoseDebugViewModel`, their framing helpers and diagnostic metrics remain unreachable from the shipped UI. Prior project review explicitly retained them for uncertain diagnostic intent; they are recorded as inactive, not silently deleted. Legacy sound aliases/defaults are active saved-data compatibility, not dead code. |
+| Production integration seams | The recoverable purchase verifier/cache and analytics variants remain required and referenced. Missing production credentials/backend integration does not make these implementations dead code. |
+
+No shared product behavior or persisted schema changed, so no new iOS sync entry is needed. Existing monetization and notification Start changes were preserved.
+
+Validation: debug Kotlin compilation and all 61 tests in the five selected notification, routine ViewModel, occurrence-store, wake-completion recovery and trial-store suites passed. Reference/import checks and `git diff --check` passed. No new tests were added for these behavior-preserving removals and consolidations; existing regressions exercised the affected lifecycle/recovery paths. No full build, release compilation or device acceptance was run for this cleanup.
+
 Reviewed 2026-09-19 against working tree based on `47e8954`. Implementation began after the user approved the plan and required preserving future-use and uncertain code. The original findings below retain their review-time file references; the status table records the resulting changes.
 
 ## Implementation status — 2026-09-19

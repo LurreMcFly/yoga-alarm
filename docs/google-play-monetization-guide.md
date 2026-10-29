@@ -35,17 +35,17 @@ Subscription product: yoga_alarm_pro
   Yearly base plan:  yearly  — USD 19.99/year
 
 One-time product: yoga_alarm_pro_lifetime
-  Purchase option: buy — USD 29.99 once
+  Purchase option: yogaalarmprolifetime (Buy) — USD 29.99 once
 ```
 
 - The app itself is free to download and sells digital Pro access in-app.
 - Monthly and yearly are auto-renewing base plans of the same subscription.
 - Lifetime is a non-consumable `Buy` purchase, not a subscription.
-- There is no launch trial or introductory offer.
+- Do not configure a Google Play trial or introductory offer. The authored app-managed five-successful-alarm-day preview is disabled for public rollout; see [preview and release gates](play-billing-setup.md#free-and-pro-access).
 - Use a seven-day subscription grace period.
 - Use Google's automatically calculated account-hold duration.
 - Enable resubscription.
-- The existing three-choice paywall remains visually unchanged.
+- Keep lifetime, yearly, and monthly visible, in that order. Default to lifetime when available after initial catalog loading; all displayed prices come from Play.
 - Google Play supplies localized production prices.
 - Yoga Alarm does not require a customer account.
 
@@ -275,7 +275,7 @@ Do not add trials, introductory offers, prepaid plans, or installment plans for 
 5. Description: `One-time purchase that unlocks all Yoga Alarm Pro features.`
 6. Complete the tax/compliance classification accurately.
 7. Create its purchase option:
-   - Purchase option ID: `buy`.
+   - Purchase option ID: `yogaalarmprolifetime` (the existing permanent ID).
    - Purchase type: **Buy**.
    - Multiple quantities: **Off**.
    - It is permanent digital Pro access, not Rent.
@@ -309,21 +309,23 @@ At this point, provide the following Console evidence to the implementation work
 
 - Screenshot showing subscription product `yoga_alarm_pro`.
 - Screenshot showing active `monthly` and `yearly` base plans.
-- Screenshot showing active lifetime product and `buy` purchase option.
+- Screenshot showing active lifetime product and `yogaalarmprolifetime` purchase option.
 - Countries/regions chosen for each.
 - The internal tester email account, without exposing its password.
 - Confirmation that the first internal AAB is published.
 
-The local app must then be updated to:
+The current Android client already queries the catalog below; verify it against the configured internal-track build:
 
 - Query one subscription product and select monthly/yearly by base-plan ID.
-- Query the lifetime one-time product and `buy` purchase option.
-- Keep the existing three-card frontend.
+- Query the lifetime one-time product and `yogaalarmprolifetime` purchase option.
+- Keep three choices ordered lifetime, yearly, monthly; preserve explicit selection during catalog refresh.
 - Display Play-localized prices.
 - Remove debug Pro activation from release builds.
 - Send purchase tokens to the verification backend before permanently granting Pro.
 
-That implementation will require a new version code and a second internal-track AAB.
+The remaining trusted verification/backend work requires an updated internal-track AAB and acceptance checks. The current client verifier is not server verification and cannot supply the authenticated offline cache contract. Do not enable the public preview until that dependency and device acceptance are complete.
+
+The preview and Firebase measurement paths are authored, disabled deployment options. Default builds exclude the analytics SDK/plugin. Enabling analytics requires the real Firebase configuration, privacy approval build flag, updated published disclosures/Play answers, and verified delivery; public preview rollout additionally requires the billing readiness flag. Local test execution cannot establish Console configuration, production revenue attribution, or published-policy readiness. See [configuration gates](play-billing-setup.md#measurement-configuration-and-release-gates).
 
 ## Phase L — install and test through Google Play
 

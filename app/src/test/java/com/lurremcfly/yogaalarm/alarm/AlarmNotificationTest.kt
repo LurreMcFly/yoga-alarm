@@ -12,8 +12,10 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
+import com.lurremcfly.yogaalarm.MainActivity
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.data.AlarmStore
+import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -58,6 +60,104 @@ class AlarmNotificationTest {
     @After
     fun tearDown() {
         controller.destroy()
+    }
+
+    @Test
+    fun snoozedOccurrenceCannotBeReattachedBeforeItsDelivery() {
+        ring(alarm())
+        val token = AlarmForegroundService.ringingOccurrenceToken.value!!
+        AlarmOccurrenceStore(context).snooze(token, 0)
+        service.finishRoutine(1L, token, persistStop = false)
+        controller.destroy()
+        controller = Robolectric.buildService(AlarmForegroundService::class.java).create()
+        service = controller.get()
+        service.onStartCommand(Intent(context, AlarmForegroundService::class.java)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L)
+            .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, token), 0, 1)
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+    }
+
+    @Test
+    fun staleStopAndCompletedReattachmentCannotStopNextOccurrenceOfSameAlarm() {
+        ring(alarm())
+        val oldToken = AlarmForegroundService.ringingOccurrenceToken.value!!
+        service.finishRoutine(1L, oldToken, persistStop = false)
+        val completedAt = java.time.ZonedDateTime.now()
+        val editor = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).edit()
+        AlarmOccurrenceStore(context).stageCompleted(editor, oldToken, completedAt)
+        assertTrue(editor.commit())
+        val current = ring(alarm())
+        val nextToken = AlarmForegroundService.ringingOccurrenceToken.value
+
+        service.onStartCommand(Intent(context, AlarmForegroundService::class.java)
+            .setAction(AlarmForegroundService.ACTION_STOP_ALARM)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L)
+            .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, oldToken), 0, 2)
+        service.onStartCommand(Intent(context, AlarmForegroundService::class.java)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L)
+            .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, oldToken), 0, 3)
+
+        assertEquals(nextToken, AlarmForegroundService.ringingOccurrenceToken.value)
+        assertSame(current, shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+    }
+
+    @Test
+    fun completedOccurrenceCannotRestartPlaybackAfterServiceRecreation() {
+        ring(alarm())
+        val token = AlarmForegroundService.ringingOccurrenceToken.value!!
+        service.finishRoutine(1L, token, persistStop = false)
+        val editor = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).edit()
+        AlarmOccurrenceStore(context).stageCompleted(editor, token, java.time.ZonedDateTime.now())
+        assertTrue(editor.commit())
+        controller.destroy()
+        controller = Robolectric.buildService(AlarmForegroundService::class.java).create()
+        service = controller.get()
+
+        service.onStartCommand(Intent(context, AlarmForegroundService::class.java)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L)
+            .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, token), 0, 1)
+
+        assertNull(AlarmForegroundService.ringingAlarm.value)
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+    }
+
+    @Test
+    fun startRequestsCameraFromEveryNotificationLayoutWithoutChangingOtherOpenActions() {
+        val notification = ring(alarm(), remainingSnoozes = 2)
+        val application = shadowOf(RuntimeEnvironment.getApplication())
+
+        for (content in listOf(notification.contentView, notification.bigContentView, notification.headsUpContentView)) {
+            assertTrue(inflate(content, 320).findViewById<View>(R.id.notification_start).performClick())
+            val intent = application.nextStartedActivity
+            assertEquals(MainActivity::class.java.name, intent.component?.className)
+            assertEquals(AlarmScheduler.ACTION_START_CAMERA, intent.action)
+            assertEquals(1L, intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L))
+            assertEquals(2, intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, -1))
+            assertTrue(intent.flags and Intent.FLAG_ACTIVITY_SINGLE_TOP != 0)
+        }
+
+        for (open in listOf(notification.contentIntent, notification.fullScreenIntent)) {
+            assertNull(shadowOf(open).savedIntent.action)
+            assertEquals(1L, shadowOf(open).savedIntent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L))
+        }
+        assertEquals(1L to 2, AlarmForegroundService.ringingAlarm.value)
+        assertNull(service.finishedAlarmId.value)
+    }
+
+    @Test
+    fun startKeepsCurrentSnoozeCountAfterNotificationIsRecreated() {
+        ring(alarm(), remainingSnoozes = 2)
+        ring(alarm(), remainingSnoozes = 1)
+        service.dismissNotificationPopup(1L)
+        val notification = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+
+        assertTrue(inflate(notification.bigContentView, 320).findViewById<View>(R.id.notification_start).performClick())
+        val intent = shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity
+        assertEquals(AlarmScheduler.ACTION_START_CAMERA, intent.action)
+        assertEquals(1, intent.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, -1))
+        assertNull(shadowOf(notification.contentIntent).savedIntent.action)
+        assertNull(notification.fullScreenIntent)
     }
 
     @Test
@@ -355,7 +455,8 @@ class AlarmNotificationTest {
         service.setRoutineLevel(1L, 1f)
         service.recordActivity(2L)
         service.onStartCommand(
-            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L), 0, 2,
+            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 1L)
+                .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, AlarmForegroundService.ringingOccurrenceToken.value), 0, 2,
         )
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
 
@@ -383,7 +484,8 @@ class AlarmNotificationTest {
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(9))
         AlarmStore(context).save(listOf(alarm(id = 2L)))
         service.onStartCommand(
-            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 2L), 0, 2,
+            Intent(context, AlarmForegroundService::class.java).putExtra(AlarmScheduler.EXTRA_ALARM_ID, 2L)
+                .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, AlarmOccurrenceStore(context).begin(alarm(id = 2L), 0).token), 0, 2,
         )
 
         shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(1))
@@ -431,11 +533,12 @@ class AlarmNotificationTest {
 
     private fun ring(alarm: AlarmConfig, remainingSnoozes: Int = 1): Notification {
         // A new occurrence is required when changing settings for the same alarm.
-        AlarmForegroundService.ringingAlarm.value?.first?.let(service::finishRoutine)
+        AlarmForegroundService.ringingAlarm.value?.first?.let { service.finishRoutine(it) }
         AlarmStore(context).save(listOf(alarm))
         service.onStartCommand(
             Intent(context, AlarmForegroundService::class.java)
                 .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
+                .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, AlarmOccurrenceStore(context).begin(alarm, remainingSnoozes).token)
                 .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes),
             0,
             1,

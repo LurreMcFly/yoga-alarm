@@ -62,6 +62,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
 
     private var alarm = AlarmConfig.create()
     private var started = false
+    private var occurrenceToken: String? = null
     private var poseIndex = 0
     private var phase = RoutinePhase.FINDING
     private var holdMs = 0L
@@ -75,13 +76,14 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     private var previousTickAtMs = 0L
     private var alarmLevel = 1f
 
-    fun start(config: AlarmConfig) {
-        if (started && alarm == config) {
+    fun start(config: AlarmConfig, token: String? = null) {
+        if (started && alarm == config && occurrenceToken == token) {
             resume()
             return
         }
         ticker?.cancel()
         alarm = config
+        occurrenceToken = token
         started = true
         poseIndex = 0
         phase = RoutinePhase.FINDING
@@ -92,6 +94,17 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
         previousTickAtMs = nowMs()
         publish()
         resume()
+    }
+
+    fun restoreCompleted(config: AlarmConfig, token: String) {
+        ticker?.cancel()
+        alarm = config
+        occurrenceToken = token
+        started = true
+        sessionActive = false
+        phase = RoutinePhase.COMPLETE
+        poseIndex = config.routine.lastIndex.coerceAtLeast(0)
+        publish()
     }
 
     fun resume() {

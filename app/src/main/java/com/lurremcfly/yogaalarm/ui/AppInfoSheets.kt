@@ -32,9 +32,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,8 @@ import java.util.Locale
 @Composable
 fun AppSettingsSheet(
     entitlement: ProEntitlement?,
+    trialStatus: String? = null,
+    onRestorePurchases: () -> Unit = {},
     subscriptionAutoRenewing: Boolean?,
     weekStartsOnSunday: Boolean,
     onWeekStartsOnSundayChange: (Boolean) -> Unit,
@@ -137,6 +140,8 @@ fun AppSettingsSheet(
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Yoga Alarm Pro", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    if (entitlement == null) trialStatus?.let { Text(it, color = Forest) }
+                    TextButton(onClick = onRestorePurchases) { Text("Restore purchases", color = Forest) }
                     when (entitlement) {
                         ProEntitlement.LIFETIME -> {
                             Text("Lifetime Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
@@ -153,7 +158,7 @@ fun AppSettingsSheet(
                                 shape = RoundedCornerShape(16.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
                             ) {
-                                Text("Get Pro", fontWeight = FontWeight.SemiBold)
+                                Text(if (trialStatus != null) "Keep Pro" else "Get Pro", fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -248,6 +253,14 @@ fun PrivacyInfoSheet(
                 color = MutedInk,
                 fontSize = 14.sp,
             )
+            if (BuildConfig.MONETIZATION_ANALYTICS_ENABLED) {
+                Spacer(Modifier.height(18.dp))
+                Text("Usage measurement", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "This version uses Firebase Analytics to understand setup, completed alarm days and purchase flows. It uses a pseudonymous installation identifier and app/device information. Custom events exclude camera data, pose details, alarm names and alarm times. See the privacy policy for collection and retention details.",
+                    color = MutedInk, fontSize = 14.sp,
+                )
+            }
             Spacer(Modifier.height(18.dp))
             Text("Movement, not medical advice", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(5.dp))
@@ -286,11 +299,23 @@ fun ProPaywallSheet(
     onRestorePurchases: () -> Unit,
     onRetry: () -> Unit,
     onManageSubscription: () -> Unit,
+    catalogSettled: Boolean = true,
+    canPurchase: Boolean = true,
+    verifyingPurchase: Boolean = false,
+    pendingPayment: Boolean = false,
+    trialActive: Boolean = false,
+    trialExhausted: Boolean = false,
+    customizationSummary: String? = null,
+    entryFeature: String? = null,
+    onViewFreeSettings: () -> Unit = {},
+    onPlanSelected: (ProPlan) -> Unit = {},
 ) {
-    var preferredPlan by remember { mutableStateOf(ProPlan.YEARLY) }
-    val selectedPlan = preferredPlan.takeIf { it in prices }
-        ?: ProPlan.YEARLY.takeIf { it in prices }
-        ?: ProPlan.entries.firstOrNull { it in prices }
+    var selectedPlan by rememberSaveable { mutableStateOf<ProPlan?>(null) }
+    val plan = selectedPlan
+    val planOrder = listOf(ProPlan.LIFETIME, ProPlan.YEARLY, ProPlan.MONTHLY)
+    LaunchedEffect(catalogSettled, prices) {
+        if (catalogSettled && selectedPlan == null) selectedPlan = planOrder.firstOrNull { it in prices }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = SoftSurface,
@@ -308,13 +333,20 @@ fun ProPaywallSheet(
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                     Text("Close", color = Forest)
                 }
-                Text("Make every morning yours", color = Ink, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+                Text(when {
+                    trialExhausted -> "Keep your custom routine"
+                    trialActive -> "Keep your morning routine yours"
+                    else -> "Make every morning yours"
+                }, color = Ink, fontSize = 30.sp, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Unlock all poses and sounds, choose 1–10 poses, and set holds from 5–60 seconds.",
                     color = MutedInk,
                     fontSize = 15.sp,
                 )
+                entryFeature?.let { Text(it, color = Forest, modifier = Modifier.padding(top = 8.dp)) }
+                customizationSummary?.let { Text(it, color = MutedInk, modifier = Modifier.padding(top = 8.dp)) }
+                if (trialActive || trialExhausted) TextButton(onClick = onViewFreeSettings) { Text("View free settings") }
                 if (entitlement != null) {
                     Spacer(Modifier.height(12.dp))
                     Surface(shape = RoundedCornerShape(999.dp), color = AlarmLime.copy(alpha = 0.55f)) {
@@ -329,7 +361,7 @@ fun ProPaywallSheet(
                 }
                 Spacer(Modifier.height(22.dp))
                 Column(Modifier.selectableGroup()) {
-                    ProPlan.entries.forEach { plan ->
+                    planOrder.forEach { plan ->
                         val selected = selectedPlan == plan
                         val available = plan in prices
                         Surface(
@@ -337,9 +369,9 @@ fun ProPaywallSheet(
                                 .fillMaxWidth()
                                 .selectable(
                                     selected = selected,
-                                    enabled = available && !purchaseInProgress && entitlement == null,
+                                    enabled = available && !purchaseInProgress && !verifyingPurchase && entitlement == null,
                                     role = Role.RadioButton,
-                                    onClick = { preferredPlan = plan },
+                                    onClick = { selectedPlan = plan; onPlanSelected(plan) },
                                 ),
                             shape = RoundedCornerShape(22.dp),
                             color = if (selected) Color(0xFFF1FFD9) else Color.White,
@@ -352,7 +384,7 @@ fun ProPaywallSheet(
                                 RadioButton(
                                     selected = selected,
                                     onClick = null,
-                                    enabled = available && !purchaseInProgress && entitlement == null,
+                                    enabled = available && !purchaseInProgress && !verifyingPurchase && entitlement == null,
                                     colors = RadioButtonDefaults.colors(selectedColor = Forest),
                                 )
                                 Spacer(Modifier.width(12.dp))
@@ -362,7 +394,7 @@ fun ProPaywallSheet(
                                         if (plan != ProPlan.MONTHLY) {
                                             Spacer(Modifier.width(8.dp))
                                             Text(
-                                                if (plan == ProPlan.YEARLY) "ANNUAL" else "BEST VALUE",
+                                                if (plan == ProPlan.YEARLY) "ANNUAL" else "ONE-TIME",
                                                 color = Forest,
                                                 fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
@@ -429,9 +461,9 @@ fun ProPaywallSheet(
                 Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                if (selectedPlan != null && entitlement == null) {
+                if (plan != null && entitlement == null) {
                     Text(
-                        "${selectedPlan.displayName} · ${prices.getValue(selectedPlan)} ${selectedPlan.billingPeriod}",
+                        "${plan.displayName} · ${prices[plan] ?: "Currently unavailable"} ${plan.billingPeriod}",
                         color = Ink,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
@@ -441,7 +473,7 @@ fun ProPaywallSheet(
                 }
                 Button(
                     onClick = { selectedPlan?.let(onPurchase) },
-                    enabled = entitlement == null && billingReady && selectedPlan != null && !purchaseInProgress,
+                    enabled = canPurchase && entitlement == null && billingReady && selectedPlan in prices && !purchaseInProgress && !verifyingPurchase && !pendingPayment,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF8ED8FF),
@@ -456,10 +488,13 @@ fun ProPaywallSheet(
                     Text(
                         when {
                             entitlement != null -> "Pro is active"
+                            verifyingPurchase -> "Checking purchase…"
+                            pendingPayment -> "Payment pending"
                             purchaseInProgress -> "Opening Google Play…"
                             !billingReady -> "Connecting to Google Play…"
                             selectedPlan == null && loadingPrices -> "Loading plans…"
-                            selectedPlan == null -> "Plans unavailable"
+                            selectedPlan !in prices -> "Plan unavailable"
+                            !canPurchase -> "Checking purchase status…"
                             selectedPlan == ProPlan.LIFETIME -> "Buy with Google Play"
                             else -> "Subscribe with Google Play"
                         },
@@ -468,10 +503,10 @@ fun ProPaywallSheet(
                         textAlign = TextAlign.Center,
                     )
                 }
-                if (entitlement == null && selectedPlan != null) {
+                if (entitlement == null && plan != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        when (selectedPlan) {
+                        when (plan) {
                             ProPlan.MONTHLY -> "Renews monthly. Cancel anytime in Google Play."
                             ProPlan.YEARLY -> "Renews annually. Cancel anytime in Google Play."
                             ProPlan.LIFETIME -> "One-time payment. No subscription."
@@ -481,6 +516,7 @@ fun ProPaywallSheet(
                         textAlign = TextAlign.Center,
                     )
                 }
+                if (trialExhausted) TextButton(onClick = onDismiss) { Text("Continue free", color = Forest) }
             }
         }
     }

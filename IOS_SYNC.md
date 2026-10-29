@@ -14,6 +14,8 @@ iOS source audit: 2026-10-23, against iOS commit `7a1e058` (clean working tree).
 
 | ID | Source status | Remaining work |
 | --- | --- | --- |
+| SYNC-028 | Planning required | Audit the native iOS code and write/review a complete iOS implementation plan from the Android monetization plan before implementing the five-completion Pro preview and matching purchase/expiry behavior. |
+| SYNC-027 | Not audited | Notification Start opens the camera flow directly, requesting camera permission when needed. |
 | SYNC-026 | Partial | Backup inactivity watchdog and silent missed reports are implemented alongside AlarmKit; native tests/device acceptance remain pending and enforcement requires app execution. |
 | SYNC-025 | Not audited | Add long-press pose-card reordering, edge scrolling and position-based pose numbering. |
 | SYNC-024 | Not audited | Add Squat as the fourth free pose, with frontal detection, illustration and camera guidance. |
@@ -46,6 +48,120 @@ Audit validation (2026-10-23):
 - `scripts/verify-bucket6.sh` failed its privacy-link check: it expects the policy URL in `ProPaywallView.swift`, while the current policy action is in `AlarmHomeView.swift` (`PrivacySafetyView`). This failure does not establish that all remaining privacy checks pass.
 - `scripts/test-onboarding-geometry.sh` could not run: `swiftc` is unavailable. Swift and Xcode are unavailable on this Linux host; no compilation, XCTest, StoreKit or device acceptance is claimed.
 - Icon inspection confirmed all eight PNGs are opaque RGB, including the 1,024-pixel source, with the square sunrise/Warrior II artwork. Installed-mask acceptance remains open.
+
+### SYNC-028 — Monetization parity: plan the native iOS implementation before coding
+
+Status: pending
+Date: 2026-10-28
+Android commit: <pending>
+Implementation state: Android implementation is present in the uncommitted checkout for internal validation; production enrollment/analytics remain disabled by default. Focused Android JVM checks have run, but device/Google Play/Firebase delivery and trusted production billing are not verified. iOS still requires the native planning workflow below.
+
+Android implementation update (2026-10-28, commit: <pending>):
+- Implemented five distinct successful real-alarm dates with separate persisted enrollment, remaining access and milestone state. Assignment precedes default writes; existing persisted alarm/onboarding/wake use is ineligible. Local dates are captured once per occurrence. Completion, expiry, confirmed future fallback and original customization share one checked serialized commit; a completion journal recovers independent streak persistence. Failures favor a working alarm and an extra preview use over re-ringing or a phantom counted day.
+- Added real-occurrence tokens/snapshots across receiver/service/activity/route/notification/snooze, terminal recovery, next-occurrence resets, token-scoped Stop/Start and stale-action guards. Preserve SYNC-027's explicit notification Start-to-camera behavior and automatic ringing-screen behavior. These are source implementations with regression coverage, not device reproduction claims.
+- Added upfront actual fallback review, editable free choices, 60-second total hold disclosure (and increased-effort warning when applicable), automatic future-only conversion, disabled-state/order preservation, conflict-safe original restoration, editor draft rebasing and picker/drag cancellation. One-shot receiver writes, reorder and deletion merge against current stored records. Fallback corruption is exceptional repair/grace; closing the paywall never extends a normally converted preview.
+- Implemented trial-aware onboarding/editor/home/Settings, optional post-tour length/timing customization, second/fourth home milestones, safely deferred expiry offer, localized lifetime/yearly/monthly ordering, stable selected plan, feature-specific upgrade copy, Continue free and direct purchase-success restoration. Paid ownership suppresses preview offers; purchasing remains available during preview.
+- Added ownership-resolution/verification/pending guards and offline authenticated-cache infrastructure. The actual default Android verifier remains client-only, so trusted paid offline access is **not production-ready**. A real verifier with authenticated proof and verified subscription expiry is required; trial retirement waits for recoverable paid access. Never copy this interim limitation into weaker native StoreKit handling.
+- Added default-disabled Firebase wiring and build gates, coarse event allowlists, local event replay guards and separate restoration events. No backend/Firebase credentials or external policies were invented or deployed. SDK acceptance/client purchases are not verified net revenue. Historical purchase eligibility remains unknown until authoritative reporting can establish it consistently.
+- Default builds do not enroll or collect analytics. `-PproTrialInternalTesting=true` enables debug-only eligible assignment; production gates require real analytics configuration, approved disclosures and trusted billing/device readiness. Existing granted preview days and confirmed fallback behavior survive disabling enrollment. Backup remains disabled.
+- Executed: debug/release Kotlin compilation and 135 focused JUnit/Robolectric tests passed, along with default release manifest and rollout/configuration-gate checks. All newly authored JVM tests ran; see `docs/monetization-implementation-plan.md` for scope. No device was connected. Native iOS checks, all Android physical-device/Play scenarios, Firebase-enabled compilation and analytics delivery remain outstanding.
+
+Additional Android references:
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/ProTrial.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmOccurrence.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/data/ProTrialStore.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/data/AlarmOccurrenceStore.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/data/AlarmStorageLock.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/billing/PaidEntitlementCache.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/analytics/MonetizationAnalytics.kt`
+- `app/src/analyticsEnabled/java/com/lurremcfly/yogaalarm/analytics/AnalyticsSink.kt`
+
+Required source:
+- Read the entire [reviewed monetization implementation plan](docs/monetization-implementation-plan.md), including its review findings, confirmed expiry decision, state transitions, billing prerequisites, measurement limits, and validation matrix. When accessing this queue from the iOS repository, resolve that link against the Android repository, not a similarly named local document.
+- The objective is to improve realized revenue while preserving reliable alarms and an intuitive experience. Android and iOS must have matching product rules and observable outcomes, implemented using each platform's native capabilities.
+- Treat the plan as the agreed target and the current Android source as evidence of existing behavior, not proof that the proposed changes already work. Recheck the Android implementation/commits as they land; record which revision the iOS plan references.
+
+Mandatory planning-first workflow for the iOS agent:
+1. Read the iOS repository's own instructions and inspect its actual onboarding, editor, home, completion, alarm/AlarmKit, persistence, StoreKit, restoration, and analytics code. Review existing uncommitted changes and preserve them. Read the relevant Android files below and existing SYNC-010, SYNC-013, SYNC-016, SYNC-017, SYNC-024, SYNC-026, and SYNC-027 requirements. Do not merely translate the Kotlin plan into Swift terminology.
+2. Before editing application code, write a native iOS plan at `docs/monetization-implementation-plan.md` in the iOS repository, or extend an existing equivalent document. Match the depth of the reviewed Android plan: current-code audit with file/symbol evidence; product/parity matrix; concrete file changes; persisted state and migrations; paid/trial/free precedence; completion/occurrence identity; upfront fallback and automatic expiry; purchase and restoration UX; failure/recovery rules; analytics and revenue attribution; staged implementation and rollback; focused tests and real-device acceptance.
+3. Verify platform-specific assumptions against current official Apple documentation. In particular, determine how already-scheduled system alarm configuration and sounds can adopt the confirmed fallback, how ringing/snoozed occurrences retain their configuration, what executes while suspended/terminated, and how transaction updates, verification, pending purchases, cancellation, expiry, refunds/revocation, and offline access are handled. Record unsupported behavior and a proposed native alternative explicitly; do not claim parity from source inspection or silently weaken the agreed behavior.
+4. Review the native plan against the actual iOS code before implementation. Use a separate focused review where useful. Walk through the lifecycle, persistence, payment, and UX cases below; resolve material contradictions and identify external configuration dependencies. Keep routine implementation decisions autonomous, but surface any product change required by an iOS constraint instead of inventing a different monetization policy.
+5. Only after that written plan and its review are complete, implement in small, testable stages. Reuse existing iOS abstractions and avoid unrelated refactoring. Update the native plan when implementation evidence changes it. Do not substitute a generic checklist or an Android copy for the native audit.
+
+Required observable parity:
+- Use the existing Pro product name. Give eligible new users full feature access for five successful real-alarm completions on distinct local dates, with no card, calendar deadline, consecutive-day requirement, or automatic charge. Any time of day qualifies. Practice/tests, stopping, permission failures, missed alarms and snoozing alone consume nothing; successfully completing a snoozed real occurrence can count. Multiple completions on the same date consume at most one allowance. Do not derive the trial count from the streak. Existing users and restored purchasers follow the enrollment/ownership rules in the plan.
+- Keep purchases available during the preview and paid ownership separate from trial feature access. Preserve valid paid access and suppress trial offers for paid owners. Retiring a trial after purchase must not worsen offline access, and later subscription expiry/refund must not restart a retired trial. Pending payment is not ownership and must not permit a second competing checkout.
+- Keep the USD reference prices at $7.99 monthly, $19.99 yearly, and $29.99 lifetime for the initial experiment. Display App Store-localized prices and native renewal/one-time terms. Feature lifetime first and initially select it after the catalog attempt settles; preserve explicit selection through partial failures, refresh, and checkout. Map the existing native catalog correctly rather than copying Google Play identifiers. Do not introduce a StoreKit subscription free trial for this app-managed preview.
+- Free retains unlimited alarms, three poses at 20 seconds each, four pose choices (Mountain, Warrior II, Tree, Squat), and two sounds (Sunbird Morning Call, Morning Temple Call). Pro/trial unlocks the current nine poses, 1–10 pose routines, holds of 5/10/15/20/30/45/60 seconds, and all ten sounds. Preserve core alarm, snooze, vibration, emergency-stop, and streak behavior. Refer to the Android catalog for exact names/assets and any subsequent accepted catalog changes.
+- During setup, explain the preview without a compulsory paywall and expose paid choices to trial users. Preserve the simple default and guided three-pose teaching sequence. Provide an optional path to customize length/timing. Before saving paid trial customization, show and confirm the exact free fallback, including poses, total duration and sound; allow choosing valid free alternatives. This must work when onboarding is skipped as well.
+- After completion two, offer one optional contextual upgrade; after four, warn that one qualifying completion remains; after five, present the main offer only once the alarm completion is dismissed and the app is safely foregrounded/unlocked. Preserve Done and the completion experience. Defer an unusable commercial offer until there is a purchasable plan; never make alarm/free behavior depend on catalog availability.
+- **Confirmed expiry policy:** immediately after the fifth qualifying completion, future occurrences use the previously accepted free fallback unless the user has paid access. Closing/swiping away the paywall does not extend Pro. A later normal occurrence on that same date uses the fallback; a previously ringing or snoozed occurrence keeps its original configuration. This replaces the older indefinite manual-downgrade proposal. Do not switch unfamiliar poses/sounds silently, disable alarms, reset streaks, or put checkout in the dismissal path.
+- Persist original trial customization and merge fallback/restoration into current saved data without altering schedule, enabled state, ordering, or unrelated edits. Preserve one-shot auto-disable and deleted alarms. Reconcile open drafts/pickers safely. After a later purchase, offer an explicit restoration preview directly in the purchase-success flow without overwriting newer edits automatically or resurrecting deleted alarms.
+- Distinguish a recurring alarm's new occurrence from reattachment to an old occurrence. Retain occurrence identity and configuration through snooze/notification handoff, and a terminal outcome through process recreation. A completed alarm must not re-ring, and tomorrow's occurrence must not reuse yesterday's COMPLETE state. Use one captured completion time for trial and streak bookkeeping. Adapt storage and lifecycle handling natively; Android process/service APIs are not iOS requirements.
+- Preserve native notification Start behavior from SYNC-027 and platform-supported alarm priority if a new alarm arrives during app or store UI. No analytics/network operation may delay alarm delivery or dismissal. Document iOS limitations and verify device behavior rather than assuming Android's execution model applies.
+- Match experiment rules and event meanings, including stable new-user assignment, the same initial prices/paywall in both arms, actual offer exposure, and first-launch denominators. Keep platform results separately inspectable. Do not count restores as sales, exclude treatment-generated purchases from cohorts, or double-count automatic/custom revenue events. Distinguish provisional gross signals from verified net revenue/refunds. Audit native analytics collection and update actual privacy disclosures/store declarations before enabling it; never transmit camera frames, landmarks, routine contents, alarm names/times, or purchase secrets as analytics.
+
+Relation to existing entries:
+- For this monetization work, the new lifetime-first default and paid-versus-trial feature-access distinction supersede the yearly-first/store-only feature-access wording in SYNC-010. Verified ownership, restore, pending-payment safeguards, transaction completion and paid-owner purchase blocking remain required. The legitimate bounded product preview does not authorize restoring a debug/Test Pro bypass.
+- Trial-enabled catalog choices supersede the free-only guided selection in SYNC-016 for eligible trial users. Preserve its unrelated navigation, permission, practice and accessibility behavior. Keep SYNC-013's duration choices and SYNC-024's fourth free pose.
+- Do not mark older entries or this entry complete merely because the native plan exists. Keep the existing implementation history and checklists intact.
+
+Important Android references (repository-relative):
+- `docs/monetization-implementation-plan.md`
+- `docs/play-billing-setup.md`
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/AlarmConfig.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/model/ProPlan.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/data/AlarmStore.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/data/WakeProgressStore.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/billing/PlayBillingManager.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/billing/PurchaseVerifier.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmEditorScreen.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/AlarmHomeScreen.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/AppInfoSheets.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/Onboarding.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineViewModel.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmReceiver.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmForegroundService.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmScheduler.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/SnoozeReceiver.kt`
+
+Planning and implementation acceptance:
+- [ ] Native iOS code audit and full written plan completed; Android source/plan revision and native file mapping recorded.
+- [ ] Native plan independently/self-reviewed against concrete lifecycle, data, purchase and UX cases; material contradictions resolved and platform gaps explicitly recorded before implementation.
+- [ ] Native feature implementation and migration follow the confirmed parity rules; unrelated existing work preserved.
+- [ ] Focused native tests cover repeated same-day completions, skipped days, midnight/timezone/replay, tests versus fired alarms, migration/restoration, expiry versus purchase, partial catalog/pending verification, stale writes/drafts, missing fallback recovery, and idempotent completion/transaction handling.
+- [ ] StoreKit tests and real-device acceptance cover purchase/restore/deferred approval/cancel/expiry/refund, purchase then offline cold start, lock screen and process recreation, completed-screen reopening, next recurring occurrence, pending snooze across expiry, notification Start/permission flow, overlapping alarm/store UI, and small-screen/Dynamic Type/VoiceOver behavior.
+- [ ] On-device checks confirm that the exact upfront-approved fallback reaches future system/app alarms and sounds even across the platform states the implementation claims to support; active/snoozed occurrences remain unchanged. Any unsupported state is disclosed and resolved before claiming parity.
+- [ ] Measurement delivery and transaction attribution verified; privacy/store disclosures reflect the actual build. Source checks alone are not evidence of runtime behavior or revenue improvement.
+- [ ] Record executed checks versus authored/unrun tests and remaining risks. Keep this entry Pending until iOS behavior is implemented and verified; then move the entire entry to Completed. Replace the Android commit placeholder only when the corresponding implementation hash is available.
+
+### SYNC-027 — Notification Start opens the camera directly
+
+Status: pending
+Date: 2026-10-28
+Android commit: <pending>
+
+Changes:
+- Tapping Start in any active-alarm notification layout opens the camera/routine flow without requiring a second Start tap on the fullscreen ringing screen. Apply this by default to all alarms; there is no new setting.
+- With camera permission already granted, enter the camera immediately. Otherwise request permission once; granting continues into the camera, and denial retains the existing ringing/permission-recovery screen. Repeated Start taps while permission is pending must not open duplicate prompts.
+- Automatic fullscreen presentation and tapping the notification body still open the ringing screen with its Start button. Only explicit Start activation requests the camera. Stop, snooze, sound/vibration and routine completion behavior remain unchanged.
+- Handle Start when the app is closed, backgrounded or already showing the same alarm. Scope the pending request to its alarm, preserve it across recreation until handled, and consume it once. Recreation/service updates must not replay a handled request, and repeated Start must not reset an ongoing routine. Explicit Start counts as activity for the ten-minute inactivity limit (SYNC-026).
+
+Android references:
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmForegroundService.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/alarm/AlarmScheduler.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/MainActivity.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/YogaAlarmRoot.kt`
+- `app/src/main/java/com/lurremcfly/yogaalarm/ui/RoutineRoute.kt`
+- `app/src/test/java/com/lurremcfly/yogaalarm/alarm/AlarmNotificationTest.kt`
+
+Acceptance:
+- Test notification Start with the app closed, backgrounded and already on the ringing screen, including locked-screen presentation and all notification layouts. One Start tap enters the camera when permission is granted.
+- Verify permission grant, denial, repeated taps while the prompt is open, and recreation before/after handling. Grant continues automatically; denial allows recovery; recreation does not reopen a handled prompt or reset routine progress.
+- Verify automatic fullscreen/body-tap presentation still requires Start, snooze counts survive handoff, and notification Start resets the inactivity deadline after service binding.
 
 ### SYNC-026 — Stop unattended alarms and report missed ringing
 
@@ -315,6 +431,8 @@ iOS acceptance checks:
 Status: pending — partially implemented on iOS; timing/copy parity and native verification remain
 Date: 2026-10-17
 Android commit: <pending>
+
+Android monetization update (2026-10-28; SYNC-028): guided selection now uses all nine poses/ten sounds when paid or preview feature access applies, while free users have four poses/two sounds. The tour still teaches exactly three slots at the default 20-second holds. Eligible preview copy explains five successful real-alarm dates and the actual upfront-confirmed fallback. The saved summary adds optional “Customize length & timing,” finishing the tour and opening normal editing; Done and practice behavior are unchanged. This supersedes the historical unconditional free-only guided filtering below. Native implementation and device verification remain pending.
 
 iOS implementation progress (2026-10-23):
 - [x] The 14-step tour, first-use permission prelude, invitation dismissal/replay persistence, real editor controls, free-pose restrictions, quiet five-second practice, preserved draft, real-alarm priority, explicit Save and saved summary are present.
@@ -642,6 +760,8 @@ Status: pending
 Date: 2026-09-27
 Android commit: <pending>
 
+Monetization update (2026-10-28, Android commit: <pending>): SYNC-028's Android implementation now separates paid ownership from preview feature access, publishes the complete catalog attempt before defaulting to lifetime/yearly/monthly, preserves an explicitly selected unavailable plan without substitution, and blocks checkout for unresolved ownership, verification, pending payment or paid access. Authenticated paid-cache infrastructure exists but the actual client-only verifier cannot activate it; trusted production verification/expiry remains a release dependency. The native iOS planning workflow and existing verification status still apply.
+
 iOS implementation progress (2026-10-23):
 - [x] StoreKit Monthly/Yearly/Lifetime catalog, localized prices, unavailable-plan states, retry, restore with price reload, and available-plan selection fallback.
 - [x] Expanded paywall with Close, scrolling content above a fixed App Store purchase area, renewal terms, and separate selection/checkout.
@@ -658,7 +778,7 @@ Changes:
 - Starting an already-connected billing session also reloads prices.
 - Monthly and yearly select the `monthly` and `yearly` base plans of `yoga_alarm_pro`; lifetime uses the non-consumable `yoga_alarm_pro_lifetime` buy option. Map these choices to the iOS catalog independently.
 - Lifetime's actual Play purchase-option ID is `yogaalarmprolifetime`, not `buy` (which was confused with the Buy purchase type). Correcting this filter allows the active lifetime product's price and checkout to appear. On iOS, match the actual App Store catalog identifiers rather than purchase-type labels.
-- Always show Monthly, Yearly (annual), and Lifetime. Show localized store prices only; plans without prices display “Loading price…” during lookup or “Currently unavailable” afterward and cannot be selected or purchased. Default to Yearly when available, otherwise the first available plan; preserve the user's choice while it remains available. No introductory offers are selected.
+- Always show Lifetime, Yearly (annual), and Monthly in that order. Show localized store prices only; unavailable plans cannot be purchased. After the complete initial catalog attempt, default to Lifetime when available, otherwise Yearly then Monthly. Preserve explicit selection even if it later becomes unavailable; disable checkout and let the user choose another plan. No introductory offers are selected.
 - Open the paywall fully expanded with a visible Close action. Benefits, plans, restoration, and messages scroll independently above a fixed purchase area, which stays above the system navigation inset. Selected plans have a radio indicator and pale green highlight. Selecting a plan only updates the selection and price; it never launches checkout.
 - The fixed purchase area shows the selected plan, localized billed amount and period, a full-width sky-blue (`#8ED8FF`) button with dark navy (`#102A43`) text, and renewal terms. Android labels subscriptions “Subscribe with Google Play” and lifetime “Buy with Google Play”, with a small Play icon. Use appropriate App Store wording/branding on iOS. Monthly/yearly say they renew monthly/annually and can be cancelled in the store; lifetime says “One-time payment. No subscription.”
 - Keep unavailable plans visible even when other plans can be purchased. Offer a distinct Retry action when any plan is unavailable after loading or the store is disconnected; disable purchase when no plan is available or the store is disconnected. Restore Purchases remains an ownership action. The home entry says “GET PRO”, avoiding the implication of a free trial. Disable plan changes and repeat checkout while a purchase is opening.

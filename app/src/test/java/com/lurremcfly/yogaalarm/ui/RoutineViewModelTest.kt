@@ -38,6 +38,18 @@ class RoutineViewModelTest {
     }
 
     @Test
+    fun sameOccurrenceReattachmentRetainsCompletionAndNextDeliveryResetsIt() = routineTest {
+        val config = alarm()
+        viewModel.restoreCompleted(config, "first")
+        viewModel.start(config, "first")
+        assertEquals(RoutinePhase.COMPLETE, viewModel.uiState.value.phase)
+        viewModel.start(config, "next")
+        assertEquals(RoutinePhase.FINDING, viewModel.uiState.value.phase)
+        assertEquals(0, viewModel.uiState.value.poseIndex)
+        assertEquals(0f, viewModel.progress.value.routine)
+    }
+
+    @Test
     fun startupWithoutFramesOffersRecoveryInsteadOfWaitingForever() = routineTest {
         viewModel.start(alarm())
         advanceTimeBy(10_100)

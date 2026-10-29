@@ -104,6 +104,8 @@ internal fun OnboardingOverlay(
     modifier: Modifier = Modifier,
     showRoutineIntroduction: Boolean = true,
     permissionContent: (@Composable () -> Unit)? = null,
+    trialActive: Boolean = false,
+    onCustomize: (() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     var origin by remember { mutableStateOf(Offset.Zero) }
@@ -231,6 +233,7 @@ internal fun OnboardingOverlay(
                                 }
                             }
                             Text("Use the camera to follow your poses and stop the alarm.", Modifier.padding(vertical = 24.dp), color = MutedInk, fontSize = 14.sp)
+                            if (trialActive) Text("Try Pro for 5 successful alarm days. No payment details or automatic charge. Then your alarms use the free settings confirmed during setup unless you buy Pro.", Modifier.padding(bottom = 16.dp), color = Forest, fontSize = 14.sp)
                             GuideButton("Set up an alarm") { transitionTo(OnboardingStep.Add) }
                         }
                         OnboardingStep.Placement -> {
@@ -259,6 +262,11 @@ internal fun OnboardingOverlay(
                             }
                             Text("${alarm.routine.sumOf { it.durationSeconds }} seconds of movement.", Modifier.padding(vertical = 24.dp), color = MutedInk)
                             GuideButton("Done", onClick = onSkip)
+                            onCustomize?.let { customize ->
+                                TextButton(onClick = customize, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Customize length & timing", color = Forest)
+                                }
+                            }
                             TextButton(onClick = onTest, modifier = Modifier.fillMaxWidth()) { Text("Test full routine", color = Forest) }
                         }
                         else -> Unit

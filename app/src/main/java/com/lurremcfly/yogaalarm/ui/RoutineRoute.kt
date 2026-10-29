@@ -77,7 +77,10 @@ import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.alarm.AlarmForegroundService
 import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
+import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
+import java.time.ZonedDateTime
 import com.lurremcfly.yogaalarm.model.AlarmConfig
+import com.lurremcfly.yogaalarm.model.OccurrenceState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -85,9 +88,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal fun CameraPermissionRoute(
     alarm: AlarmConfig,
     viewModel: RoutineViewModel,
-    onRoutineComplete: () -> Unit,
+    onRoutineComplete: (String?, ZonedDateTime) -> Unit,
+    occurrenceToken: String? = null,
     onCompletionPresentationFinished: () -> Unit,
     isFiredAlarm: Boolean,
+    cameraStartRequested: Boolean,
+    onCameraStartHandled: () -> Unit,
     remainingSnoozes: Int,
     emergencyPassesRemaining: Int,
     streakDays: Int,
@@ -102,6 +108,12 @@ internal fun CameraPermissionRoute(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val activity = context as? Activity
+    val occurrence = remember(occurrenceToken) { AlarmOccurrenceStore(context).find(occurrenceToken) }
+    LaunchedEffect(occurrenceToken, isFiredAlarm) {
+        if (isFiredAlarm && occurrence == null) onBack()
+        else if (occurrence?.completedAt != null) viewModel.restoreCompleted(alarm, occurrence.token)
+        else if (occurrence != null && occurrence.state != OccurrenceState.RINGING) onBack()
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     var alarmService by remember { mutableStateOf<AlarmForegroundService?>(null) }
     var emergencyStopOpen by rememberSaveable { mutableStateOf(false) }
@@ -111,7 +123,8 @@ internal fun CameraPermissionRoute(
     val currentOnBack by rememberUpdatedState(onBack)
     val currentOnRoutineComplete by rememberUpdatedState(onRoutineComplete)
     val currentOnCompletionPresentationFinished by rememberUpdatedState(onCompletionPresentationFinished)
-    var completionDeadline by rememberSaveable(alarm.id, isFiredAlarm) { mutableStateOf<Long?>(null) }
+    var completionDelivered by remember(occurrenceToken, alarm.id, isFiredAlarm) { mutableStateOf(false) }
+    var completionDeadline by rememberSaveable(alarm.id, isFiredAlarm, occurrenceToken) { mutableStateOf<Long?>(null) }
     LaunchedEffect(alarmService, alarm.id) {
         alarmService?.finishedAlarmId?.collect { finishedId ->
             if (finishedId == alarm.id && currentState.phase != RoutinePhase.COMPLETE) currentOnBack()
@@ -124,7 +137,7 @@ internal fun CameraPermissionRoute(
                 Lifecycle.Event.ON_STOP -> {
                     foreground = false
                     viewModel.pause()
-                    currentService?.setRoutineLevel(alarm.id, 1f)
+                    currentService?.setRoutineLevel(alarm.id, 1f, occurrenceToken)
                 }
                 else -> Unit
             }
@@ -135,24 +148,25 @@ internal fun CameraPermissionRoute(
             if (activity?.isChangingConfigurations == true) viewModel.pause() else viewModel.stop()
         }
     }
-    DisposableEffect(alarm.id, isFiredAlarm) {
+    DisposableEffect(alarm.id, isFiredAlarm, occurrenceToken) {
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 alarmService = (binder as? AlarmForegroundService.LocalBinder)?.service
-                alarmService?.dismissNotificationPopup(alarm.id)
+                alarmService?.dismissNotificationPopup(alarm.id, occurrenceToken)
             }
             override fun onServiceDisconnected(name: ComponentName?) { alarmService = null }
         }
         var bound = false
-        if (isFiredAlarm && uiState.phase != RoutinePhase.COMPLETE) {
+        if (isFiredAlarm && uiState.phase != RoutinePhase.COMPLETE && occurrence?.state == OccurrenceState.RINGING) {
             val serviceIntent = Intent(context, AlarmForegroundService::class.java)
                 .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarm.id)
+                .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, occurrenceToken)
                 .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes)
             ContextCompat.startForegroundService(context, serviceIntent)
             bound = context.bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
         }
         onDispose {
-            if (currentState.phase != RoutinePhase.COMPLETE) alarmService?.setRoutineLevel(alarm.id, 1f)
+            if (currentState.phase != RoutinePhase.COMPLETE) alarmService?.setRoutineLevel(alarm.id, 1f, occurrenceToken)
             if (bound) context.unbindService(connection)
             alarmService = null
         }
@@ -171,7 +185,7 @@ internal fun CameraPermissionRoute(
         activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (isFiredAlarm) currentOnCompletionPresentationFinished()
     }
-    var cameraStarted by rememberSaveable(alarm.id, isFiredAlarm) { mutableStateOf(false) }
+    var cameraStarted by rememberSaveable(alarm.id, isFiredAlarm, occurrenceToken) { mutableStateOf(false) }
     var lastCuedPoseIndex by rememberSaveable(alarm) { mutableStateOf(-1) }
     DisposableEffect(uiState.phase, uiState.poseIndex, cameraStarted, foreground) {
         val cueDue = uiState.phase == RoutinePhase.TRANSITION || uiState.phase == RoutinePhase.COMPLETE
@@ -207,22 +221,23 @@ internal fun CameraPermissionRoute(
             var previousProgress = viewModel.progress.value.routine
             viewModel.progress.collect { value ->
                 if (isFiredAlarm) {
-                    alarmService?.setRoutineLevel(alarm.id, value.alarmLevel)
-                    if (value.routine > previousProgress) alarmService?.recordActivity(alarm.id)
+                    alarmService?.setRoutineLevel(alarm.id, value.alarmLevel, occurrenceToken)
+                    if (value.routine > previousProgress) alarmService?.recordActivity(alarm.id, occurrenceToken)
                 } else previewAudio.setLevel(value.alarmLevel)
                 previousProgress = value.routine
             }
         } else {
-            alarmService?.setRoutineLevel(alarm.id, 1f)
+            alarmService?.setRoutineLevel(alarm.id, 1f, occurrenceToken)
         }
     }
     LaunchedEffect(uiState.phase, alarmService) {
         if (uiState.phase == RoutinePhase.COMPLETE) {
             previewAudio.close()
-            alarmService?.finishRoutine(alarm.id)
-            if (completionDeadline == null) {
-                completionDeadline = SystemClock.elapsedRealtime() + 10_000L
-                currentOnRoutineComplete()
+            alarmService?.finishRoutine(alarm.id, occurrenceToken, persistStop = false)
+            if (completionDeadline == null) completionDeadline = SystemClock.elapsedRealtime() + 10_000L
+            if (!completionDelivered) {
+                completionDelivered = true
+                currentOnRoutineComplete(occurrenceToken, occurrence?.completedAt ?: ZonedDateTime.now())
             }
         }
     }
@@ -231,21 +246,39 @@ internal fun CameraPermissionRoute(
     val hasPermission = remember(permissionRefresh) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     }
+    var permissionRequestInFlight by rememberSaveable(alarm.id, isFiredAlarm, occurrenceToken) { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        permissionRequestInFlight = false
         permissionDenied = !granted
         permissionRefresh += 1
         if (granted) cameraStarted = true
     }
+    fun startCamera() {
+        alarmService?.recordActivity(alarm.id, occurrenceToken)
+        if (hasPermission) {
+            cameraStarted = true
+        } else if (!permissionRequestInFlight) {
+            permissionRequestInFlight = true
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+    LaunchedEffect(cameraStartRequested, foreground, alarmService) {
+        // Wait for binding so notification Start also resets the inactivity deadline.
+        if (cameraStartRequested && foreground && alarmService != null) {
+            onCameraStartHandled()
+            startCamera()
+        }
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { permissionRefresh += 1 }
     LaunchedEffect(cameraStarted, hasPermission, alarm.id) {
         if (cameraStarted && hasPermission) {
-            viewModel.start(alarm)
+            viewModel.start(alarm, occurrenceToken)
         }
     }
     BackHandler { if (!isFiredAlarm) onBack() }
-    val showingRingingScreen = isFiredAlarm && !(cameraStarted && hasPermission)
+    val showingRingingScreen = isFiredAlarm && uiState.phase != RoutinePhase.COMPLETE && !(cameraStarted && hasPermission)
     DisposableEffect(activity, showingRingingScreen) {
         val window = activity?.window
         val insets = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
@@ -264,7 +297,7 @@ internal fun CameraPermissionRoute(
             if (isFiredAlarm) awaitPointerEventScope {
                 while (true) {
                     if (awaitPointerEvent(PointerEventPass.Initial).type == PointerEventType.Press) {
-                        currentService?.recordActivity(alarm.id)
+                        currentService?.recordActivity(alarm.id, occurrenceToken)
                     }
                 }
             }
@@ -272,7 +305,7 @@ internal fun CameraPermissionRoute(
         .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
         if (isOnboardingPractice && uiState.phase == RoutinePhase.COMPLETE) {
             OnboardingPracticeComplete(onContinue = onBack)
-        } else if (cameraStarted && hasPermission) {
+        } else if ((cameraStarted && hasPermission) || uiState.phase == RoutinePhase.COMPLETE) {
             RoutineCameraScreen(
                 uiState = uiState,
                 frames = viewModel.frames,
@@ -301,14 +334,7 @@ internal fun CameraPermissionRoute(
                 showEmergencyStop = isFiredAlarm && alarm.stopButtonDisabled && !permissionDenied,
                 showTechnicalStop = isFiredAlarm && permissionDenied,
                 onSnooze = onSnooze,
-                onStartCamera = {
-                    alarmService?.recordActivity(alarm.id)
-                    if (hasPermission) {
-                        cameraStarted = true
-                    } else {
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
-                    }
-                },
+                onStartCamera = ::startCamera,
                 onBack = onBack,
                 onStop = onStopAlarm,
                 onEmergencyStop = { emergencyStopOpen = true },

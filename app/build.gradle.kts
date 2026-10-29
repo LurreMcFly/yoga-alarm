@@ -1,7 +1,32 @@
+buildscript {
+    if (providers.gradleProperty("monetizationAnalyticsEnabled").orNull == "true") {
+        check(providers.gradleProperty("monetizationPrivacyApproved").orNull == "true") {
+            "Analytics requires -PmonetizationPrivacyApproved=true after privacy/store disclosures are reviewed."
+        }
+        check(file("google-services.json").isFile) {
+            "Analytics requires the real app/google-services.json from the configured Firebase project."
+        }
+        repositories { google(); mavenCentral() }
+        dependencies { classpath("com.google.gms:google-services:4.5.0") }
+    }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val monetizationAnalyticsEnabled = providers.gradleProperty("monetizationAnalyticsEnabled").orNull == "true"
+val proTrialRolloutEnabled = providers.gradleProperty("proTrialRolloutEnabled").orNull == "true"
+val proTrialInternalTesting = providers.gradleProperty("proTrialInternalTesting").orNull == "true"
+if (monetizationAnalyticsEnabled) {
+    apply(plugin = "com.google.gms.google-services")
+}
+if (proTrialRolloutEnabled) {
+    check(monetizationAnalyticsEnabled && providers.gradleProperty("monetizationBillingReady").orNull == "true") {
+        "Trial rollout requires configured measurement and -PmonetizationBillingReady=true after trusted billing/device acceptance."
+    }
 }
 
 android {
@@ -14,9 +39,14 @@ android {
         targetSdk = 36
         versionCode = 28
         versionName = "1.0.27"
+        buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
+        buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", proTrialRolloutEnabled.toString())
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", (proTrialRolloutEnabled || proTrialInternalTesting).toString())
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -41,6 +71,14 @@ android {
         buildConfig = true
     }
 
+    sourceSets.getByName("main").java.srcDir(
+        if (monetizationAnalyticsEnabled) "src/analyticsEnabled/java" else "src/analyticsDisabled/java",
+    )
+    if (!monetizationAnalyticsEnabled) {
+        sourceSets.getByName("debug").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
+        sourceSets.getByName("release").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
@@ -55,6 +93,10 @@ android {
 }
 
 dependencies {
+    if (monetizationAnalyticsEnabled) {
+        implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
+        implementation("com.google.firebase:firebase-analytics")
+    }
     val cameraXVersion = "1.4.2"
     val lifecycleVersion = "2.8.7"
 

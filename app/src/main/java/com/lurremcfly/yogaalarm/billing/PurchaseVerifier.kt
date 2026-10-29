@@ -22,6 +22,29 @@ fun interface PurchaseVerifier {
     suspend fun verify(purchase: PurchaseEvidence): ProEntitlement?
 }
 
+/** Implementations must authenticate opaque evidence again on offline restore (for example,
+ * a server-signed grant). Plain client fields or a stored ever-purchased flag are insufficient.
+ * Subscription validity must come from verified store expiry, never the initial purchase date.
+ */
+interface RecoverablePurchaseVerifier : PurchaseVerifier {
+    suspend fun verifyRecoverable(purchase: PurchaseEvidence): VerifiedPaidAccess?
+    fun restoreCached(evidence: String, nowEpochMillis: Long): VerifiedPaidAccess?
+
+    override suspend fun verify(purchase: PurchaseEvidence): ProEntitlement? =
+        verifyRecoverable(purchase)?.entitlement
+}
+
+data class VerifiedPaidAccess(
+    val entitlement: ProEntitlement,
+    val cacheEvidence: String,
+    val validUntilEpochMillis: Long? = null,
+) {
+    fun isValidAt(nowEpochMillis: Long): Boolean = cacheEvidence.isNotBlank() && when (entitlement) {
+        ProEntitlement.SUBSCRIPTION -> validUntilEpochMillis?.let { nowEpochMillis < it } == true
+        ProEntitlement.LIFETIME -> validUntilEpochMillis?.let { nowEpochMillis < it } ?: true
+    }
+}
+
 /** Interim client-only trust policy, NOT cryptographic or server-side verification. */
 class ClientPurchaseVerifier(private val packageName: String) : PurchaseVerifier {
     override suspend fun verify(purchase: PurchaseEvidence): ProEntitlement? {

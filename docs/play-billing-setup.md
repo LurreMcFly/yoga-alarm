@@ -1,6 +1,6 @@
 # Yoga Alarm billing specification
 
-Status: Android client integration implemented on 2026-09-26; backend verification and device acceptance testing remain outstanding.
+Status: Android client integration and gated local preview authored through 2026-10-28; trusted backend verification, Firebase configuration, and device acceptance remain release dependencies. Public preview rollout and analytics are disabled by default.
 
 This document is the source of truth for the target production billing implementation.
 The temporary client-only implementation and its limitations are described below.
@@ -9,7 +9,7 @@ an explicit product decision.
 
 ## Product principles
 
-- The existing paywall design remains unchanged.
+- The paywall retains its three choices, ordered lifetime, yearly, monthly. After the initial catalog attempt settles, default to the first available choice in that order; preserve explicit selection during refresh.
 - Yoga Alarm does not require a customer account, login, name, or email.
 - Google Play owns payment identity, checkout, renewals, cancellations, and restoration.
 - Every paid plan grants the same `Pro` entitlement.
@@ -44,20 +44,22 @@ substituting a different offer or hardcoded price.
 Free remains useful indefinitely:
 
 - Unlimited alarms.
-- Three-pose routines using Mountain, Warrior II, and Tree.
+- Exactly three pose slots using Mountain, Warrior II, Tree, or Squat.
 - A fixed 20-second hold per pose.
 - Sunbird Morning Call and Morning Temple Call.
 - Core alarm, snooze, vibration, camera validation, and routine completion.
 
 Every Pro purchase unlocks:
 
-- All eight current poses and future Pro poses.
+- All nine current poses and future Pro poses.
 - One to ten poses per routine.
 - Hold durations of 5, 10, 15, 20, 30, 45, or 60 seconds.
 - All ten current alarm sounds and future Pro sounds.
 - The same Pro feature set regardless of monthly, yearly, or lifetime payment.
 
-No free trial or introductory offer is included at launch.
+No Google Play free trial or introductory offer is configured. A local five-successful-alarm-day Pro preview is authored behind a disabled rollout gate. Only the first genuine yoga alarm completion on each local date counts; practice, tests, snoozes, and stops do not. Trial customization requires an accepted free fallback before saving. After the fifth qualifying day, future configurations switch to that fallback; already ringing/snoozed occurrences retain their snapshots. Paid ownership remains distinct from feature access.
+
+`-PproTrialInternalTesting=true` enables the preview assignment path only in debug builds. Public `-PproTrialRolloutEnabled=true` requires analytics configuration plus `-PmonetizationBillingReady=true` after trusted billing and device acceptance. These flags are deployment assertions, not evidence that those dependencies have been delivered.
 
 ## Purchase and entitlement rules
 
@@ -129,9 +131,14 @@ raw IP addresses, device fingerprints, camera data, poses, or alarm configuratio
 - All displayed prices come from Play. Unavailable prices display “Unavailable” and
   disable checkout for that choice. The fixed yearly savings percentage was removed.
 
+
+## Measurement configuration and release gates
+
+The default build excludes Firebase Analytics and the Google Services plugin and removes network permissions. Local trial/occurrence records do not establish measured revenue or retention. `-PmonetizationAnalyticsEnabled=true` requires a real `app/google-services.json` and `-PmonetizationPrivacyApproved=true`; the enabled sink then turns on Firebase collection. Review automatic SDK collection, consent/retention settings, published privacy text, and Play declarations before enabling it. Inspect the enabled merged release manifest and verify event delivery on a configured device. Authored funnel calls and SDK acceptance are not delivery receipts or authoritative financial reporting; reconcile store transactions separately. No live policy, Firebase project, or Console deployment is changed by these repository files.
+
 ## Current client implementation and production replacement
 
-`PlayBillingManager.state.entitlement` is the sole Pro authority used by the UI.
+`PlayBillingManager.state.entitlement` represents paid ownership. Editing access may additionally come from an enrolled, unretired local preview with remaining days. Checkout requires resolved nonpaid ownership, a current available offer, no checkout/verification in flight, and no pending Pro payment; it is guarded in the manager and UI.
 `PurchaseVerifier` is an injectable suspending boundary that receives package name,
 product IDs, purchase state and purchase token. `ClientPurchaseVerifier` currently
 trusts Play Billing's local purchase records after checking package, known product,
@@ -152,10 +159,7 @@ renewal or subscription end date in Google Play. Subscription management remains
 visible when the user owns both lifetime and a valid subscription, without affecting
 lifetime access.
 
-No entitlement or token is persisted by this implementation. An offline cold start
-has no Pro until Play responds; an outage within a running session preserves access
-but cannot enforce a trusted expiry. These are temporary deviations from the target
-offline rules above, not a production offline-cache implementation.
+`RecoverablePurchaseVerifier` and `VerifiedPaidAccess` define a cache contract for authenticated opaque evidence and verified subscription expiry. The manager can restore evidence only through that verifier. The actual `ClientPurchaseVerifier` implements only `PurchaseVerifier`, so it supplies no trusted offline cache: an offline cold start still has no paid Pro until Play responds. Session access survives temporary query failures, but this client cannot independently enforce trusted expiry or revocation. Never substitute an ever-purchased flag or initial purchase date for current ownership. Retiring a preview requires recoverable paid evidence; production rollout remains blocked on a real verifier and offline/device acceptance.
 
 The client acknowledges accepted purchases, retries transient failures with backoff
 up to 60 seconds while the manager is alive, and rediscovers unacknowledged purchases

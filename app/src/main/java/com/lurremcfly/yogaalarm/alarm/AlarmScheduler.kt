@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.Build
 import com.lurremcfly.yogaalarm.MainActivity
 import com.lurremcfly.yogaalarm.data.WakeProgressStore
+import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.time.Instant
 import java.time.Duration
@@ -46,9 +47,13 @@ object AlarmScheduler {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         alarmManager.cancel(receiverIntent(context, alarmId))
         alarmManager.cancel(snoozeReceiverIntent(context, alarmId))
+        AlarmOccurrenceStore(context).cancelAlarm(alarmId)
     }
 
-    fun scheduleSnooze(context: Context, alarmId: Long, minutes: Int, remainingSnoozes: Int): Boolean {
+    fun scheduleSnooze(context: Context, alarmId: Long, minutes: Int, remainingSnoozes: Int, occurrenceToken: String? = null): Boolean {
+        val occurrences = AlarmOccurrenceStore(context)
+        val occurrence = (if (occurrenceToken == null) occurrences.activeForAlarm(alarmId) else occurrences.find(occurrenceToken))
+            ?.takeIf { it.alarm.id == alarmId && it.state == com.lurremcfly.yogaalarm.model.OccurrenceState.RINGING } ?: return false
         val triggerAt = Instant.now().plusSeconds(minutes * 60L).toEpochMilli()
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return false
@@ -58,21 +63,28 @@ object AlarmScheduler {
             Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return runCatching {
+        val scheduled = runCatching {
             alarmManager.setAlarmClock(
                 AlarmManager.AlarmClockInfo(triggerAt, showIntent),
-                snoozeReceiverIntent(context, alarmId, remainingSnoozes),
+                snoozeReceiverIntent(context, alarmId, remainingSnoozes, occurrence.token),
             )
         }.isSuccess
+        if (!scheduled) return false
+        if (!occurrences.snooze(occurrence.token, remainingSnoozes)) {
+            alarmManager.cancel(snoozeReceiverIntent(context, alarmId))
+            return false
+        }
+        return true
     }
 
-    private fun snoozeReceiverIntent(context: Context, alarmId: Long, remainingSnoozes: Int = 0) =
+    private fun snoozeReceiverIntent(context: Context, alarmId: Long, remainingSnoozes: Int = 0, occurrenceToken: String? = null) =
         PendingIntent.getBroadcast(
             context,
             alarmId.hashCode() xor SNOOZE_REQUEST_MASK,
             Intent(context, AlarmReceiver::class.java)
                 .putExtra(EXTRA_ALARM_ID, alarmId)
                 .putExtra(EXTRA_IS_SNOOZE, true)
+                .putExtra(EXTRA_OCCURRENCE_TOKEN, occurrenceToken)
                 .putExtra(EXTRA_REMAINING_SNOOZES, remainingSnoozes),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
@@ -101,6 +113,8 @@ object AlarmScheduler {
         return if (hours > 0) "Alarm in $hours h ${minutes % 60} min" else "Alarm in $minutes min"
     }
 
+    const val ACTION_START_CAMERA = "com.lurremcfly.yogaalarm.START_CAMERA"
+    const val EXTRA_OCCURRENCE_TOKEN = "occurrence_token"
     const val EXTRA_ALARM_ID = "alarm_id"
     const val EXTRA_REMAINING_SNOOZES = "remaining_snoozes"
     const val EXTRA_IS_SNOOZE = "is_snooze"

@@ -36,7 +36,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
@@ -116,12 +115,14 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
 import com.lurremcfly.yogaalarm.model.AlarmConfig
+import com.lurremcfly.yogaalarm.model.AlarmCustomization
 import com.lurremcfly.yogaalarm.model.AlarmSound
 import com.lurremcfly.yogaalarm.model.PoseStep
 import com.lurremcfly.yogaalarm.model.YogaPose
 import java.util.Locale
 import kotlin.math.abs
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -131,7 +132,7 @@ internal fun AlarmEditorScreen(
     existingAlarmNames: List<String>,
     weekStartsOnSunday: Boolean,
     isPro: Boolean,
-    onUpgrade: () -> Unit,
+    onUpgrade: (String) -> Unit,
     onCancel: () -> Unit,
     onSave: (AlarmConfig) -> Unit,
     onTestRoutine: (AlarmConfig) -> Unit,
@@ -142,6 +143,7 @@ internal fun AlarmEditorScreen(
     onSkipOnboarding: () -> Unit = {},
     onPractice: (AlarmConfig) -> Unit = {},
     practiceComplete: Boolean = false,
+    trialActive: Boolean = false,
 ) {
     BackHandler(onBack = onCancel)
     var draft by rememberSaveable(initialAlarm.id) { mutableStateOf(initialAlarm) }
@@ -159,6 +161,32 @@ internal fun AlarmEditorScreen(
     var durationSheetSlot by remember { mutableStateOf<Int?>(null) }
     var soundSheetOpen by rememberSaveable(initialAlarm.id) { mutableStateOf(onboardingStep == OnboardingStep.SoundChoice) }
     var snoozeSheetOpen by remember { mutableStateOf(false) }
+    var fallbackReview by remember(initialAlarm.id) { mutableStateOf<AlarmCustomization?>(null) }
+    var savedCustomization by rememberSaveable(initialAlarm.id) { mutableStateOf(initialAlarm.customization) }
+    LaunchedEffect(initialAlarm.customization, isPro) {
+        if (savedCustomization != initialAlarm.customization) {
+            draggedPoseId = null
+            durationSheetSlot = null
+            soundSheetOpen = false
+            fallbackReview = null
+            poseCardBounds.clear()
+            draft = draft.copy(
+                routine = initialAlarm.routine,
+                sound = initialAlarm.sound,
+                trialFallback = initialAlarm.trialFallback,
+                trialCustomization = initialAlarm.trialCustomization,
+                trialOriginal = initialAlarm.trialOriginal,
+            )
+            poseCardIds = initialAlarm.routine.indices.toList()
+            savedCustomization = initialAlarm.customization
+        }
+        if (!isPro) {
+            draggedPoseId = null
+            durationSheetSlot = null
+            soundSheetOpen = false
+            fallbackReview = null
+        }
+    }
     val editorScrollState = rememberScrollState()
     var editorContentHeight by remember { mutableIntStateOf(0) }
     var scrollToAddedPose by remember { mutableStateOf(false) }
@@ -280,6 +308,23 @@ internal fun AlarmEditorScreen(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 90.dp),
         ) {
+            if (trialActive) {
+                Text(
+                    "Try Pro for 5 successful alarm days. No payment details or automatic charge. Only your first success on each date counts. After the fifth, future alarms use your confirmed free settings unless you buy Pro.",
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    color = MutedInk,
+                    fontSize = 13.sp,
+                )
+                if (!draft.customization.isFree) {
+                    val fallback = draft.trialFallback?.takeIf { it.isFree } ?: draft.suggestedFreeFallback()
+                    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                        Text("After Pro preview: ${fallback.summary}", color = Forest, fontSize = 13.sp)
+                        TextButton(onClick = { fallbackReview = fallback }) {
+                            Text(if (draft.trialFallback == fallback) "Review confirmed free settings" else "Review free settings")
+                        }
+                    }
+                }
+            }
             AlarmTimePicker(
                 hour = draft.hour,
                 minute = draft.minute,
@@ -464,7 +509,7 @@ internal fun AlarmEditorScreen(
                                         index = index,
                                         step = step,
                                         isPro = isPro,
-                                        onUpgrade = onUpgrade,
+                                        onUpgrade = { onUpgrade("pose") },
                                         onSelectPose = { pose ->
                                             draft = draft.copy(
                                                 routine = draft.routine.mapIndexed { slot, candidate ->
@@ -506,7 +551,7 @@ internal fun AlarmEditorScreen(
                         Button(
                             onClick = {
                                 if (!isPro) {
-                                    onUpgrade()
+                                    onUpgrade("count")
                                 } else if (draft.routine.size < 10) {
                                     val nextPose = YogaPose.entries[draft.routine.size % YogaPose.entries.size]
                                     scrollToAddedPose = true
@@ -539,9 +584,20 @@ internal fun AlarmEditorScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
             onCancel = onCancel,
             onSave = {
-                onSave(draft.copy(name = draft.name.trim().ifEmpty {
-                    AlarmConfig.defaultName(draft.hour, existingAlarmNames)
-                }))
+                if (!isPro && !draft.customization.isFree && draft.customization != initialAlarm.customization) {
+                    onUpgrade(when {
+                        !draft.sound.isFree -> "sound"
+                        draft.routine.any { !it.pose.isFree } -> "pose"
+                        draft.routine.size != 3 -> "count"
+                        else -> "duration"
+                    })
+                } else if (trialActive && !draft.customization.isFree && draft.trialFallback?.isFree != true) {
+                    fallbackReview = draft.suggestedFreeFallback()
+                } else {
+                    onSave(draft.copy(trialCustomization = if (trialActive && !draft.customization.isFree) draft.customization else null, name = draft.name.trim().ifEmpty {
+                        AlarmConfig.defaultName(draft.hour, existingAlarmNames)
+                    }))
+                }
             },
             onboardingStep = onboardingStep,
             onboardingTargets = onboardingTargets,
@@ -553,17 +609,19 @@ internal fun AlarmEditorScreen(
                 onSkip = { soundSheetOpen = false; onSkipOnboarding() },
                 onPractice = { onPractice(draft) },
                 onTest = { onTestRoutine(draft) },
+                trialActive = trialActive,
             )
         }
     }
 
     durationSheetSlot?.let { slotIndex ->
+        val selectedStep = draft.routine.getOrNull(slotIndex) ?: return@let
         DurationPickerSheet(
-            selectedDuration = draft.routine[slotIndex].durationSeconds,
+            selectedDuration = selectedStep.durationSeconds,
             isPro = isPro,
             onUpgrade = {
                 durationSheetSlot = null
-                onUpgrade()
+                onUpgrade("duration")
             },
             onDismiss = { durationSheetSlot = null },
             onSelect = { duration ->
@@ -575,6 +633,47 @@ internal fun AlarmEditorScreen(
                 durationSheetSlot = null
             },
         )
+    }
+
+    fallbackReview?.let { fallback ->
+        ModalBottomSheet(onDismissRequest = { fallbackReview = null }) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Your free settings", color = Forest, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                Text("After your fifth successful alarm day, future alarms use these settings unless you buy Pro. Already ringing or snoozed alarms keep their current routine.", color = MutedInk)
+                Text("${fallback.routine.sumOf { it.durationSeconds }} seconds total · 3 poses × 20 seconds", fontWeight = FontWeight.Bold)
+                if (fallback.routine.sumOf { it.durationSeconds } > draft.routine.sumOf { it.durationSeconds }) {
+                    Text("This increases your hold time from ${draft.routine.sumOf { it.durationSeconds }} to 60 seconds.", color = Forest)
+                }
+                fallback.routine.forEachIndexed { index, step ->
+                    Text("Pose ${index + 1}: ${step.pose.displayName}", fontWeight = FontWeight.SemiBold)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        YogaPose.entries.filter { it.isFree }.forEach { pose ->
+                            TextButton(onClick = {
+                                fallbackReview = fallback.copy(routine = fallback.routine.mapIndexed { slot, candidate -> if (slot == index) candidate.copy(pose = pose) else candidate })
+                            }) { Text(pose.displayName, color = if (pose == step.pose) Forest else MutedInk) }
+                        }
+                    }
+                }
+                Text("Sound: ${fallback.sound.displayName}", fontWeight = FontWeight.SemiBold)
+                AlarmSound.entries.filter { it.isFree }.forEach { sound ->
+                    TextButton(onClick = { fallbackReview = fallback.copy(sound = sound) }) { Text(sound.displayName) }
+                }
+                Button(onClick = {
+                    if (trialActive && isPro) {
+                        val confirmed = draft.copy(trialFallback = fallback, trialCustomization = draft.customization, name = draft.name.trim().ifEmpty { AlarmConfig.defaultName(draft.hour, existingAlarmNames) })
+                        draft = confirmed
+                        fallbackReview = null
+                        onSave(confirmed)
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Confirm free settings & save") }
+                OutlinedButton(onClick = {
+                    draft = draft.copy(routine = fallback.routine, sound = fallback.sound, trialFallback = null, trialCustomization = null)
+                    fallbackReview = null
+                    onSave(draft.copy(name = draft.name.trim().ifEmpty { AlarmConfig.defaultName(draft.hour, existingAlarmNames) }))
+                }, modifier = Modifier.fillMaxWidth()) { Text("Use free settings now") }
+                TextButton(onClick = { fallbackReview = null }, modifier = Modifier.fillMaxWidth()) { Text("Keep editing") }
+            }
+        }
     }
 
     if (snoozeSheetOpen) {
@@ -594,7 +693,7 @@ internal fun AlarmEditorScreen(
             isPro = isPro,
             onUpgrade = {
                 soundSheetOpen = false
-                onUpgrade()
+                onUpgrade("sound")
             },
             onDismiss = { soundSheetOpen = false; if (onboardingStep == OnboardingStep.SoundChoice) onOnboardingStep(OnboardingStep.Sound, draft) },
             onSelect = { sound ->
@@ -725,13 +824,21 @@ private fun PoseCarouselCard(
 ) {
     val fontScale = LocalDensity.current.fontScale
     val currentOnSelectPose by rememberUpdatedState(onSelectPose)
-    val poses = if (guided) YogaPose.entries.filter { it.isFree } else YogaPose.entries
-    val pagerState = rememberPagerState(
-        initialPage = poses.indexOf(step.pose).coerceAtLeast(0),
-        pageCount = { poses.size },
-    )
-    LaunchedEffect(pagerState, isPro, guided) {
-        snapshotFlow { pagerState.settledPage }.collect { page ->
+    val poses = if (guided && !isPro) YogaPose.entries.filter { it.isFree } else YogaPose.entries.toList()
+    val pagerState = key(poses) {
+        rememberPagerState(
+            initialPage = poses.indexOf(step.pose).coerceAtLeast(0),
+            pageCount = { poses.size },
+        )
+    }
+    LaunchedEffect(pagerState, poses, step.pose) {
+        val selectedPage = poses.indexOf(step.pose)
+        if (selectedPage >= 0 && !pagerState.isScrollInProgress && pagerState.settledPage != selectedPage) {
+            pagerState.scrollToPage(selectedPage)
+        }
+    }
+    LaunchedEffect(pagerState, poses, isPro) {
+        snapshotFlow { pagerState.settledPage }.drop(1).collect { page ->
             poses.getOrNull(page)?.takeIf { isPro || it.isFree }?.let(currentOnSelectPose)
         }
     }
@@ -955,7 +1062,7 @@ private fun SoundPickerSheet(
                 Modifier.fillMaxWidth().heightIn(max = 480.dp).onboardingTarget(OnboardingStep.SoundChoice, onboardingTargets),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items(AlarmSound.entries.filter { onOnboardingStep == null || it.isFree }, key = { it.name }) { sound ->
+                items(AlarmSound.entries.filter { onOnboardingStep == null || isPro || it.isFree }, key = { it.name }) { sound ->
                     val locked = !sound.isFree && !isPro
                     Row(
                         modifier = Modifier
@@ -1039,50 +1146,6 @@ private fun EditorActions(onCancel: () -> Unit, onSave: () -> Unit, modifier: Mo
                 Box(Modifier.width(1.dp).height(30.dp).background(Hairline))
                 TextButton(onClick = onSave, enabled = onboardingStep == null || onboardingStep == OnboardingStep.Save, modifier = Modifier.weight(1f).onboardingTarget(OnboardingStep.Save, onboardingTargets)) {
                     Text("Save", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun PosePickerSheet(
-    selectedPose: YogaPose,
-    onDismiss: () -> Unit,
-    onSelect: (YogaPose) -> Unit,
-) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = SoftSurface) {
-        Column(Modifier.padding(bottom = 34.dp)) {
-            Text("Choose a pose", modifier = Modifier.padding(horizontal = 22.dp), color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text("Three poses are included free forever.", modifier = Modifier.padding(horizontal = 22.dp, vertical = 6.dp), color = MutedInk)
-            Spacer(Modifier.height(16.dp))
-            LazyRow(
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 22.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(YogaPose.entries) { pose ->
-                    val locked = !pose.isFree
-                    Surface(
-                        modifier = Modifier
-                            .width(138.dp)
-                            .height(178.dp)
-                            .alpha(if (locked) 0.58f else 1f)
-                            .clickable(enabled = !locked) { onSelect(pose) },
-                        shape = RoundedCornerShape(24.dp),
-                        color = if (pose == selectedPose) AlarmLime.copy(alpha = 0.5f) else Color.White,
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Box(Modifier.fillMaxWidth()) {
-                                Text(if (locked) "PRO  🔒" else "FREE", color = if (locked) MutedInk else Forest, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                            }
-                            PoseGlyph(pose, Modifier.size(90.dp))
-                            Text(pose.displayName, color = Ink, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, lineHeight = 16.sp)
-                        }
-                    }
                 }
             }
         }

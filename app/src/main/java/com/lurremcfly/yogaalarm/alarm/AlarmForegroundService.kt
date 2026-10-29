@@ -26,7 +26,8 @@ import androidx.core.content.ContextCompat
 import com.lurremcfly.yogaalarm.MainActivity
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.audio.AlarmAudio
-import com.lurremcfly.yogaalarm.data.AlarmStore
+import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
+import com.lurremcfly.yogaalarm.model.OccurrenceState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.util.Date
@@ -36,6 +37,7 @@ class AlarmForegroundService : Service() {
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var activeAlarmId: Long? = null
+    private var activeOccurrenceToken: String? = null
     private var activeNotificationBuilder: NotificationCompat.Builder? = null
     private val handler = Handler(Looper.getMainLooper())
     private var inactivityTimeout: Runnable? = null
@@ -46,7 +48,7 @@ class AlarmForegroundService : Service() {
             if (intent.action != ACTION_NOTIFICATION_DISMISSED) return
             // Android 14+ allows ongoing notifications to be swiped away while unlocked.
             // Restore only the active alarm's controls, without replaying its alert or UI.
-            dismissNotificationPopup(alarmId)
+            dismissNotificationPopup(alarmId, intent.getStringExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN))
         }
     }
     private val mutableFinishedAlarmId = MutableStateFlow<Long?>(null)
@@ -56,16 +58,16 @@ class AlarmForegroundService : Service() {
         val service: AlarmForegroundService get() = this@AlarmForegroundService
     }
 
-    fun setRoutineLevel(alarmId: Long, level: Float) {
-        if (activeAlarmId == alarmId) audio?.setLevel(level)
+    fun setRoutineLevel(alarmId: Long, level: Float, occurrenceToken: String? = activeOccurrenceToken) {
+        if (activeAlarmId == alarmId && activeOccurrenceToken == occurrenceToken) audio?.setLevel(level)
     }
 
-    fun recordActivity(alarmId: Long) {
-        if (activeAlarmId == alarmId) lastActivityAtMs = SystemClock.elapsedRealtime()
+    fun recordActivity(alarmId: Long, occurrenceToken: String? = activeOccurrenceToken) {
+        if (activeAlarmId == alarmId && activeOccurrenceToken == occurrenceToken) lastActivityAtMs = SystemClock.elapsedRealtime()
     }
 
-    fun dismissNotificationPopup(alarmId: Long) {
-        if (activeAlarmId != alarmId) return
+    fun dismissNotificationPopup(alarmId: Long, occurrenceToken: String? = activeOccurrenceToken) {
+        if (activeAlarmId != alarmId || activeOccurrenceToken != occurrenceToken) return
         // Keep foreground playback and shade controls, but remove the heads-up alert.
         val notification = activeNotificationBuilder
             ?.setFullScreenIntent(null, false)
@@ -75,12 +77,14 @@ class AlarmForegroundService : Service() {
         getSystemService(NotificationManager::class.java).notify(AlarmScheduler.NOTIFICATION_ID, notification)
     }
 
-    fun finishRoutine(alarmId: Long) {
-        if (activeAlarmId != alarmId) return
+    fun finishRoutine(alarmId: Long, occurrenceToken: String? = activeOccurrenceToken, persistStop: Boolean = true) {
+        if (activeAlarmId != alarmId || activeOccurrenceToken != occurrenceToken) return
         releasePlaybackResources()
+        if (persistStop) activeOccurrenceToken?.let { AlarmOccurrenceStore(this).stop(it) }
         activeAlarmId = null
         activeNotificationBuilder = null
         mutableRingingAlarm.value = null
+        mutableRingingOccurrenceToken.value = null
         mutableFinishedAlarmId.value = alarmId
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -98,36 +102,47 @@ class AlarmForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val occurrenceToken = intent?.getStringExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN)
         val alarmId = intent?.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L) ?: -1L
         if (intent?.action == ACTION_STOP_ALARM) {
-            finishRoutine(alarmId)
+            finishRoutine(alarmId, occurrenceToken, persistStop = intent?.getBooleanExtra(EXTRA_PRESERVE_OCCURRENCE, false) != true)
             if (activeAlarmId == null) stopSelf(startId)
             return START_NOT_STICKY
         }
         // Reattaching a recreated camera screen must not restart the ringing track.
-        if (activeAlarmId == alarmId) return START_REDELIVER_INTENT
-        val remainingSnoozes = intent?.getIntExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, 0) ?: 0
-        val alarm = AlarmStore(this).load().firstOrNull { it.id == alarmId }
-        if (alarm == null) {
-            stopSelf(startId)
+        if (activeAlarmId == alarmId && activeOccurrenceToken == occurrenceToken) return START_REDELIVER_INTENT
+        val occurrence = AlarmOccurrenceStore(this).find(occurrenceToken)
+        val alarm = occurrence?.alarm
+        if (alarm == null || occurrence?.state != OccurrenceState.RINGING || alarm.id != alarmId) {
+            if (activeAlarmId == null) stopSelf(startId)
             return START_NOT_STICKY
         }
 
+        val remainingSnoozes = occurrence.remainingSnoozes
+        val openAlarmIntent = Intent(this, MainActivity::class.java)
+            .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+            .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, occurrenceToken)
+            .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val openAlarm = PendingIntent.getActivity(
             this,
-            alarmId.hashCode(),
-            Intent(this, MainActivity::class.java)
-                .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
-                .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            occurrenceToken.hashCode(),
+            openAlarmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val startCamera = PendingIntent.getActivity(
+            this,
+            occurrenceToken.hashCode(),
+            Intent(openAlarmIntent).setAction(AlarmScheduler.ACTION_START_CAMERA),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val stopAlarm = if (!alarm.stopButtonDisabled) {
             PendingIntent.getBroadcast(
                 this,
-                alarmId.hashCode(),
+                occurrenceToken.hashCode(),
                 Intent(this, StopAlarmReceiver::class.java)
-                    .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
+                    .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+                    .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, occurrenceToken),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         } else {
@@ -136,9 +151,10 @@ class AlarmForegroundService : Service() {
         val snooze = if (alarm.snoozeEnabled && remainingSnoozes > 0) {
             PendingIntent.getBroadcast(
                 this,
-                alarmId.hashCode(),
+                occurrenceToken.hashCode(),
                 Intent(this, SnoozeReceiver::class.java)
                     .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+                    .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, occurrenceToken)
                     .putExtra(AlarmScheduler.EXTRA_REMAINING_SNOOZES, remainingSnoozes),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
@@ -151,7 +167,7 @@ class AlarmForegroundService : Service() {
         }
         val headsUpContent = RemoteViews(packageName, R.layout.notification_alarm_heads_up)
         for (content in listOf(compactContent, expandedContent, headsUpContent)) {
-            content.setOnClickPendingIntent(R.id.notification_start, openAlarm)
+            content.setOnClickPendingIntent(R.id.notification_start, startCamera)
             content.setViewVisibility(R.id.notification_stop_container, if (stopAlarm != null) View.VISIBLE else View.GONE)
             content.setViewVisibility(R.id.notification_snooze_container, if (snooze != null) View.VISIBLE else View.GONE)
             if (stopAlarm != null) content.setOnClickPendingIntent(R.id.notification_stop, stopAlarm)
@@ -191,17 +207,23 @@ class AlarmForegroundService : Service() {
             .setDeleteIntent(
                 PendingIntent.getBroadcast(
                     this,
-                    alarmId.hashCode(),
+                    occurrenceToken.hashCode(),
                     Intent(ACTION_NOTIFICATION_DISMISSED)
                         .setPackage(packageName)
-                        .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId),
+                        .putExtra(AlarmScheduler.EXTRA_ALARM_ID, alarmId)
+                    .putExtra(AlarmScheduler.EXTRA_OCCURRENCE_TOKEN, occurrenceToken),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 ),
             )
             .setFullScreenIntent(openAlarm, true)
             .setContentIntent(openAlarm)
+        activeOccurrenceToken?.takeIf { it != occurrenceToken }?.let {
+            AlarmOccurrenceStore(this).stop(it, onlyIfRinging = true)
+        }
         activeNotificationBuilder = notificationBuilder
         activeAlarmId = alarmId
+        activeOccurrenceToken = occurrenceToken
+        mutableRingingOccurrenceToken.value = occurrenceToken
         startForeground(AlarmScheduler.NOTIFICATION_ID, notificationBuilder.build())
         mutableFinishedAlarmId.value = null
 
@@ -237,7 +259,7 @@ class AlarmForegroundService : Service() {
         lastActivityAtMs = startedAtElapsed
         val timeout = object : Runnable {
             override fun run() {
-                if (activeAlarmId != alarmId) return
+                if (activeAlarmId != alarmId || activeOccurrenceToken != occurrenceToken) return
                 val now = SystemClock.elapsedRealtime()
                 val remaining = INACTIVITY_TIMEOUT_MS - (now - lastActivityAtMs)
                 if (remaining > 0L) {
@@ -253,7 +275,7 @@ class AlarmForegroundService : Service() {
                     timeFormat.format(Date(startedAt)),
                     timeFormat.format(Date(endedAt)),
                 )
-                finishRoutine(alarmId)
+                finishRoutine(alarmId, occurrenceToken)
                 val openApp = PendingIntent.getActivity(
                     this@AlarmForegroundService,
                     0,
@@ -285,6 +307,7 @@ class AlarmForegroundService : Service() {
         activeNotificationBuilder = null
         activeAlarmId = null
         mutableRingingAlarm.value = null
+        mutableRingingOccurrenceToken.value = null
         releasePlaybackResources()
         super.onDestroy()
     }
@@ -303,6 +326,9 @@ class AlarmForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder = LocalBinder()
 
     companion object {
+        private val mutableRingingOccurrenceToken = MutableStateFlow<String?>(null)
+        val ringingOccurrenceToken = mutableRingingOccurrenceToken.asStateFlow()
+        const val EXTRA_PRESERVE_OCCURRENCE = "preserve_occurrence"
         private val mutableRingingAlarm = MutableStateFlow<Pair<Long, Int>?>(null)
         val ringingAlarm = mutableRingingAlarm.asStateFlow()
 

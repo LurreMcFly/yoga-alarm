@@ -63,7 +63,22 @@ data class AlarmConfig(
     val snoozeEnabled: Boolean,
     val snoozeMinutes: Int,
     val snoozeCount: Int,
+    val trialFallback: AlarmCustomization? = null,
+    val trialCustomization: AlarmCustomization? = null,
+    val trialOriginal: AlarmCustomization? = null,
 ) : java.io.Serializable {
+    val customization: AlarmCustomization get() = AlarmCustomization(routine, sound)
+
+    fun suggestedFreeFallback(): AlarmCustomization {
+        val defaults = listOf(YogaPose.MOUNTAIN, YogaPose.WARRIOR_TWO, YogaPose.TREE)
+        return AlarmCustomization(
+            defaults.mapIndexed { index, pose ->
+                PoseStep(routine.getOrNull(index)?.pose?.takeIf { it.isFree } ?: pose, 20)
+            },
+            sound.takeIf { it.isFree } ?: AlarmSound.SUNBIRD_MORNING_CALL,
+        )
+    }
+
     companion object {
         private val morningNames = listOf(
             "Rise & stretch ☀️", "Morning movement", "A fresh start 🌱", "Wake up gently",
@@ -117,4 +132,10 @@ data class AlarmConfig(
             snoozeCount = 1,
         )
     }
+}
+
+data class AlarmCustomization(val routine: List<PoseStep>, val sound: AlarmSound) : java.io.Serializable {
+    val isFree: Boolean get() = routine.size == 3 && routine.all { it.pose.isFree && it.durationSeconds == 20 } && sound.isFree
+    val summary: String get() = routine.joinToString { "${it.pose.displayName} ${it.durationSeconds}s" } +
+        " · ${routine.sumOf { it.durationSeconds }} seconds total · ${sound.displayName}"
 }
