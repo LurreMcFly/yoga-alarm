@@ -4,7 +4,25 @@ This is a local preview and Play Billing acceptance runbook, not production appr
 
 ## Build and signing
 
-Explicitly opt in for either build type:
+For a Play Internal Testing upload, use the dedicated **internalTesting** build variant. Google Play track membership does not enable app build flags.
+
+In Android Studio:
+
+1. Sync the project with Gradle after pulling this change.
+2. Set a version code higher than the last uploaded version.
+3. Choose **Build > Generate Signed Bundle / APK > Android App Bundle**, then your existing upload key.
+4. On the build-variant selection step, select **internalTesting**, not **release**. No Gradle property is needed for this variant.
+5. Upload the newly generated signed AAB from the wizard's chosen destination. An old `app/release/app-release.aab` will not gain the controls merely because it is uploaded to the Internal testing track.
+
+Command-line equivalent (unsigned until signed separately):
+
+```bash
+./gradlew :app:bundleInternalTesting
+```
+
+Output: `app/build/outputs/bundle/internalTesting/app-internalTesting.aab`. This variant inherits release optimization and is not debuggable. It keeps the same application ID and always enables the testing controls.
+
+The earlier explicit-property commands remain supported:
 
 ```bash
 ./gradlew :app:assembleDebug -PproTrialInternalTesting=true
@@ -13,24 +31,26 @@ Explicitly opt in for either build type:
 
 Use a Java 17+ runtime. On this workstation the verified bundled runtime is `/opt/android-studio-for-platform/jbr`; prefix a command with `JAVA_HOME=/opt/android-studio-for-platform/jbr` if Java is not on `PATH`.
 
-Both enable `BuildConfig.PRO_TRIAL_INTERNAL_TESTING` and preview assignment. The package remains `com.lurremcfly.yogaalarm`, so existing Play products can resolve. Ordinary debug and release builds leave testing controls disabled; public preview rollout retains its separate analytics, privacy, and billing-readiness gates. Do not save the internal property in project or user Gradle defaults.
+All of the internal build options above enable `BuildConfig.PRO_TRIAL_INTERNAL_TESTING` and preview assignment. The package remains `com.lurremcfly.yogaalarm`, so existing Play products can resolve. Ordinary debug and release builds leave testing controls disabled; public preview rollout retains its separate analytics, privacy, and billing-readiness gates. Do not save the internal property in project or user Gradle defaults.
 
-The release bundle is `app/build/outputs/bundle/release/app-release.aab`. This repository has no release signing configuration, and local Gradle/SDK properties do not provide one. The command alone does not produce an upload-ready signed artifact. Use Android Studio **Build > Generate Signed Bundle / APK > Android App Bundle**, selecting the existing registered upload key and the release variant, with `proTrialInternalTesting=true` configured for that invocation. Keep keystore paths and passwords outside tracked files and command history. Do not substitute a debug key or create a replacement key for this existing Play app. See [Android app signing](https://developer.android.com/studio/publish/app-signing).
+The explicit-property `bundleRelease` command instead writes `app/build/outputs/bundle/release/app-release.aab`. Its flag applies only to that invocation; a later Android Studio signing build using ordinary **release** does not inherit it. This repository has no release signing configuration. Command-line bundle tasks alone do not produce upload-ready signed artifacts. Prefer the Android Studio **internalTesting** selection above for signing. Keep keystore paths and passwords outside tracked files and command history. Do not substitute a debug key or create a replacement key for this existing Play app. See [Android app signing](https://developer.android.com/studio/publish/app-signing).
 
 Alternatively, sign the freshly built internal AAB locally with the JDK's `jarsigner`, replacing the paths and alias below with the existing upload key. Omit password arguments so it prompts securely:
 
 ```bash
 jarsigner -keystore /path/to/existing-upload-key.jks \
   -signedjar /path/to/yoga-alarm-internal-signed.aab \
-  app/build/outputs/bundle/release/app-release.aab UPLOAD_KEY_ALIAS
+  app/build/outputs/bundle/internalTesting/app-internalTesting.aab UPLOAD_KEY_ALIAS
 jarsigner -verify /path/to/yoga-alarm-internal-signed.aab
 ```
 
 A successful signature check alone does not establish that the certificate matches the key registered in Play Console. No Console setting or registered certificate was checked during this implementation.
 
-Use a version code higher than every previously uploaded artifact (currently the repository declares 29; the Console maximum has not been verified). Confirm the final artifact's package, version code, upload signature, and both BuildConfig gates before uploading. Never promote this controls-enabled AAB to production; rebuild without the internal property. This repository change does not upload or publish anything.
+Use a version code higher than every previously uploaded artifact (currently the repository declares 31; the Console maximum has not been verified). Confirm the final artifact's package, version code, upload signature, and both BuildConfig gates before uploading. Never promote this controls-enabled AAB to production; rebuild the **release** variant without the internal property. This repository change does not upload or publish anything.
 
 ## Play Console setup
+
+The 2026-10-30 missing-menu investigation found that the local signed `app/release/app-release.aab` contained neither the menu nor the non-paying switch. A Play internal-track install cannot restore code removed from that artifact. The dedicated variant above makes the choice explicit in the signing wizard. Validation passed: both `bundleInternalTesting` and `bundleRelease`; 20 internal-variant and 13 normal-release trial-store tests (opposite-mode tests skipped); both variants have `DEBUG=false` and the unchanged application ID. DEX inspection confirmed the menu/switch present only in `internalTesting`. Both command-line outputs are unsigned; the existing signed AAB was not modified. No Console upload or phone installation was performed.
 
 Internal track access and license testing are separate settings:
 
