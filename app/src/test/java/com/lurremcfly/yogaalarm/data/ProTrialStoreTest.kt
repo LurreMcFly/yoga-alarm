@@ -1,6 +1,9 @@
 package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
+import com.lurremcfly.yogaalarm.BuildConfig
+import org.junit.Assume.assumeTrue
+import org.junit.Assume.assumeFalse
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import com.lurremcfly.yogaalarm.model.*
@@ -237,6 +240,129 @@ class ProTrialStoreTest {
         trials.reconcile(true, false, recoverablePaid = true)
         assertTrue(trials.load().retired)
         assertFalse(trials.load().active)
+    }
+
+    @Test fun internalControlsAreDisabledWithoutBuildFlag() {
+        assumeFalse(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertFalse(trials.resetForInternalTesting({ false }, { false }))
+        assertFalse(trials.advanceDayForInternalTesting(first, { false }, { false }))
+        assertEquals(ProTrial(), trials.load())
+        context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).edit().putBoolean("pro_preview_internal_expiry_banner", true).commit()
+        assertFalse(trials.internalExpiryBannerEnabled())
+        assertFalse(trials.setInternalExpiryBanner(true, { false }))
+    }
+
+    @Test fun internalResetForcesPreviewAndPreservesLatestAlarmSettingsAndOtherData() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        assertEquals(TrialEnrollment.INELIGIBLE, trials.enroll(true, true).enrollment)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        assertEquals(alarm, alarms.load().single())
+        repeat(5) { assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false })) }
+        val edited = alarms.load().single().copy(name = "Latest", sound = AlarmSound.MORNING_TEMPLE_CALL, enabled = false)
+        alarms.save(listOf(edited))
+        val prefs = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE)
+        prefs.edit().putString("purchase_test_marker", "preserve").commit()
+        val progressBefore = context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val reset = trials.load()
+        assertTrue(reset.active)
+        assertTrue(reset.dates.isEmpty())
+        assertTrue(reset.presented.isEmpty())
+        assertNull(reset.pendingMilestone)
+        assertEquals(FreeTransition.NOT_NEEDED, reset.transition)
+        assertEquals(edited.copy(trialOriginal = null), alarms.load().single())
+        assertEquals("preserve", prefs.getString("purchase_test_marker", null))
+        assertEquals(progressBefore, context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all)
+    }
+
+    @Test fun internalDaysUseProductionMilestonesAndConversionWithoutOccurrencesOrProgress() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        val prefsBefore = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).all
+        val progressBefore = context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all
+        repeat(5) { index ->
+            assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false }))
+            assertEquals(index + 1, trials.load().dates.size)
+            if (index + 1 in setOf(2, 4, 5)) assertEquals(index + 1, trials.load().pendingMilestone)
+        }
+        assertEquals((0L..4L).map { first.toLocalDate().plusDays(it) }.toSet(), trials.load().dates)
+        assertEquals(FreeTransition.APPLIED, trials.load().transition)
+        assertEquals(alarm.trialFallback, alarms.load().single().customization)
+        assertEquals(alarm.customization, alarms.load().single().trialOriginal)
+        assertFalse(trials.advanceDayForInternalTesting(first, { false }, { false }))
+        assertFalse(occurrences.hasInFlight())
+        assertTrue(occurrences.pendingCompletions().isEmpty())
+        assertEquals(prefsBefore["alarm_occurrences_v1"], context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).all["alarm_occurrences_v1"])
+        assertEquals(progressBefore, context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all)
+    }
+
+    @Test fun internalControlsRejectPaidVerificationBlockedAndInFlightStates() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val previous = trials.load()
+        assertFalse(trials.resetForInternalTesting({ true }, { false }))
+        assertFalse(trials.advanceDayForInternalTesting(first, { true }, { false }))
+        assertFalse(trials.resetForInternalTesting({ false }, { true }))
+        assertFalse(trials.advanceDayForInternalTesting(first, { false }, { true }))
+        assertFalse(trials.resetForInternalTesting({ false }, { false }, { true }))
+        assertFalse(trials.advanceDayForInternalTesting(first, { false }, { false }, { true }))
+        val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
+        repeat(2) {
+            assertFalse(trials.resetForInternalTesting({ false }, { false }))
+            assertFalse(trials.advanceDayForInternalTesting(first, { false }, { false }))
+            occurrences.snooze(occurrence.token, 0)
+        }
+        assertEquals(previous, trials.load())
+    }
+
+    @Test fun internalResetAllowsReeditedAlarmToConvertOnSecondExpiry() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val original = customized(1)
+        alarms.save(listOf(original))
+        repeat(5) { assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false })) }
+        assertEquals(original.customization, alarms.load().single().trialOriginal)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val base = alarms.load().single()
+        assertEquals(original.trialFallback, base.customization)
+        assertNull(base.trialOriginal)
+        val draft = base.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10)), sound = AlarmSound.LOTUS_SUNRISE_LOOP)
+        val confirmed = draft.copy(trialFallback = draft.suggestedFreeFallback(), trialCustomization = draft.customization)
+        assertEquals(confirmed, alarms.saveEdited(confirmed, base, paid = false))
+        repeat(5) { assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false })) }
+        val converted = alarms.load().single()
+        assertEquals(FreeTransition.APPLIED, trials.load().transition)
+        assertEquals(confirmed.trialFallback, converted.customization)
+        assertEquals(confirmed.customization, converted.trialOriginal)
+    }
+
+    @Test fun internalExpiryPreservesMissingFallbackAndReportsPending() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.resetForInternalTesting({ false }, { false }))
+        val alarm = customized(1).copy(trialFallback = null)
+        alarms.save(listOf(alarm))
+        repeat(5) { assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false })) }
+        assertEquals(alarm, alarms.load().single())
+        assertEquals(FreeTransition.PENDING, trials.load().transition)
+    }
+
+    @Test fun internalBannerPersistsButRejectsBlockedAndInFlightChanges() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertFalse(trials.internalExpiryBannerEnabled())
+        assertTrue(trials.setInternalExpiryBanner(true, { false }))
+        assertTrue(ProTrialStore(context).internalExpiryBannerEnabled())
+        assertFalse(trials.setInternalExpiryBanner(false, { true }))
+        val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
+        assertFalse(trials.setInternalExpiryBanner(false, { false }))
+        occurrences.snooze(occurrence.token, 0)
+        assertFalse(trials.setInternalExpiryBanner(false, { false }))
+        occurrences.stop(occurrence.token)
+        assertTrue(trials.setInternalExpiryBanner(false, { false }))
+        assertFalse(trials.internalExpiryBannerEnabled())
     }
 
     private fun customized(id: Long): AlarmConfig {

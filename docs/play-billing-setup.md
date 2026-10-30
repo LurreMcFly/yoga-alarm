@@ -59,7 +59,7 @@ Every Pro purchase unlocks:
 
 No Google Play free trial or introductory offer is configured. A local five-successful-alarm-day Pro preview is authored behind a disabled rollout gate. Only the first genuine yoga alarm completion on each local date counts; practice, tests, snoozes, and stops do not. Trial customization requires an accepted free fallback before saving. After the fifth qualifying day, future configurations switch to that fallback; already ringing/snoozed occurrences retain their snapshots. Paid ownership remains distinct from feature access.
 
-`-PproTrialInternalTesting=true` enables the preview assignment path only in debug builds. Public `-PproTrialRolloutEnabled=true` requires analytics configuration plus `-PmonetizationBillingReady=true` after trusted billing and device acceptance. These flags are deployment assertions, not evidence that those dependencies have been delivered.
+`-PproTrialInternalTesting=true` explicitly enables the preview assignment path and local preview testing controls in both debug and release builds, preserving the Play package name. These controls are disabled in ordinary builds, including production releases. See the [internal testing runbook](monetization-internal-testing.md) for build, signing, tester, and reset instructions. Public `-PproTrialRolloutEnabled=true` requires analytics configuration plus `-PmonetizationBillingReady=true` after trusted billing and device acceptance. These flags are deployment assertions, not evidence that those dependencies have been delivered. Never promote an internal-controls artifact to production; rebuild without the internal flag.
 
 ## Purchase and entitlement rules
 

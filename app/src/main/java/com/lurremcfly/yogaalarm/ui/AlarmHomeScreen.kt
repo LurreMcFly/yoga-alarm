@@ -1,5 +1,7 @@
 package com.lurremcfly.yogaalarm.ui
 
+import com.lurremcfly.yogaalarm.BuildConfig
+
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -143,6 +145,7 @@ internal fun AlarmHomeScreen(
     onboardingTargets: OnboardingTargets? = null,
     trialStatus: String? = null,
     trialMilestone: Int? = null,
+    internalExpiryBanner: Boolean = false,
     offerAvailable: Boolean = false,
     onTrialMilestonePresented: (Int) -> Unit = {},
     onDismissTrialMilestone: () -> Unit = {},
@@ -335,6 +338,11 @@ internal fun AlarmHomeScreen(
                         Row {
                             TextButton(onClick = onOpenPro) { Text("Keep Pro") }
                             TextButton(onClick = onDismissTrialMilestone) { Text("Not now") }
+                        }
+                    } else if (internalExpiryBanner && BuildConfig.PRO_TRIAL_INTERNAL_TESTING) {
+                        if (offerAvailable) {
+                            if (trialMilestone == 5) LaunchedEffect(trialMilestone) { onTrialMilestonePresented(5) }
+                            TextButton(onClick = onOpenPro) { Text("Keep Pro") }
                         }
                     } else if (trialMilestone == 4) {
                         LaunchedEffect(trialMilestone) { onTrialMilestonePresented(4) }

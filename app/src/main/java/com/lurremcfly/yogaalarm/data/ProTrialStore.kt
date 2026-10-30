@@ -2,6 +2,7 @@ package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.FreeTransition
 import com.lurremcfly.yogaalarm.model.ProTrial
 import com.lurremcfly.yogaalarm.model.TrialEnrollment
@@ -53,10 +54,60 @@ class ProTrialStore(private val context: Context) {
         val occurrence = occurrences.find(token) ?: return@synchronized false
         if (occurrence.completedAt != null) return@synchronized true
         if (occurrence.state != com.lurremcfly.yogaalarm.model.OccurrenceState.RINGING) return@synchronized false
-        val currentPaid = paid()
-        val currentVerifying = verifying()
+        recordCompletion(now.toLocalDate(), paid(), verifying()) { editor ->
+            occurrences.stageCompleted(editor, token, now)
+        }
+    }
+
+    fun internalExpiryBannerEnabled(): Boolean = synchronized(AlarmStorageLock) {
+        BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_expiry_banner", false)
+    }
+
+    fun setInternalExpiryBanner(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
+        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        val previous = internalExpiryBannerEnabled()
+        val committed = preferences.edit().putBoolean("pro_preview_internal_expiry_banner", enabled).commit()
+        if (!committed) preferences.edit().putBoolean("pro_preview_internal_expiry_banner", previous).commit()
+        committed
+    }
+
+    /** Starts a clean preview without restoring alarms or modifying purchases/history. */
+    fun resetForInternalTesting(paid: () -> Boolean, verifying: () -> Boolean, blocked: () -> Boolean = { false }): Boolean = synchronized(AlarmStorageLock) {
+        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || paid() || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = load()
-        var trial = if (currentPaid) previous else previous.complete(now.toLocalDate())
+        val store = AlarmStore(context)
+        val current = store.load()
+        val editor = preferences.edit()
+        stage(editor, ProTrial(enrollment = TrialEnrollment.PREVIEW, enrolledAt = System.currentTimeMillis()))
+        // Discard old restoration snapshots without reviving them; keep confirmed future fallbacks.
+        store.stage(editor, current.map { it.copy(trialOriginal = null) })
+        if (editor.commit()) true else {
+            val recovery = preferences.edit()
+            stage(recovery, previous)
+            store.stage(recovery, current)
+            recovery.commit()
+            false
+        }
+    }
+
+    /** Exercises production accounting only; no occurrence or wake-progress record is created. */
+    fun advanceDayForInternalTesting(now: ZonedDateTime, paid: () -> Boolean, verifying: () -> Boolean, blocked: () -> Boolean = { false }): Boolean = synchronized(AlarmStorageLock) {
+        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || paid() || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        val trial = load()
+        if (!trial.active) return@synchronized false
+        val date = maxOf(now.toLocalDate(), trial.dates.maxOrNull()?.plusDays(1) ?: now.toLocalDate())
+        recordCompletion(date, currentPaid = false, currentVerifying = false)
+    }
+
+    // Caller holds AlarmStorageLock. Real and synthetic days use the same accounting and expiry commit.
+    private fun recordCompletion(
+        date: LocalDate,
+        currentPaid: Boolean,
+        currentVerifying: Boolean,
+        stageOutcome: (SharedPreferences.Editor) -> Unit = {},
+    ): Boolean {
+        val previous = load()
+        var trial = if (currentPaid) previous else previous.complete(date)
         if (trial.exhausted && currentVerifying) trial = trial.copy(awaitingPurchaseResolution = true)
         val store = AlarmStore(context)
         val current = store.load()
@@ -66,7 +117,7 @@ class ProTrialStore(private val context: Context) {
             trial = trial.copy(transition = if (converted.any { !it.customization.isFree && it.trialOriginal == null }) FreeTransition.PENDING else FreeTransition.APPLIED)
         }
         val editor = preferences.edit()
-        occurrences.stageCompleted(editor, token, now)
+        stageOutcome(editor)
         stage(editor, trial)
         store.stage(editor, converted)
         val committed = editor.commit()
@@ -78,7 +129,7 @@ class ProTrialStore(private val context: Context) {
             store.stage(recovery, current)
             recovery.commit()
         }
-        committed
+        return committed
     }
 
     fun reconcile(paid: Boolean, verifying: Boolean, recoverablePaid: Boolean = false, ownershipResolved: Boolean = true): ProTrial = synchronized(AlarmStorageLock) {

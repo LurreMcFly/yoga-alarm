@@ -69,6 +69,7 @@ fun AppSettingsSheet(
     onManageSubscription: () -> Unit,
     onOpenPrivacy: () -> Unit,
     onOpenHelp: () -> Unit,
+    monetizationTesting: @Composable (() -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -219,6 +220,7 @@ fun AppSettingsSheet(
                     }
                 }
             }
+            if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) monetizationTesting?.invoke()
             Text(
                 "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 color = MutedInk,
