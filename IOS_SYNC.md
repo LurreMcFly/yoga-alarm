@@ -14,7 +14,7 @@ iOS source audit: 2026-10-23, against iOS commit `7a1e058` (clean working tree).
 
 | ID | Source status | Remaining work |
 | --- | --- | --- |
-| SYNC-028 | Planning required | Audit the native iOS code and write/review a complete iOS implementation plan from the Android monetization plan before implementing the five-completion Pro preview and matching purchase/expiry behavior. |
+| SYNC-028 | Planning required | Audit the native iOS code and write/review a complete iOS implementation plan from the Android monetization plan before implementing the five-completion Pro preview and matching purchase/expiry behavior. Internal builds may preview a non-paying state without changing Google Play ownership or verification; the toggle is blocked during in-flight alarms and test reset treats the preview as non-paying. |
 | SYNC-027 | Not audited | Notification Start opens the camera flow directly, requesting camera permission when needed. |
 | SYNC-026 | Partial | Backup inactivity watchdog and silent missed reports are implemented alongside AlarmKit; native tests/device acceptance remain pending and enforcement requires app execution. |
 | SYNC-025 | Not audited | Add long-press pose-card reordering, edge scrolling and position-based pose numbering. |

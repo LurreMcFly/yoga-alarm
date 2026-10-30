@@ -365,6 +365,80 @@ class ProTrialStoreTest {
         assertFalse(trials.internalExpiryBannerEnabled())
     }
 
+    @Test fun internalNonPayingIsIgnoredWithoutBuildFlag() {
+        assumeFalse(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).edit().putBoolean("pro_preview_internal_non_paying", true).commit()
+        assertFalse(trials.internalNonPayingEnabled())
+        assertTrue(trials.hasPaidAccess(true))
+        assertFalse(trials.setInternalNonPaying(true, { false }))
+        assertTrue(trials.hasPaidAccess(true))
+    }
+
+    @Test fun internalNonPayingPersistsAndAllowsPaidOwnerPreviewAccountingAndConversion() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalNonPaying(true, { false }))
+        trials = ProTrialStore(context)
+        assertTrue(trials.internalNonPayingEnabled())
+        assertFalse(trials.hasPaidAccess(true))
+        assertFalse(trials.hasPaidAccess(false))
+        assertTrue(trials.resetForInternalTesting({ true }, { false }))
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        assertFalse(trials.reconcile(true, false, recoverablePaid = true).retired)
+        // Exercise both synthetic and real completion entry points with actual paid ownership.
+        assertTrue(trials.advanceDayForInternalTesting(first, { true }, { false }))
+        repeat(4) { index ->
+            val occurrence = occurrences.begin(alarm, 1)
+            assertTrue(trials.complete(occurrence.token, first.plusDays(index + 1L), { true }, { false }))
+        }
+        assertEquals(5, trials.load().dates.size)
+        assertEquals(FreeTransition.APPLIED, trials.load().transition)
+        val converted = alarms.load()
+        assertEquals(alarm.trialFallback, converted.single().customization)
+        assertEquals(converted, trials.restore(setOf(alarm.id), { true }))
+        assertFalse(trials.reconcile(true, false, recoverablePaid = true).retired)
+        assertEquals(converted, alarms.load())
+        assertTrue(trials.setInternalNonPaying(false, { false }))
+        assertTrue(ProTrialStore(context).hasPaidAccess(true))
+        assertEquals(alarm.customization, trials.restore(setOf(alarm.id), { true }).single().customization)
+        assertTrue(trials.reconcile(true, false, recoverablePaid = true).retired)
+        assertFalse(trials.resetForInternalTesting({ true }, { false }))
+    }
+
+    @Test fun internalNonPayingToggleRejectsBlockedRingingAndSnoozedStates() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertFalse(trials.setInternalNonPaying(true, { true }))
+        assertFalse(trials.internalNonPayingEnabled())
+        val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
+        assertFalse(trials.setInternalNonPaying(true, { false }))
+        assertFalse(trials.internalNonPayingEnabled())
+        occurrences.snooze(occurrence.token, 0)
+        assertFalse(trials.setInternalNonPaying(true, { false }))
+        occurrences.stop(occurrence.token)
+        assertTrue(trials.setInternalNonPaying(true, { false }))
+        val next = occurrences.begin(AlarmConfig.create(1), 1)
+        assertFalse(trials.setInternalNonPaying(false, { false }))
+        assertTrue(trials.internalNonPayingEnabled())
+        occurrences.stop(next.token)
+        assertTrue(trials.setInternalNonPaying(false, { false }))
+    }
+
+    @Test fun internalNonPayingRequiresConfirmedFallbackEvenWithActualPaidOwnership() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalNonPaying(true, { false }))
+        assertTrue(trials.resetForInternalTesting({ true }, { false }))
+        val base = AlarmConfig.create(1)
+        alarms.save(listOf(base))
+        val premium = customized(1)
+        assertNull(alarms.saveEdited(premium.copy(trialFallback = null), base, paid = true))
+        assertNull(alarms.saveEdited(premium.copy(trialCustomization = null), base, paid = true))
+        assertEquals(base, alarms.load().single())
+        assertEquals(premium, alarms.saveEdited(premium, base, paid = true))
+        assertTrue(trials.setInternalNonPaying(false, { false }))
+        val uncheckedPaidEdit = premium.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10)), trialFallback = null, trialCustomization = null)
+        assertEquals(uncheckedPaidEdit, alarms.saveEdited(uncheckedPaidEdit, premium, paid = true))
+    }
+
     private fun customized(id: Long): AlarmConfig {
         val alarm = AlarmConfig.create(id).copy(routine = listOf(PoseStep(YogaPose.CHAIR, 5)), sound = AlarmSound.LOTUS_SUNRISE_LOOP)
         return alarm.copy(trialFallback = alarm.suggestedFreeFallback(), trialCustomization = alarm.customization)

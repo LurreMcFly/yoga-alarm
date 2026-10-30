@@ -42,8 +42,9 @@ class AlarmStore(private val context: Context) {
     fun saveEdited(draft: AlarmConfig, base: AlarmConfig?, paid: Boolean, enableOnSave: Boolean = false): AlarmConfig? = synchronized(AlarmStorageLock) {
         val current = load().firstOrNull { it.id == draft.id }
         if (base != null && current == null) return@synchronized null
-        val trial = ProTrialStore(context).load()
-        if (!paid && !draft.customization.isFree) {
+        val trialStore = ProTrialStore(context)
+        val trial = trialStore.load()
+        if (!trialStore.hasPaidAccess(paid) && !draft.customization.isFree) {
             if (trial.active) {
                 if (draft.trialFallback?.isFree != true || draft.trialCustomization != draft.customization) return@synchronized null
             } else if (current?.customization != draft.customization) return@synchronized null

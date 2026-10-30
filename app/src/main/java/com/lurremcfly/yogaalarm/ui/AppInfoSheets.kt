@@ -303,6 +303,7 @@ fun ProPaywallSheet(
     onManageSubscription: () -> Unit,
     catalogSettled: Boolean = true,
     canPurchase: Boolean = true,
+    internalPreviewOnly: Boolean = false,
     verifyingPurchase: Boolean = false,
     pendingPayment: Boolean = false,
     trialActive: Boolean = false,
@@ -312,6 +313,7 @@ fun ProPaywallSheet(
     onViewFreeSettings: () -> Unit = {},
     onPlanSelected: (ProPlan) -> Unit = {},
 ) {
+    val previewOnly = BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalPreviewOnly
     var selectedPlan by rememberSaveable { mutableStateOf<ProPlan?>(null) }
     val plan = selectedPlan
     val planOrder = listOf(ProPlan.LIFETIME, ProPlan.YEARLY, ProPlan.MONTHLY)
@@ -335,6 +337,7 @@ fun ProPaywallSheet(
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                     Text("Close", color = Forest)
                 }
+                if (previewOnly) Text("TEST MODE · Play ownership is unchanged. Turn off Test as non-paying user in Settings before purchase testing.", color = Forest)
                 Text(when {
                     trialExhausted -> "Keep your custom routine"
                     trialActive -> "Keep your morning routine yours"
@@ -474,8 +477,8 @@ fun ProPaywallSheet(
                     Spacer(Modifier.height(10.dp))
                 }
                 Button(
-                    onClick = { selectedPlan?.let(onPurchase) },
-                    enabled = canPurchase && entitlement == null && billingReady && selectedPlan in prices && !purchaseInProgress && !verifyingPurchase && !pendingPayment,
+                    onClick = { if (!previewOnly) selectedPlan?.let(onPurchase) },
+                    enabled = !previewOnly && canPurchase && entitlement == null && billingReady && selectedPlan in prices && !purchaseInProgress && !verifyingPurchase && !pendingPayment,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 58.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF8ED8FF),
@@ -489,6 +492,7 @@ fun ProPaywallSheet(
                     }
                     Text(
                         when {
+                            previewOnly -> "Test mode · checkout disabled"
                             entitlement != null -> "Pro is active"
                             verifyingPurchase -> "Checking purchase…"
                             pendingPayment -> "Payment pending"

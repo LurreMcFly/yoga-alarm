@@ -30,24 +30,39 @@ internal fun MonetizationTestingSection(
     billing: BillingUiState,
     alarms: List<AlarmConfig>,
     enabled: Boolean,
+    nonPaying: Boolean,
     expiryBanner: Boolean,
     message: String?,
     onReset: () -> Unit,
     onAdvance: () -> Unit,
     onExpiryBannerChange: (Boolean) -> Unit,
+    onNonPayingChange: (Boolean) -> Unit,
 ) {
     if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING) return
     var confirmReset by rememberSaveable { mutableStateOf(false) }
+    var confirmNonPaying by rememberSaveable { mutableStateOf(false) }
+    val previewControlsEnabled = enabled && (billing.entitlement == null || nonPaying)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         HorizontalDivider(color = Hairline)
         Text("Monetization testing", color = Ink, fontWeight = FontWeight.Bold)
         Text("Internal build only. Purchases and restoration still use Google Play.", color = MutedInk)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Test as non-paying user", modifier = Modifier.weight(1f), color = Ink)
+            Switch(checked = nonPaying, enabled = enabled, onCheckedChange = {
+                if (it) confirmNonPaying = true else onNonPayingChange(false)
+            })
+        }
+        Text(
+            if (nonPaying) "TEST MODE: paid access is ignored locally; checkout is disabled. Your real Play ownership is unchanged. Turn this off to use your purchase again."
+            else "Already own Pro? Enable this to test preview and expiry, then start/reset the local preview.",
+            color = MutedInk,
+        )
         Text(
             "Enrollment: ${trial.enrollment} · retired: ${trial.retired}\n" +
                 "Completed: ${trial.dates.size}/5 · remaining: ${trial.remaining}\n" +
                 "Pending milestone: ${trial.pendingMilestone ?: "none"} · presented: ${trial.presented.sorted()}\n" +
                 "Transition: ${trial.transition} · awaiting purchase: ${trial.awaitingPurchaseResolution}\n" +
-                "Paid entitlement: ${billing.entitlement ?: "none"}\n" +
+                "Real Play entitlement: ${billing.entitlement ?: "none"}\n" +
                 "Billing: ${billing.ownershipResolution} · connected: ${billing.connected}\n" +
                 "Catalog settled: ${billing.catalogSettled} · offers: ${billing.offers.size} · can buy: ${billing.canPurchase}\n" +
                 "Checkout: ${billing.purchasing} · verifying: ${billing.verifyingPurchases} · pending: ${billing.pendingPurchase}\n" +
@@ -55,11 +70,11 @@ internal fun MonetizationTestingSection(
             color = MutedInk,
         )
         Text("Release blocker: ClientPurchaseVerifier cannot recover trusted paid access after an offline cold start.", color = MutedInk)
-        if (!enabled) Text("Controls paused during alarms, snooze, routines or billing activity. Use an account without active Pro to test the preview.", color = MutedInk)
-        OutlinedButton(onClick = { confirmReset = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+        if (!enabled) Text("Controls paused during alarms, snooze, routines or billing activity.", color = MutedInk)
+        OutlinedButton(onClick = { confirmReset = true }, enabled = previewControlsEnabled, modifier = Modifier.fillMaxWidth()) {
             Text("Start / reset local preview")
         }
-        OutlinedButton(onClick = onAdvance, enabled = enabled && trial.active, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = onAdvance, enabled = previewControlsEnabled && trial.active, modifier = Modifier.fillMaxWidth()) {
             Text("Advance one qualifying day")
         }
         Text("Advance uses a synthetic distinct date. It can convert future alarms on day five, but never rings an alarm or adds streak/history entries. Close Settings to see milestones.", color = MutedInk)
@@ -87,8 +102,15 @@ internal fun MonetizationTestingSection(
         title = { Text("Reset local preview?") },
         text = { Text("Selects the preview cohort with five days left and clears trial milestones. Keeps alarms, schedules, history, purchases and current routine/sound edits. Keeps confirmed fallbacks, but discards old original-routine restoration backups. Nothing is restored automatically. To repeat conversion after expiry, edit a Pro routine and confirm its fallback again.") },
         confirmButton = {
-            TextButton(enabled = enabled, onClick = { confirmReset = false; onReset() }) { Text("Reset preview") }
+            TextButton(enabled = previewControlsEnabled, onClick = { confirmReset = false; onReset() }) { Text("Reset preview") }
         },
         dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Cancel") } },
+    )
+    if (confirmNonPaying) AlertDialog(
+        onDismissRequest = { confirmNonPaying = false },
+        title = { Text("Test without paid access?") },
+        text = { Text("Your real Play purchase is kept. This mode persists after restart and disables checkout. Start/reset the preview after enabling it. Tests use your real saved alarms: trial customizations can switch to their confirmed free fallbacks. Existing Pro alarms without a confirmed fallback are kept unchanged. Turning this off restores paid access, but never automatically restores or overwrites alarm edits.") },
+        confirmButton = { TextButton(enabled = enabled, onClick = { confirmNonPaying = false; onNonPayingChange(true) }) { Text("Enable test mode") } },
+        dismissButton = { TextButton(onClick = { confirmNonPaying = false }) { Text("Cancel") } },
     )
 }
