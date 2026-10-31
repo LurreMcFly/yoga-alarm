@@ -2,7 +2,6 @@ package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.FreeTransition
 import com.lurremcfly.yogaalarm.model.ProTrial
 import com.lurremcfly.yogaalarm.model.TrialEnrollment
@@ -54,17 +53,29 @@ class ProTrialStore(private val context: Context) {
         val occurrence = occurrences.find(token) ?: return@synchronized false
         if (occurrence.completedAt != null) return@synchronized true
         if (occurrence.state != com.lurremcfly.yogaalarm.model.OccurrenceState.RINGING) return@synchronized false
-        recordCompletion(now.toLocalDate(), hasPaidAccess(paid()), verifying()) { editor ->
+        recordCompletion(now.toLocalDate(), hasPaidAccess(paid()), verifying(), updatePreview = !internalTestingEnabled()) { editor ->
             occurrences.stageCompleted(editor, token, now)
         }
     }
 
+    fun internalTestingEnabled(): Boolean = synchronized(AlarmStorageLock) {
+        preferences.getBoolean("pro_preview_internal_testing", false)
+    }
+
+    fun setInternalTestingEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
+        if (blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        val previous = internalTestingEnabled()
+        val committed = preferences.edit().putBoolean("pro_preview_internal_testing", enabled).commit()
+        if (!committed) preferences.edit().putBoolean("pro_preview_internal_testing", previous).commit()
+        committed
+    }
+
     fun internalTestProEnabled(): Boolean = synchronized(AlarmStorageLock) {
-        BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_paid", false)
+        internalTestingEnabled() && preferences.getBoolean("pro_preview_internal_paid", false)
     }
 
     fun setInternalTestProEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!internalTestingEnabled() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = internalTestProEnabled()
         val previousNonPaying = preferences.getBoolean("pro_preview_internal_non_paying", false)
         val committed = preferences.edit()
@@ -79,14 +90,16 @@ class ProTrialStore(private val context: Context) {
     }
 
     // Local preview/editor policy only. Google Play ownership and verification remain authoritative.
-    fun hasPaidAccess(paid: Boolean): Boolean = if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) internalTestProEnabled() else paid
+    fun hasPaidAccess(paid: Boolean): Boolean = synchronized(AlarmStorageLock) {
+        if (internalTestingEnabled()) internalTestProEnabled() else paid
+    }
 
     fun internalExpiryBannerEnabled(): Boolean = synchronized(AlarmStorageLock) {
-        BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_expiry_banner", false)
+        internalTestingEnabled() && preferences.getBoolean("pro_preview_internal_expiry_banner", false)
     }
 
     fun setInternalExpiryBanner(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!internalTestingEnabled() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = internalExpiryBannerEnabled()
         val committed = preferences.edit().putBoolean("pro_preview_internal_expiry_banner", enabled).commit()
         if (!committed) preferences.edit().putBoolean("pro_preview_internal_expiry_banner", previous).commit()
@@ -95,7 +108,7 @@ class ProTrialStore(private val context: Context) {
 
     /** Starts a clean preview without restoring alarms or modifying purchases/history. */
     fun resetForInternalTesting(paid: () -> Boolean, verifying: () -> Boolean, blocked: () -> Boolean = { false }): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || hasPaidAccess(paid()) || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!internalTestingEnabled() || hasPaidAccess(paid()) || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = load()
         val store = AlarmStore(context)
         val current = store.load()
@@ -114,7 +127,7 @@ class ProTrialStore(private val context: Context) {
 
     /** Exercises production accounting only; no occurrence or wake-progress record is created. */
     fun advanceDayForInternalTesting(now: ZonedDateTime, paid: () -> Boolean, verifying: () -> Boolean, blocked: () -> Boolean = { false }): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || hasPaidAccess(paid()) || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!internalTestingEnabled() || hasPaidAccess(paid()) || verifying() || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val trial = load()
         if (!trial.active) return@synchronized false
         val date = maxOf(now.toLocalDate(), trial.dates.maxOrNull()?.plusDays(1) ?: now.toLocalDate())
@@ -126,14 +139,15 @@ class ProTrialStore(private val context: Context) {
         date: LocalDate,
         currentPaid: Boolean,
         currentVerifying: Boolean,
+        updatePreview: Boolean = true,
         stageOutcome: (SharedPreferences.Editor) -> Unit = {},
     ): Boolean {
         val previous = load()
-        var trial = if (currentPaid) previous else previous.complete(date)
-        if (trial.exhausted && currentVerifying) trial = trial.copy(awaitingPurchaseResolution = true)
+        var trial = if (currentPaid || !updatePreview) previous else previous.complete(date)
+        if (updatePreview && trial.exhausted && currentVerifying) trial = trial.copy(awaitingPurchaseResolution = true)
         val store = AlarmStore(context)
         val current = store.load()
-        val canConvert = trial.exhausted && !currentPaid && !currentVerifying && !trial.awaitingPurchaseResolution
+        val canConvert = updatePreview && trial.exhausted && !currentPaid && !currentVerifying && !trial.awaitingPurchaseResolution
         val converted = if (canConvert) convert(current) else current
         if (canConvert) {
             trial = trial.copy(transition = if (converted.any { !it.customization.isFree && it.trialOriginal == null }) FreeTransition.PENDING else FreeTransition.APPLIED)
@@ -156,6 +170,7 @@ class ProTrialStore(private val context: Context) {
 
     fun reconcile(paid: Boolean, verifying: Boolean, recoverablePaid: Boolean = false, ownershipResolved: Boolean = true): ProTrial = synchronized(AlarmStorageLock) {
         val previous = load()
+        if (internalTestingEnabled()) return@synchronized previous
         var trial = previous
         val store = AlarmStore(context)
         val current = store.load()

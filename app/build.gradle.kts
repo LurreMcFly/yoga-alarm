@@ -19,7 +19,6 @@ plugins {
 
 val monetizationAnalyticsEnabled = providers.gradleProperty("monetizationAnalyticsEnabled").orNull == "true"
 val proTrialRolloutEnabled = providers.gradleProperty("proTrialRolloutEnabled").orNull == "true"
-val proTrialInternalTesting = providers.gradleProperty("proTrialInternalTesting").orNull == "true"
 if (monetizationAnalyticsEnabled) {
     apply(plugin = "com.google.gms.google-services")
 }
@@ -41,8 +40,7 @@ android {
         versionName = "1.0.35"
         manifestPlaceholders["appLabel"] = "Yoga Alarm"
         buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
-        buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", (proTrialRolloutEnabled || proTrialInternalTesting).toString())
-        buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", proTrialInternalTesting.toString())
+        buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", proTrialRolloutEnabled.toString())
     }
 
     buildTypes {
@@ -51,7 +49,6 @@ android {
             versionNameSuffix = "-debug"
             manifestPlaceholders["appLabel"] = "Yoga Alarm (test)"
             buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
-            buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", "true")
         }
         release {
             isMinifyEnabled = true

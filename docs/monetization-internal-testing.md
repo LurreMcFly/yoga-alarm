@@ -1,71 +1,40 @@
-# Monetization internal testing
+# In-app testing and Play Billing
 
 This is a local preview and Play Billing acceptance runbook, not production approval. The release policy accepts client-side last-known Pro: subscriptions for seven days after a successful online ownership refresh, lifetime until a successful online refresh changes ownership. Backend verification is future hardening, not a release prerequisite. Client evidence cannot independently validate subscription expiry, refunds, revocations, or tampering, and a validated network does not prove Play returned fresh server data. Device/Play acceptance remains required; do not enable `monetizationBillingReady` merely to run these tests.
 
 ## Quick app testing
 
-Connect your phone, select the `debug` build variant, and press **Run** in Android Studio. It installs as **Yoga Alarm (test)** beside the regular app. In test app Settings, switch **Test Pro access** off for the free experience or on for Pro. The choice is saved on the phone and does not make a Google Play purchase. No signed bundle or Play upload is needed. Ordinary releases hide the switch.
+Build and install the app normally, including a signed release. No testing build variable is needed.
 
-The switch defaults off and controls local feature access even if the account already owns Pro: off ignores paid ownership locally, and on enables Pro without a purchase. Settings shows the selected test access instead of purchase/renewal controls. New test installs do not enroll in the five-day preview. Changing the switch alone keeps saved alarms, schedules, history and Play purchase records intact. Changes are blocked during ringing, snooze, routines and other unsafe app flows; a failed save retains the previous access choice.
+1. Open **Settings** and turn on **Testing mode** beneath Preferences.
+2. Switch **Test Pro access** on for Pro features or off for Free features, regardless of real purchase ownership.
+3. Turn **Testing mode** off to return to normal purchase and preview behavior.
 
-Fix validation (2026-10-31, Android commit <pending>): debug and release Kotlin compilation passed. The debug JVM suite passed 204 tests (two public-build-only tests skipped); the focused release suites passed 40 tests (13 internal-build-only tests skipped). Coverage includes access persistence/defaults, overriding a real owner, stale public-build preferences, failed-write rollback, alarm editing, in-flight guards, and unchanged genuine purchase-cache evidence. The focused release suites were `ProTrialStoreTest`, `AlarmStoreTrialTest`, `PlayBillingLastKnownAccessTest`, `ProTrialTest`, and `BillingUiStateTest`. Generated build flags retain the separate debug package and testing-disabled public release. Physical-device UI/Google Play acceptance remains outstanding.
+Testing mode defaults off. Both choices persist across restart, and the previous Pro test choice returns when testing is enabled again. The controls are present in debug and release builds. Settings shows the selected test access while testing is on. These switches do not make a purchase, change Play purchase records, reset saved alarms, or reset history. Real alarm completions still finish normally while testing, but preview accounting, retirement and automatic fallback conversion are paused until testing is turned off. Changes are blocked during ringing, snooze, routines and other unsafe app flows. A failed save keeps the previous setting.
+
+Validation (2026-10-31, Android commit <pending>): debug and release Kotlin compilation and the six focused JVM suites passed, with 58 tests in each variant and no skips or failures. Suites: `ProTrialStoreTest`, `AlarmStoreTrialTest`, `AlarmOccurrenceStoreTest`, `WakeCompletionRecoveryTest`, `PlayBillingLastKnownAccessTest`, and `ProTrialTest`. Coverage includes runtime-mode persistence/defaults, real-owner overrides, returning to genuine ownership, preview pause/resume, alarm editing, failed-write rollback and in-flight guards. Device UI and Google Play acceptance remain unverified.
 
 ## Build and signing
 
-Release testing controls are **off by default**: the checked-in `gradle.properties` contains `proTrialInternalTesting=false`. Opt in for each internal QA release with `-PproTrialInternalTesting=true`, or use the temporary local property change below for Android Studio's signing wizard. Debug builds include the simple access switch automatically. Google Play track membership itself does not enable app build flags.
+Use the existing Android Studio **Build > Generate Signed Bundle / APK > Android App Bundle > release** workflow with the existing upload key. No property edit or separate testing artifact is needed. The old `proTrialInternalTesting` property and `PRO_TRIAL_INTERNAL_TESTING` build gate have been removed. Public preview rollout and analytics remain separate settings.
 
-In Android Studio:
+The debug variant still installs beside the regular app as **Yoga Alarm (test)** with package `com.lurremcfly.yogaalarm.debug`; release uses the normal package. Both include the runtime controls.
 
-1. For this internal QA artifact only, locally change `proTrialInternalTesting` to `true` in `gradle.properties`, then sync the project with Gradle. Do not commit the temporary change.
-2. Set a version code higher than the last uploaded version.
-3. Choose **Build > Generate Signed Bundle / APK > Android App Bundle**, then your existing upload key.
-4. On the build-variant selection step, select **release**. The wizard uses the temporary project property from step 1.
-5. Upload the newly generated signed AAB from the wizard's chosen destination. An old `app/release/app-release.aab` will not gain the controls merely because it is uploaded to the Internal testing track.
-6. Restore `proTrialInternalTesting=false` immediately after generating the internal artifact, before preparing any public build.
-
-Command-line equivalent (unsigned until signed separately):
+Command-line bundle generation remains:
 
 ```bash
-./gradlew :app:bundleRelease -PproTrialInternalTesting=true
+JAVA_HOME=/opt/android-studio-for-platform/jbr ./gradlew :app:bundleRelease
 ```
 
-Output: `app/build/outputs/bundle/release/app-release.aab`. Release optimization, `DEBUG=false`, and the existing application ID are unchanged. Debug builds enable the switch automatically and use application ID `com.lurremcfly.yogaalarm.debug`.
+Output: `app/build/outputs/bundle/release/app-release.aab`. This repository has no release signing configuration, so this command alone does not produce an upload-ready signed artifact. Use the existing signing wizard and a version code higher than previously uploaded artifacts. Keep keystore paths and passwords outside tracked files and command history. This source change does not install, sign, upload or publish an artifact.
 
-Verified on 2026-10-30 (historical configuration with the project property set to true): `:app:bundleRelease` with no extra flag succeeded, and its packaged DEX contains both **Monetization testing** and **Test as non-paying user**. Explicit `-PproTrialInternalTesting=false` generated both trial flags as false. App logic was unchanged; unit tests were not rerun for this configuration-only adjustment. The existing signed AAB was left untouched; generate a new signed release before uploading.
+## Google Play checks
 
-Use a Java 17+ runtime. On this workstation the verified bundled runtime is `/opt/android-studio-for-platform/jbr`; prefix a command with `JAVA_HOME=/opt/android-studio-for-platform/jbr` if Java is not on `PATH`.
+Turn **Testing mode** off in Settings when verifying real purchase-driven feature access and restoration. The local access switches do not validate checkout or ownership.
 
-For public signing, keep `proTrialInternalTesting=false` and rebuild a separate artifact. For a CLI build, explicitly pass `-PproTrialInternalTesting=false`; for the Android Studio wizard, confirm the project property is false and sync before signing. Public builds ignore saved test-mode preferences. Enabling the public preview requires billing readiness. Analytics defaults off and can stay off throughout rollout.
+Use the signed Play-installed app and a license tester for billing acceptance. Internal-track membership and license testing are separate settings; confirm checkout identifies a test payment method before paying. See [Google's billing testing guide](https://developer.android.com/google/play/billing/test), [license tester setup](https://support.google.com/googleplay/android-developer/answer/6062777), and the [billing acceptance checklist](play-billing-setup.md#internal-testing-acceptance-checklist).
 
-This repository has no release signing configuration. Command-line bundle tasks alone do not produce upload-ready signed artifacts. Use the Android Studio **release** selection above for signing. Keep keystore paths and passwords outside tracked files and command history. Do not substitute a debug key or create a replacement key for this existing Play app. See [Android app signing](https://developer.android.com/studio/publish/app-signing).
-
-Alternatively, sign the freshly built internal AAB locally with the JDK's `jarsigner`, replacing the paths and alias below with the existing upload key. Omit password arguments so it prompts securely:
-
-```bash
-jarsigner -keystore /path/to/existing-upload-key.jks \
-  -signedjar /path/to/yoga-alarm-internal-signed.aab \
-  app/build/outputs/bundle/release/app-release.aab UPLOAD_KEY_ALIAS
-jarsigner -verify /path/to/yoga-alarm-internal-signed.aab
-```
-
-A successful signature check alone does not establish that the certificate matches the key registered in Play Console. No Console setting or registered certificate was checked during this implementation.
-
-Use a version code higher than every previously uploaded artifact; the Console maximum has not been verified. Confirm the final artifact's package, version code, upload signature, and both BuildConfig gates before uploading. Never promote this controls-enabled AAB to production; rebuild with the testing property explicitly false. This repository change does not upload or publish anything.
-
-## Play Console setup
-
-The 2026-10-30 missing-menu investigation found that the local signed `app/release/app-release.aab` contained neither the menu nor the non-paying switch. A Play internal-track install cannot restore code removed from that artifact. The initial dedicated-variant solution passed builds and 20 enabled/13 disabled trial-store tests, but was replaced by the project property above (now default false with an explicit internal QA opt-in) because the user wanted the existing release signing workflow.
-
-Internal track access and license testing are separate settings:
-
-1. Add the Google account to the app's Internal testing tester list, distribute the opt-in link, and opt in with that account. Install the release through Play for track acceptance.
-2. Separately add the same account under Play Console **Settings > License testing**. Track membership alone does not enable test payment methods and can incur real charges.
-3. Confirm monthly/yearly base plans and the lifetime purchase option from [the billing specification](play-billing-setup.md) are active and available in the tester's country.
-4. Open checkout and verify it identifies a test purchase/payment method before completing payment. Use separate accounts or refund/revoke earlier test purchases between ownership scenarios.
-
-The repository's debug variant uses a separate package and is for local feature testing. Use the signed Play-installed release with `proTrialInternalTesting=false` to verify actual purchase-driven feature access and restoration. See [Google's billing testing guide](https://developer.android.com/google/play/billing/test) and [license tester setup](https://support.google.com/googleplay/android-developer/answer/6062777).
-
-The Settings switch is only a local feature preview. It does not verify purchases, checkout, or restore behavior. Use a license tester and a signed Play-installed build for real billing checks.
+The notes below predate the runtime Testing mode switch. References to testing build flags, separate testing artifacts, removed preview controls and historical validation results describe earlier versions.
 
 ## Historical preview controls
 

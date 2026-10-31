@@ -1,10 +1,8 @@
 package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
-import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.*
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,8 +75,8 @@ class AlarmStoreTrialTest {
     }
 
     @Test fun internalTestSwitchControlsEditingRegardlessOfPlayOwnershipAndPreservesSavedAlarms() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
         val trials = ProTrialStore(context)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         val premium = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
         assertNull(store.saveEdited(premium, null, paid = true))
         assertTrue(store.load().isEmpty())

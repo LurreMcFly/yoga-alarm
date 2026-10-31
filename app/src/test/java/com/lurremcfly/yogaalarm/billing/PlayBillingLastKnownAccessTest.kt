@@ -4,7 +4,6 @@ import android.content.Context
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.Purchase
-import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.data.ProTrialStore
 import com.lurremcfly.yogaalarm.model.ProPlan
 import kotlinx.coroutines.CompletableDeferred
@@ -24,7 +23,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -267,7 +265,6 @@ class PlayBillingLastKnownAccessTest {
     @Test fun cachedOwnershipRetiresPreviewDurablyAcrossRestart() = billingTest {
         val trials = ProTrialStore(context)
         trials.enroll(true, true)
-        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         assertTrue(cache.save(LastKnownPaidAccess(ProEntitlement.SUBSCRIPTION, checkedAt)))
         val offline = manager()
         val state = offline.state.value
@@ -286,10 +283,10 @@ class PlayBillingLastKnownAccessTest {
     }
 
     @Test fun internalTestProOverridesGenuineCachedAccessWithoutChangingIt() = billingTest {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
         val original = LastKnownPaidAccess(ProEntitlement.LIFETIME, checkedAt)
         assertTrue(cache.save(original))
         val trials = ProTrialStore(context)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.setInternalTestProEnabled(false, { false }))
         assertTrue(trials.resetForInternalTesting({ true }, { false }))
         val offline = manager { ok to emptyList() }
@@ -305,6 +302,10 @@ class PlayBillingLastKnownAccessTest {
         assertEquals(original, cache.restore())
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
         assertTrue(trials.hasPaidAccess(restarted.state.value.entitlement != null))
+        assertEquals(original, cache.restore())
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertTrue(trials.hasPaidAccess(restarted.state.value.entitlement != null))
+        assertFalse(trials.hasPaidAccess(false))
         assertEquals(original, cache.restore())
     }
 

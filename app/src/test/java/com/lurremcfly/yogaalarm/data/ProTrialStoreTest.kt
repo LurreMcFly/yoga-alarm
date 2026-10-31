@@ -1,9 +1,6 @@
 package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
-import com.lurremcfly.yogaalarm.BuildConfig
-import org.junit.Assume.assumeTrue
-import org.junit.Assume.assumeFalse
 import android.content.ContextWrapper
 import android.content.SharedPreferences
 import com.lurremcfly.yogaalarm.model.*
@@ -101,7 +98,6 @@ class ProTrialStoreTest {
         } }
         val converted = alarms.load()
         assertEquals(converted, trials.restore(setOf(1, 2, 3), { false }))
-        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val restored = trials.restore(setOf(1, 2, 3), { true })
         assertEquals(original.customization, restored.first().customization)
         assertNull(restored.first().trialOriginal)
@@ -148,7 +144,6 @@ class ProTrialStoreTest {
         val next = occurrences.begin(legacy, 2)
         assertEquals(confirmed, next.alarm)
         occurrences.stop(next.token)
-        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val restored = trials.restore(setOf(legacy.id), { true }).first()
         assertEquals(legacy.customization, restored.customization)
         assertEquals(changedTime.minute, restored.minute)
@@ -205,7 +200,6 @@ class ProTrialStoreTest {
         repeat(4) { complete(alarm, first.plusDays(it.toLong())) }
         val last = occurrences.begin(alarm, 1)
         assertTrue(trials.complete(last.token, first.plusDays(4), { false }, { true }))
-        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val retired = ProTrialStore(context).reconcile(paid = true, verifying = false, recoverablePaid = true, ownershipResolved = true)
         assertTrue(retired.retired)
         assertFalse(retired.awaitingPurchaseResolution)
@@ -270,7 +264,6 @@ class ProTrialStoreTest {
         occurrences.stop(stopped.token)
         assertFalse(trials.complete(stopped.token, first, { false }, { false }))
         assertFalse(trials.complete("unknown", first, { false }, { false }))
-        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val paid = occurrences.begin(alarm, 1)
         assertTrue(trials.complete(paid.token, first, { true }, { false }))
         assertTrue(trials.load().dates.isEmpty())
@@ -279,8 +272,8 @@ class ProTrialStoreTest {
         assertFalse(trials.load().active)
     }
 
-    @Test fun internalControlsAreDisabledWithoutBuildFlag() {
-        assumeFalse(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+    @Test fun internalControlsAreDisabledWhenTestingModeIsOff() {
+        assertFalse(trials.internalTestingEnabled())
         assertFalse(trials.resetForInternalTesting({ false }, { false }))
         assertFalse(trials.advanceDayForInternalTesting(first, { false }, { false }))
         assertEquals(ProTrial(), trials.load())
@@ -290,7 +283,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalResetForcesPreviewAndPreservesLatestAlarmSettingsAndOtherData() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         val alarm = customized(1)
         alarms.save(listOf(alarm))
         assertEquals(TrialEnrollment.INELIGIBLE, trials.enroll(true, true).enrollment)
@@ -315,7 +308,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalDaysUseProductionMilestonesAndConversionWithoutOccurrencesOrProgress() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.resetForInternalTesting({ false }, { false }))
         val alarm = customized(1)
         alarms.save(listOf(alarm))
@@ -338,7 +331,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalControlsRejectPaidVerificationBlockedAndInFlightStates() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.resetForInternalTesting({ false }, { false }))
         val previous = trials.load()
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
@@ -359,7 +352,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalResetAllowsReeditedAlarmToConvertOnSecondExpiry() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.resetForInternalTesting({ false }, { false }))
         val original = customized(1)
         alarms.save(listOf(original))
@@ -371,7 +364,9 @@ class ProTrialStoreTest {
         assertNull(base.trialOriginal)
         val draft = base.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10)), sound = AlarmSound.LOTUS_SUNRISE_LOOP)
         val confirmed = draft.copy(trialFallback = draft.suggestedFreeFallback(), trialCustomization = draft.customization)
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
         assertEquals(confirmed, alarms.saveEdited(confirmed, base, paid = false))
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         repeat(5) { assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false })) }
         val converted = alarms.load().single()
         assertEquals(FreeTransition.APPLIED, trials.load().transition)
@@ -380,7 +375,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalExpiryPreservesMissingFallbackAndReportsPending() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.resetForInternalTesting({ false }, { false }))
         val alarm = customized(1).copy(trialFallback = null)
         alarms.save(listOf(alarm))
@@ -390,7 +385,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalBannerPersistsButRejectsBlockedAndInFlightChanges() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertFalse(trials.internalExpiryBannerEnabled())
         assertTrue(trials.setInternalExpiryBanner(true, { false }))
         assertTrue(ProTrialStore(context).internalExpiryBannerEnabled())
@@ -404,8 +399,8 @@ class ProTrialStoreTest {
         assertFalse(trials.internalExpiryBannerEnabled())
     }
 
-    @Test fun internalTestProIsIgnoredWithoutBuildFlag() {
-        assumeFalse(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+    @Test fun internalTestProIsIgnoredWhenTestingModeIsOff() {
+        assertFalse(trials.internalTestingEnabled())
         context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE).edit()
             .putBoolean("pro_preview_internal_non_paying", true)
             .putBoolean("pro_preview_internal_paid", true).commit()
@@ -416,42 +411,80 @@ class ProTrialStoreTest {
         assertTrue(trials.hasPaidAccess(true))
     }
 
-    @Test fun internalTestFreePersistsAndAllowsPaidOwnerPreviewAccountingAndConversion() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+    @Test fun testingPausesPreviewAccountingAndPaidReconciliationUntilTurnedOff() {
+        trials.enroll(true, true)
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        repeat(4) { complete(alarm, first.plusDays(it.toLong())) }
+        val preview = trials.load()
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertFalse(trials.hasPaidAccess(true))
         assertFalse(trials.hasPaidAccess(false))
         assertTrue(trials.setInternalTestProEnabled(false, { false }))
         trials = ProTrialStore(context)
         assertFalse(trials.internalTestProEnabled())
-        assertFalse(trials.hasPaidAccess(true))
+        val occurrence = occurrences.begin(alarm, 1)
+        assertTrue(trials.complete(occurrence.token, first.plusDays(4), { true }, { false }))
+        assertTrue(occurrences.find(occurrence.token)!!.terminal)
+        assertEquals(preview, trials.load())
+        assertEquals(preview, trials.reconcile(true, false, recoverablePaid = true))
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
+        assertEquals(preview, trials.reconcile(true, false, recoverablePaid = true))
+        assertEquals(alarm, alarms.load().single())
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertTrue(trials.hasPaidAccess(true))
         assertFalse(trials.hasPaidAccess(false))
-        assertTrue(trials.resetForInternalTesting({ true }, { false }))
+        complete(alarm, first.plusDays(5))
+        assertTrue(trials.load().exhausted)
+        assertEquals(alarm.trialFallback, alarms.load().single().customization)
+    }
+
+    @Test fun testingModePersistsAndCanOnlyChangeWhileIdle() {
+        assertFalse(trials.internalTestingEnabled())
+        assertTrue(trials.hasPaidAccess(true))
+        assertFalse(trials.hasPaidAccess(false))
+        assertFalse(trials.setInternalTestingEnabled(true, { true }))
+        val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
+        assertFalse(trials.setInternalTestingEnabled(true, { false }))
+        occurrences.snooze(occurrence.token, 0)
+        assertFalse(trials.setInternalTestingEnabled(true, { false }))
+        occurrences.stop(occurrence.token)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(ProTrialStore(context).internalTestingEnabled())
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
+        val next = occurrences.begin(AlarmConfig.create(1), 1)
+        assertFalse(trials.setInternalTestingEnabled(false, { false }))
+        occurrences.snooze(next.token, 0)
+        assertFalse(trials.setInternalTestingEnabled(false, { false }))
+        occurrences.stop(next.token)
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertFalse(ProTrialStore(context).internalTestingEnabled())
+        assertFalse(ProTrialStore(context).hasPaidAccess(false))
+        assertTrue(ProTrialStore(context).hasPaidAccess(true))
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(trials.internalTestProEnabled())
+    }
+
+    @Test fun testingDoesNotApplyPendingPreviewFallbacks() {
+        trials.enroll(true, true)
         val alarm = customized(1)
         alarms.save(listOf(alarm))
-        assertFalse(trials.reconcile(true, false, recoverablePaid = true).retired)
-        // Exercise both synthetic and real completion entry points with actual paid ownership.
-        assertTrue(trials.advanceDayForInternalTesting(first, { true }, { false }))
-        repeat(4) { index ->
-            val occurrence = occurrences.begin(alarm, 1)
-            assertTrue(trials.complete(occurrence.token, first.plusDays(index + 1L), { true }, { false }))
-        }
-        assertEquals(5, trials.load().dates.size)
-        assertEquals(FreeTransition.APPLIED, trials.load().transition)
-        val converted = alarms.load()
-        assertEquals(alarm.trialFallback, converted.single().customization)
-        assertEquals(converted, trials.restore(setOf(alarm.id), { true }))
-        assertFalse(trials.reconcile(true, false, recoverablePaid = true).retired)
-        assertEquals(converted, alarms.load())
-        assertTrue(trials.setInternalTestProEnabled(true, { false }))
-        assertTrue(ProTrialStore(context).hasPaidAccess(true))
-        assertTrue(ProTrialStore(context).hasPaidAccess(false))
-        assertEquals(alarm.customization, trials.restore(setOf(alarm.id), { true }).single().customization)
-        assertTrue(trials.reconcile(true, false, recoverablePaid = true).retired)
-        assertFalse(trials.resetForInternalTesting({ true }, { false }))
+        repeat(4) { complete(alarm, first.plusDays(it.toLong())) }
+        val last = occurrences.begin(alarm, 1)
+        assertTrue(trials.complete(last.token, first.plusDays(4), { false }, { true }))
+        val pending = trials.load()
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertEquals(pending, trials.reconcile(false, false))
+        complete(alarm, first.plusDays(5))
+        assertEquals(pending, trials.load())
+        assertEquals(alarm, alarms.load().single())
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertEquals(FreeTransition.APPLIED, trials.reconcile(false, false).transition)
+        assertEquals(alarm.trialFallback, alarms.load().single().customization)
     }
 
     @Test fun internalTestProToggleRejectsBlockedRingingAndSnoozedStates() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertFalse(trials.setInternalTestProEnabled(true, { true }))
         assertFalse(trials.internalTestProEnabled())
         val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
@@ -469,7 +502,7 @@ class ProTrialStoreTest {
     }
 
     @Test fun internalTestProPersistsAcrossRestartAndReplacesLegacyOverride() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         val prefs = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("pro_preview_internal_non_paying", true).commit()
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
@@ -484,8 +517,8 @@ class ProTrialStoreTest {
         assertFalse(ProTrialStore(context).hasPaidAccess(false))
     }
 
-    @Test fun failedInternalTestProCommitRestoresPreviousAccessAndLegacyPreference() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+    @Test fun failedTestingPreferenceCommitsRestorePreviousModeAndAccess() {
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val prefs = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE)
         prefs.edit().putBoolean("pro_preview_internal_non_paying", true).commit()
@@ -521,10 +554,15 @@ class ProTrialStoreTest {
         assertFalse(failNextCommit)
         assertTrue(ProTrialStore(context).hasPaidAccess(false))
         assertTrue(prefs.getBoolean("pro_preview_internal_non_paying", false))
+        failNextCommit = true
+        assertFalse(ProTrialStore(failingContext).setInternalTestingEnabled(false, { false }))
+        assertFalse(failNextCommit)
+        assertTrue(ProTrialStore(context).internalTestingEnabled())
+        assertTrue(ProTrialStore(context).hasPaidAccess(false))
     }
 
-    @Test fun internalTestFreeRequiresConfirmedFallbackEvenWithActualPaidOwnership() {
-        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+    @Test fun internalTestFreeDoesNotGrantPreviewEditingEvenWithActualPaidOwnership() {
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
         assertTrue(trials.setInternalTestProEnabled(false, { false }))
         assertTrue(trials.resetForInternalTesting({ true }, { false }))
         val base = AlarmConfig.create(1)
@@ -533,10 +571,10 @@ class ProTrialStoreTest {
         assertNull(alarms.saveEdited(premium.copy(trialFallback = null), base, paid = true))
         assertNull(alarms.saveEdited(premium.copy(trialCustomization = null), base, paid = true))
         assertEquals(base, alarms.load().single())
-        assertEquals(premium, alarms.saveEdited(premium, base, paid = true))
+        assertNull(alarms.saveEdited(premium, base, paid = true))
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val uncheckedPaidEdit = premium.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10)), trialFallback = null, trialCustomization = null)
-        assertEquals(uncheckedPaidEdit, alarms.saveEdited(uncheckedPaidEdit, premium, paid = true))
+        assertEquals(uncheckedPaidEdit, alarms.saveEdited(uncheckedPaidEdit, base, paid = false))
     }
 
     private fun customized(id: Long): AlarmConfig {

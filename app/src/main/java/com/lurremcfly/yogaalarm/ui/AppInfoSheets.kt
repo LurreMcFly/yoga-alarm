@@ -136,6 +136,7 @@ fun AppSettingsSheet(
                     }
                 }
             }
+            monetizationTesting?.invoke()
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
@@ -233,7 +234,6 @@ fun AppSettingsSheet(
                     }
                 }
             }
-            if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) monetizationTesting?.invoke()
             Text(
                 "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
                 color = MutedInk,
@@ -327,7 +327,7 @@ fun ProPaywallSheet(
     onPlanSelected: (ProPlan) -> Unit = {},
     offlineAccessExpired: Boolean = false,
 ) {
-    val previewOnly = BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalPreviewOnly
+    val previewOnly = internalPreviewOnly
     var selectedPlan by rememberSaveable { mutableStateOf<ProPlan?>(null) }
     val plan = selectedPlan
     val planOrder = listOf(ProPlan.LIFETIME, ProPlan.YEARLY, ProPlan.MONTHLY)

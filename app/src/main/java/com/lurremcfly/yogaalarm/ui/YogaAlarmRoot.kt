@@ -84,7 +84,8 @@ internal fun YogaAlarmRoot(
     val context = androidx.compose.ui.platform.LocalContext.current
     val routineViewModel: RoutineViewModel = viewModel()
     val trialStore = remember { ProTrialStore(context.applicationContext) }
-    var trial by remember { mutableStateOf(trialStore.enroll(BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED && !BuildConfig.PRO_TRIAL_INTERNAL_TESTING)) }
+    var internalTestMode by remember { mutableStateOf(trialStore.internalTestingEnabled()) }
+    var trial by remember { mutableStateOf(trialStore.enroll(BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED && !internalTestMode)) }
     val analytics = remember { MonetizationAnalytics(context.applicationContext) }
     val occurrenceStore = remember { AlarmOccurrenceStore(context.applicationContext) }
     val store = remember { AlarmStore(context.applicationContext) }
@@ -105,7 +106,6 @@ internal fun YogaAlarmRoot(
     var presentedStreakDays by rememberSaveable { mutableStateOf(wakeProgress.streakDays) }
     var savedAlarmId by rememberSaveable { mutableStateOf<Long?>(null) }
     var internalTestPro by remember { mutableStateOf(trialStore.internalTestProEnabled()) }
-    val internalTestMode = BuildConfig.PRO_TRIAL_INTERNAL_TESTING
     val proEntitlement = billingState.entitlement
     val trialOfferAvailable = billingState.canPurchase && billingState.offers.isNotEmpty()
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
@@ -136,7 +136,7 @@ internal fun YogaAlarmRoot(
     var resumed by remember { mutableStateOf(false) }
     val activeTrial = trial.active && !internalTestMode
     val effectivePro = if (internalTestMode) internalTestPro else proEntitlement != null || activeTrial
-    val hasUnreviewedAlarms = !effectivePro && alarms.any(trial::needsFreeReview)
+    val hasUnreviewedAlarms = !internalTestMode && !effectivePro && alarms.any(trial::needsFreeReview)
     val trialStatus = (if (proEntitlement != null || internalTestMode) null else when {
         activeTrial -> "Pro preview · ${trial.remaining} alarm days left"
         hasUnreviewedAlarms -> "Pro preview complete. Review free settings for alarms that still use a Pro routine or sound."
@@ -175,7 +175,7 @@ internal fun YogaAlarmRoot(
             snackbarScope.launch { snackbarHost.showSnackbar("Settings changed. Review your routine and free settings before saving.") }
             return null
         }
-        val repaired = !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
+        val repaired = !internalTestMode && !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
         val scheduled = AlarmScheduler.schedule(context, savedDraft, preserveSnooze = repaired)
         val saved = if (savedDraft.enabled && !scheduled) savedDraft.copy(enabled = false) else savedDraft
         alarms = if (saved != savedDraft) store.update { list -> list.map { if (it.id == saved.id) it.copy(enabled = false) else it } } else store.load()
@@ -294,7 +294,7 @@ internal fun YogaAlarmRoot(
         }
         wakeProgress = wakeProgressStore.load()
     }
-    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalTestPro, hasUnreviewedAlarms) {
+    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalTestMode, internalTestPro, hasUnreviewedAlarms) {
         trial = withContext(Dispatchers.IO) {
             val state = billingManager.state.value
             trialStore.reconcile(state.entitlement != null, state.verifyingPurchases || state.purchasing, state.recoverablePaidAccess,
@@ -393,21 +393,22 @@ internal fun YogaAlarmRoot(
         AlarmForegroundService.ringingAlarm.value == null && !occurrenceStore.hasInFlight() && !onboardingPending && onboardingStep == null &&
         !onboardingInvitationOpen && !permissionFlowInFlight && !settingsSheetOpen && !privacySheetOpen && !freeSettingsOpen && !restoreOpen
     fun testingBlocked(): Boolean {
-        return !BuildConfig.PRO_TRIAL_INTERNAL_TESTING || !resumed || route != "home" ||
+        return !resumed || route != "home" ||
             firedRoutine || firedAlarmId != null || AlarmForegroundService.ringingAlarm.value != null ||
             occurrenceStore.hasInFlight() || onboardingPending || onboardingStep != null ||
             onboardingInvitationOpen || permissionFlowInFlight || proPaywallOpen || restoreOpen ||
             context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }
-    fun changeInternalProAccess(enabled: Boolean) {
+    fun changeTestingState(change: () -> Boolean) {
         if (testingBusy || testingBlocked()) return
         testingBusy = true
         snackbarScope.launch {
             try {
-                val saved = withContext(Dispatchers.IO) {
-                    trialStore.setInternalTestProEnabled(enabled, ::testingBlocked)
+                val saved = withContext(Dispatchers.IO) { change() }
+                if (saved) {
+                    internalTestMode = trialStore.internalTestingEnabled()
+                    internalTestPro = trialStore.internalTestProEnabled()
                 }
-                if (saved) internalTestPro = trialStore.internalTestProEnabled()
             } finally {
                 testingBusy = false
             }
@@ -423,7 +424,7 @@ internal fun YogaAlarmRoot(
                 trialFallback = current.trialFallback, trialCustomization = current.trialCustomization, trialOriginal = current.trialOriginal)
         }
     }
-    LaunchedEffect(safeHome, trial.pendingMilestone, trialOfferAvailable, proPaywallOpen, internalTestPro) {
+    LaunchedEffect(safeHome, trial.pendingMilestone, trialOfferAvailable, proPaywallOpen, internalTestMode, internalTestPro) {
         if (trial.pendingMilestone != 5 || !safeHome || proPaywallOpen || !BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED ||
             internalTestMode || !trialOfferAvailable || trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) return@LaunchedEffect
         paywallEntry = "expiry"
@@ -474,7 +475,7 @@ internal fun YogaAlarmRoot(
                         weekStartsOnSunday = weekStartsOnSunday,
                         isPro = effectivePro,
                         trialActive = activeTrial && proEntitlement == null,
-                        needsFreeReview = !effectivePro && current != null && trial.needsFreeReview(current),
+                        needsFreeReview = !internalTestMode && !effectivePro && current != null && trial.needsFreeReview(current),
                         onUpgrade = { feature ->
                             paywallEntry = "locked_feature"
                             paywallFeature = when (feature) {
@@ -669,7 +670,7 @@ internal fun YogaAlarmRoot(
                     },
                     onToggleAlarm = { id, enabled ->
                         if (onboardingStep == null) store.load().firstOrNull { it.id == id }?.let {
-                            val reviewExpired = !effectivePro && trial.needsFreeReview(it)
+                            val reviewExpired = !internalTestMode && !effectivePro && trial.needsFreeReview(it)
                             val reviewPreview = activeTrial && !it.customization.isFree && it.trialFallback == null
                             if (enabled && (reviewExpired || reviewPreview)) {
                                 editorBase = it; editingAlarmId = it.id; pendingEditorAlarm = it; route = "editor"
@@ -767,7 +768,7 @@ internal fun YogaAlarmRoot(
             verifyingPurchase = billingState.verifyingPurchases,
             pendingPayment = billingState.pendingPurchase,
             trialActive = activeTrial && proEntitlement == null,
-            trialExhausted = trial.exhausted && proEntitlement == null,
+            trialExhausted = !internalTestMode && trial.exhausted && proEntitlement == null,
             entryFeature = paywallFeature,
             customizationSummary = if (!internalTestMode && (trial.active || trial.exhausted)) {
                 if (alarms.none { it.trialCustomization != null || !it.customization.isFree }) "Your current routine can continue free unchanged."
@@ -826,13 +827,19 @@ internal fun YogaAlarmRoot(
                 onboardingStep = OnboardingStep.Welcome
                 route = "home"
             },
-            monetizationTesting = if (internalTestMode) {{
+            monetizationTesting = {
                 MonetizationTestingSection(
+                    testingMode = internalTestMode,
                     proAccess = internalTestPro,
                     enabled = !testingBusy && !testingBlocked(),
-                    onProAccessChange = ::changeInternalProAccess,
+                    onTestingModeChange = { enabled ->
+                        changeTestingState { trialStore.setInternalTestingEnabled(enabled, ::testingBlocked) }
+                    },
+                    onProAccessChange = { enabled ->
+                        changeTestingState { trialStore.setInternalTestProEnabled(enabled, ::testingBlocked) }
+                    },
                 )
-            }} else null,
+            },
         )
     }
 
