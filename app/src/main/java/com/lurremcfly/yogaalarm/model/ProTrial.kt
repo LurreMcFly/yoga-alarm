@@ -19,6 +19,9 @@ data class ProTrial(
     val active: Boolean get() = enrollment == TrialEnrollment.PREVIEW && !retired && remaining > 0
     val exhausted: Boolean get() = enrollment == TrialEnrollment.PREVIEW && !retired && remaining == 0
 
+    fun needsFreeReview(alarm: AlarmConfig): Boolean =
+        exhausted && !awaitingPurchaseResolution && !alarm.customization.isFree
+
     fun complete(date: LocalDate): ProTrial {
         if (!active || date in dates) return this
         val updated = dates + date

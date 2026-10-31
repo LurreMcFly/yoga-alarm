@@ -139,9 +139,11 @@ internal fun YogaAlarmRoot(
     var testingMessage by remember { mutableStateOf<String?>(null) }
     var resumed by remember { mutableStateOf(false) }
     val effectivePro = proEntitlement != null || trial.active
+    val hasUnreviewedAlarms = !effectivePro && alarms.any(trial::needsFreeReview)
     val trialStatus = (if (proEntitlement != null) null else when {
         trial.active -> "Pro preview · ${trial.remaining} alarm days left"
-        trial.exhausted && trial.transition == com.lurremcfly.yogaalarm.model.FreeTransition.PENDING -> "Pro preview complete. Review your saved free settings."
+        hasUnreviewedAlarms -> "Pro preview complete. Review free settings for alarms that still use a Pro routine or sound."
+        trial.awaitingPurchaseResolution -> "Pro preview complete. Checking purchase status."
         trial.exhausted -> "Your Pro preview is complete. Future alarms use your free settings."
         else -> null
     })?.let { if (internalNonPaying) "TEST MODE · $it" else it }
@@ -177,7 +179,8 @@ internal fun YogaAlarmRoot(
             snackbarScope.launch { snackbarHost.showSnackbar("Settings changed. Review your routine and free settings before saving.") }
             return null
         }
-        val scheduled = AlarmScheduler.schedule(context, savedDraft)
+        val repaired = !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
+        val scheduled = AlarmScheduler.schedule(context, savedDraft, preserveSnooze = repaired)
         val saved = if (savedDraft.enabled && !scheduled) savedDraft.copy(enabled = false) else savedDraft
         alarms = if (saved != savedDraft) store.update { list -> list.map { if (it.id == saved.id) it.copy(enabled = false) else it } } else store.load()
         wakeProgress = wakeProgressStore.load()
@@ -295,7 +298,7 @@ internal fun YogaAlarmRoot(
         }
         wakeProgress = wakeProgressStore.load()
     }
-    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalNonPaying) {
+    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalNonPaying, hasUnreviewedAlarms) {
         trial = withContext(Dispatchers.IO) {
             val state = billingManager.state.value
             trialStore.reconcile(state.entitlement != null, state.verifyingPurchases || state.purchasing, state.recoverablePaidAccess,
@@ -499,6 +502,7 @@ internal fun YogaAlarmRoot(
                         weekStartsOnSunday = weekStartsOnSunday,
                         isPro = effectivePro,
                         trialActive = trial.active && proEntitlement == null,
+                        needsFreeReview = !effectivePro && current != null && trial.needsFreeReview(current),
                         onUpgrade = { feature ->
                             paywallEntry = "locked_feature"
                             paywallFeature = when (feature) {
@@ -705,7 +709,9 @@ internal fun YogaAlarmRoot(
                     },
                     onToggleAlarm = { id, enabled ->
                         if (onboardingStep == null) store.load().firstOrNull { it.id == id }?.let {
-                            if (enabled && trial.active && !it.customization.isFree && it.trialFallback == null) {
+                            val reviewExpired = !effectivePro && trial.needsFreeReview(it)
+                            val reviewPreview = trial.active && !it.customization.isFree && it.trialFallback == null
+                            if (enabled && (reviewExpired || reviewPreview)) {
                                 editorBase = it; editingAlarmId = it.id; pendingEditorAlarm = it; route = "editor"
                             } else saveAlarm(it.copy(enabled = enabled), it)
                         }
@@ -910,8 +916,11 @@ internal fun YogaAlarmRoot(
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
             Text("Only the first successful real alarm on each local date counts. After five, future alarms use these settings. Practice and stops use no allowance. No payment details or automatic charge.")
             alarms.forEach { alarm ->
-                val free = alarm.trialFallback?.takeIf { it.isFree } ?: alarm.customization.takeIf { it.isFree }
-                Text("${alarm.name}\n${free?.summary ?: "No confirmed free settings. Choose your free routine before continuing."}")
+                val free = alarm.customization.takeIf { it.isFree }
+                    ?: alarm.trialFallback?.takeIf { it.isFree && alarm.trialCustomization == alarm.customization }
+                val summary = if (!effectivePro && trial.needsFreeReview(alarm)) "Still uses the saved routine. Edit this alarm to confirm free settings."
+                    else free?.summary ?: "No confirmed free settings. Choose your free routine before continuing."
+                Text("${alarm.name}\n$summary")
                 TextButton(onClick = {
                     freeSettingsOpen = false
                     editorBase = alarm; editingAlarmId = alarm.id; pendingEditorAlarm = null; route = "editor"

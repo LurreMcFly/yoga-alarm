@@ -44,7 +44,10 @@ class AlarmStore(private val context: Context) {
         if (base != null && current == null) return@synchronized null
         val trialStore = ProTrialStore(context)
         val trial = trialStore.load()
-        if (!trialStore.hasPaidAccess(paid) && !draft.customization.isFree) {
+        val hasPaidAccess = trialStore.hasPaidAccess(paid)
+        val needsFreeReview = !hasPaidAccess && current != null && trial.needsFreeReview(current)
+        if (!hasPaidAccess && !draft.customization.isFree) {
+            if (needsFreeReview && (enableOnSave || draft != base?.copy(enabled = false))) return@synchronized null
             if (trial.active) {
                 if (draft.trialFallback?.isFree != true || draft.trialCustomization != draft.customization) return@synchronized null
             } else if (current?.customization != draft.customization) return@synchronized null
@@ -52,6 +55,8 @@ class AlarmStore(private val context: Context) {
         if (base != null && current != null && current.customization != base.customization && draft.customization != current.customization) {
             return@synchronized null // Require the visible draft to rebase before saving a conflicting customization.
         }
+        val repairing = needsFreeReview && draft.customization.isFree
+        val metadata = if (trial.exhausted && !hasPaidAccess && current != null) current else draft
         val saved = if (base == null || current == null) draft else draft.copy(
             enabled = if (enableOnSave) true else if (draft.enabled != base.enabled) draft.enabled else current.enabled,
             name = if (draft.name != base.name) draft.name else current.name,
@@ -64,7 +69,9 @@ class AlarmStore(private val context: Context) {
             snoozeCount = if (draft.snoozeCount != base.snoozeCount) draft.snoozeCount else current.snoozeCount,
             snoozeMinutes = if (draft.snoozeMinutes != base.snoozeMinutes) draft.snoozeMinutes else current.snoozeMinutes,
             stopButtonDisabled = if (draft.stopButtonDisabled != base.stopButtonDisabled) draft.stopButtonDisabled else current.stopButtonDisabled,
-            trialOriginal = current.trialOriginal,
+            trialFallback = if (repairing) draft.customization else metadata.trialFallback,
+            trialCustomization = if (repairing) current.customization else metadata.trialCustomization,
+            trialOriginal = current.trialOriginal ?: current.customization.takeIf { repairing },
         )
         val result = update { list -> if (current == null) list + saved else list.map { if (it.id == saved.id) saved else it } }
         result.firstOrNull { it.id == saved.id }?.takeIf { it == saved }

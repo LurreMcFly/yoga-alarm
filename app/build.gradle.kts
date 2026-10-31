@@ -53,12 +53,6 @@ android {
                 "proguard-rules.pro",
             )
         }
-        create("internalTesting") {
-            initWith(getByName("release"))
-            matchingFallbacks += "release"
-            buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
-            buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", "true")
-        }
     }
 
     compileOptions {
@@ -81,7 +75,6 @@ android {
     if (!monetizationAnalyticsEnabled) {
         sourceSets.getByName("debug").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
         sourceSets.getByName("release").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
-        sourceSets.getByName("internalTesting").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
     }
 
     testOptions {

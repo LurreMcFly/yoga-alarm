@@ -119,6 +119,37 @@ class ProTrialStoreTest {
         assertFalse(trials.load().active)
     }
 
+    @Test fun expiredLegacyAlarmRequiresFreeReviewToRescheduleAndCanRestoreAfterConfirmation() {
+        trials.enroll(true, true)
+        val poses = listOf(YogaPose.MOUNTAIN, YogaPose.SQUAT, YogaPose.WARRIOR_TWO, YogaPose.WARRIOR_TWO,
+            YogaPose.TRIANGLE, YogaPose.TRIANGLE, YogaPose.GODDESS)
+        val legacy = AlarmConfig.create(1).copy(routine = poses.mapIndexed { index, pose -> PoseStep(pose, if (index == 0) 5 else 10) })
+        val other = customized(2)
+        alarms.save(listOf(legacy, other))
+        repeat(5) { complete(other, first.plusDays(it.toLong())) }
+        val existing = occurrences.begin(legacy, 2)
+        assertTrue(occurrences.snooze(existing.token, 1))
+        val changedTime = legacy.copy(minute = (legacy.minute + 1) % 60, enabled = true)
+        assertNull(alarms.saveEdited(changedTime, legacy, paid = false, enableOnSave = true))
+        assertEquals(legacy, alarms.load().first())
+        val disabled = alarms.saveEdited(legacy.copy(enabled = false), legacy, paid = false)!!
+        assertNull(alarms.saveEdited(disabled.copy(enabled = true), disabled, paid = false))
+
+        val free = legacy.suggestedFreeFallback().copy(sound = AlarmSound.MORNING_TEMPLE_CALL)
+        val freeDraft = changedTime.copy(routine = free.routine, sound = free.sound)
+        val confirmed = alarms.saveEdited(freeDraft, disabled, paid = false, enableOnSave = true)!!
+        assertTrue(confirmed.customization.isFree)
+        assertEquals(free, confirmed.trialFallback)
+        assertEquals(legacy.customization, confirmed.trialOriginal)
+        assertEquals(confirmed, alarms.saveEdited(freeDraft, disabled, paid = false, enableOnSave = true))
+        assertEquals(FreeTransition.APPLIED, trials.reconcile(false, false).transition)
+        assertEquals(legacy, occurrences.find(existing.token)?.alarm)
+        assertEquals(confirmed, occurrences.begin(legacy, 2).alarm)
+        val restored = trials.restore(setOf(legacy.id), { true }).first()
+        assertEquals(legacy.customization, restored.customization)
+        assertEquals(changedTime.minute, restored.minute)
+    }
+
     @Test fun verificationDefersConversionButNotLocalExpiryAndReconciliationAppliesOnce() {
         trials.enroll(true, true)
         val alarm = customized(1)

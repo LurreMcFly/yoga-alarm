@@ -144,6 +144,7 @@ internal fun AlarmEditorScreen(
     onPractice: (AlarmConfig) -> Unit = {},
     practiceComplete: Boolean = false,
     trialActive: Boolean = false,
+    needsFreeReview: Boolean = false,
 ) {
     BackHandler(onBack = onCancel)
     var draft by rememberSaveable(initialAlarm.id) { mutableStateOf(initialAlarm) }
@@ -308,9 +309,10 @@ internal fun AlarmEditorScreen(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 90.dp),
         ) {
-            if (trialActive) {
+            if (trialActive || needsFreeReview) {
                 Text(
-                    "Try Pro for 5 successful alarm days. No payment details or automatic charge. Only your first success on each date counts. After the fifth, future alarms use your confirmed free settings unless you buy Pro.",
+                    if (needsFreeReview) "Your preview has ended. This alarm still uses its saved routine. Choose free settings to save changes."
+                    else "Try Pro for 5 successful alarm days. No payment details or automatic charge. Only your first success on each date counts. After the fifth, future alarms use your confirmed free settings unless you buy Pro.",
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     color = MutedInk,
                     fontSize = 13.sp,
@@ -318,9 +320,9 @@ internal fun AlarmEditorScreen(
                 if (!draft.customization.isFree) {
                     val fallback = draft.trialFallback?.takeIf { it.isFree } ?: draft.suggestedFreeFallback()
                     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        Text("After Pro preview: ${fallback.summary}", color = Forest, fontSize = 13.sp)
+                        Text(if (needsFreeReview) "Suggested free settings: ${fallback.summary}" else "After Pro preview: ${fallback.summary}", color = Forest, fontSize = 13.sp)
                         TextButton(onClick = { fallbackReview = fallback }) {
-                            Text(if (draft.trialFallback == fallback) "Review confirmed free settings" else "Review free settings")
+                            Text(if (trialActive && draft.trialFallback == fallback) "Review confirmed free settings" else "Review free settings")
                         }
                     }
                 }
@@ -584,7 +586,9 @@ internal fun AlarmEditorScreen(
             modifier = Modifier.align(Alignment.BottomCenter),
             onCancel = onCancel,
             onSave = {
-                if (!isPro && !draft.customization.isFree && draft.customization != initialAlarm.customization) {
+                if (needsFreeReview && !draft.customization.isFree) {
+                    fallbackReview = draft.trialFallback?.takeIf { it.isFree } ?: draft.suggestedFreeFallback()
+                } else if (!isPro && !draft.customization.isFree && draft.customization != initialAlarm.customization) {
                     onUpgrade(when {
                         !draft.sound.isFree -> "sound"
                         draft.routine.any { !it.pose.isFree } -> "pose"
@@ -639,7 +643,8 @@ internal fun AlarmEditorScreen(
         ModalBottomSheet(onDismissRequest = { fallbackReview = null }) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Your free settings", color = Forest, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                Text("After your fifth successful alarm day, future alarms use these settings unless you buy Pro. Already ringing or snoozed alarms keep their current routine.", color = MutedInk)
+                Text(if (needsFreeReview) "Saving applies these settings to future alarms. Already ringing or snoozed alarms keep their current routine."
+                    else "After your fifth successful alarm day, future alarms use these settings unless you buy Pro. Already ringing or snoozed alarms keep their current routine.", color = MutedInk)
                 Text("${fallback.routine.sumOf { it.durationSeconds }} seconds total · 3 poses × 20 seconds", fontWeight = FontWeight.Bold)
                 if (fallback.routine.sumOf { it.durationSeconds } > draft.routine.sumOf { it.durationSeconds }) {
                     Text("This increases your hold time from ${draft.routine.sumOf { it.durationSeconds }} to 60 seconds.", color = Forest)
@@ -658,19 +663,19 @@ internal fun AlarmEditorScreen(
                 AlarmSound.entries.filter { it.isFree }.forEach { sound ->
                     TextButton(onClick = { fallbackReview = fallback.copy(sound = sound) }) { Text(sound.displayName) }
                 }
-                Button(onClick = {
-                    if (trialActive && isPro) {
+                if (trialActive && isPro) {
+                    Button(onClick = {
                         val confirmed = draft.copy(trialFallback = fallback, trialCustomization = draft.customization, name = draft.name.trim().ifEmpty { AlarmConfig.defaultName(draft.hour, existingAlarmNames) })
                         draft = confirmed
                         fallbackReview = null
                         onSave(confirmed)
-                    }
-                }, modifier = Modifier.fillMaxWidth()) { Text("Confirm free settings & save") }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Confirm free settings & save") }
+                }
                 OutlinedButton(onClick = {
-                    draft = draft.copy(routine = fallback.routine, sound = fallback.sound, trialFallback = null, trialCustomization = null)
                     fallbackReview = null
-                    onSave(draft.copy(name = draft.name.trim().ifEmpty { AlarmConfig.defaultName(draft.hour, existingAlarmNames) }))
-                }, modifier = Modifier.fillMaxWidth()) { Text("Use free settings now") }
+                    onSave(draft.copy(routine = fallback.routine, sound = fallback.sound, trialFallback = null, trialCustomization = null,
+                        name = draft.name.trim().ifEmpty { AlarmConfig.defaultName(draft.hour, existingAlarmNames) }))
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (needsFreeReview) "Save with free settings" else "Use free settings now") }
                 TextButton(onClick = { fallbackReview = null }, modifier = Modifier.fillMaxWidth()) { Text("Keep editing") }
             }
         }
