@@ -1,9 +1,9 @@
 # Yoga Alarm billing specification
 
-Status: Android client integration and gated local preview authored through 2026-10-28; trusted backend verification, Firebase configuration, and device acceptance remain release dependencies. Public preview rollout and analytics are disabled by default.
+The Android release uses Play checkout, a local preview, and client-side last-known paid access. A backend verifier is future hardening, not a prerequisite for this release policy. Play-installed purchase and offline/lifecycle acceptance remain required. Firebase configuration is needed only if analytics is enabled.
 
-This document is the source of truth for the target production billing implementation.
-The temporary client-only implementation and its limitations are described below.
+This document is the source of truth for the current release billing policy.
+Client-only limitations and optional future backend hardening are described below.
 Changing product IDs or entitlement rules after the Play products are activated requires
 an explicit product decision.
 
@@ -59,23 +59,18 @@ Every Pro purchase unlocks:
 
 No Google Play free trial or introductory offer is configured. A local five-successful-alarm-day Pro preview is authored behind a disabled rollout gate. Only the first genuine yoga alarm completion on each local date counts; practice, tests, snoozes, and stops do not. Trial customization requires an accepted free fallback before saving. After the fifth qualifying day, future configurations switch to that fallback; already ringing/snoozed occurrences retain their snapshots. Paid ownership remains distinct from feature access.
 
-For this internal test cycle, select **release** in Android Studio's signed-bundle wizard or run `:app:bundleRelease`. At the user's request, this checkout sets `proTrialInternalTesting=true` in `gradle.properties`, so the standard release includes preview testing controls. Before public production distribution, set that property false and rebuild (or override it for a CLI build with `-PproTrialInternalTesting=false`). The Play package name is unchanged. See the [internal testing runbook](monetization-internal-testing.md) for signing, tester, and reset instructions. Public `-PproTrialRolloutEnabled=true` still requires analytics configuration plus `-PmonetizationBillingReady=true` after trusted billing and device acceptance; these are deployment assertions, not completed dependencies. Never promote a testing-enabled artifact to production.
+Testing controls default off (`proTrialInternalTesting=false`). For internal QA, opt in with `-PproTrialInternalTesting=true` when building the standard release, then sign that artifact with the existing upload key; Android Studio wizard instructions are in the runbook. For public signing, rebuild separately with testing false (explicitly `-PproTrialInternalTesting=false` for CLI builds). Public preview enrollment requires `-PproTrialRolloutEnabled=true` and `-PmonetizationBillingReady=true` after acceptance of this client-only policy and device testing. Analytics is optional. See the [internal testing runbook](monetization-internal-testing.md) for signing, tester and reset instructions.
 
 ## Purchase and entitlement rules
 
-- Grant Pro only after Google reports the purchase state as `PURCHASED` and backend
-  verification succeeds.
-- Never grant Pro for a `PENDING` purchase.
-- A verified purchase must be acknowledged promptly through the backend.
+- Grant Pro only after Play reports `PURCHASED` and the client verifier accepts the known product, package, and nonempty token.
+- Never grant Pro for a `PENDING` purchase. The client acknowledges accepted purchases promptly; lifetime is never consumed.
 - Lifetime takes precedence if more than one valid plan is present.
-- An active subscription grants Pro until its verified entitlement expiry.
-- Cancelling auto-renewal does not remove Pro before the paid period expires.
-- Pro remains available during Google's configured grace period.
-- Pro is unavailable during account hold or after expiry, as reported by Google.
-- A refund, revocation, or chargeback removes the entitlement associated with that purchase.
-- A temporary Play or backend outage must not immediately remove previously verified Pro.
-  Cached subscription access is valid only through its last known expiry; lifetime remains
-  cached while awaiting reverification.
+- A last-known subscription grants offline Pro for seven days after its last successful online ownership refresh. This is a local access window, not the subscription's paid-through expiry.
+- A successful online snapshot of both subscription and in-app ownership reconciles access, including an empty snapshot that clears saved paid access. Cancellation of renewal alone does not remove a still-owned purchase.
+- Offline, failed, partial, missing-result, or pending-only queries neither clear saved paid access nor renew its timestamp. Pending never grants Pro. Lifetime remains available offline until a successful online refresh changes ownership.
+- At the seven-day boundary, subscription editing access locks and the app asks the user to reconnect; expiry of this local window is not confirmation that they are free. Saved routines, schedules, ordering, and enabled states remain intact; ringing/snoozed occurrences keep their snapshots.
+- An online check requires Android's validated-network signal. Play can still return cached records; this is a best-effort freshness check, not proof of a fresh Play server response. Refunds, revocations, subscription expiry, and clock/storage tampering cannot be independently enforced by this client.
 - V1 does not implement in-app switching between monthly and yearly. Active subscribers use
   Google's Manage Subscription screen. This can be added later without changing the paywall.
 - A customer with active Pro is not offered another Pro purchase in V1.
@@ -89,7 +84,7 @@ Google Play restores eligible purchases for the Google account currently active 
 
 - Query purchases when billing connects and when the app returns to the foreground.
 - Keep a visible Restore Purchases action.
-- Send discovered purchase tokens to the backend for verification.
+- Validate discovered purchases locally; do not log purchase tokens.
 - A reinstall can create a new installation ID; the verified Play purchase remains the
   authority for restoring Pro.
 
@@ -97,10 +92,10 @@ Without a Yoga Alarm account, purchases do not transfer between Google Play and 
 App Store. This is accepted for V1. The future iOS app will use StoreKit and Apple's own
 purchase restoration independently.
 
-## Minimal backend data
+## Optional future backend data
 
-The production backend stores only what is required to verify access and, later, attribute
-creator commissions:
+A future backend should store only what is required to verify access and, later, attribute
+creator commissions. No such backend is configured for this release:
 
 - Random installation ID.
 - Store and package identifier.
@@ -134,9 +129,9 @@ raw IP addresses, device fingerprints, camera data, poses, or alarm configuratio
 
 ## Measurement configuration and release gates
 
-The default build excludes Firebase Analytics and the Google Services plugin and removes network permissions. Local trial/occurrence records do not establish measured revenue or retention. `-PmonetizationAnalyticsEnabled=true` requires a real `app/google-services.json` and `-PmonetizationPrivacyApproved=true`; the enabled sink then turns on Firebase collection. Review automatic SDK collection, consent/retention settings, published privacy text, and Play declarations before enabling it. Inspect the enabled merged release manifest and verify event delivery on a configured device. Authored funnel calls and SDK acceptance are not delivery receipts or authoritative financial reporting; reconcile store transactions separately. No live policy, Firebase project, or Console deployment is changed by these repository files.
+The default build excludes Firebase Analytics and the Google Services plugin, removes `INTERNET`, and retains `ACCESS_NETWORK_STATE` for purchase-refresh connectivity checks. Local trial/occurrence records do not establish measured revenue or retention. `-PmonetizationAnalyticsEnabled=true` requires a real `app/google-services.json` and `-PmonetizationPrivacyApproved=true`; the enabled sink then turns on Firebase collection. Review automatic SDK collection, consent/retention settings, published privacy text, and Play declarations before enabling it. Inspect the enabled merged release manifest and verify event delivery on a configured device. Authored funnel calls and SDK acceptance are not delivery receipts or authoritative financial reporting; reconcile store transactions separately. No live policy, Firebase project, or Console deployment is changed by these repository files.
 
-## Current client implementation and production replacement
+## Current client implementation and future hardening
 
 `PlayBillingManager.state.entitlement` represents paid ownership. Editing access may additionally come from an enrolled, unretired local preview with remaining days. Checkout requires resolved nonpaid ownership, a current available offer, no checkout/verification in flight, and no pending Pro payment; it is guarded in the manager and UI.
 `PurchaseVerifier` is an injectable suspending boundary that receives package name,
@@ -146,20 +141,9 @@ nonempty token and `PURCHASED` state. It performs **no signature verification or
 server verification** and cannot independently validate expiry, refunds or tampering.
 Pending records are never verified for access or acknowledged.
 
-Both purchase-type queries must succeed before replacing current entitlement. A
-failed query preserves session access; a successful empty snapshot removes access.
-Callbacks grant accepted purchases immediately, then reconcile with a fresh snapshot.
-Subscriptions are shown as “Subscription”, since the client record does not reliably
-identify monthly versus yearly. Cancelling renewal does not itself remove access:
-the app relies on the active purchases returned by Play. Lifetime takes precedence.
-Settings explains that lifetime has no renewal or expiry. For subscriptions, a
-full-width Cancel subscription button opens Google Play for confirmation; canceled
-renewal changes the action to Manage subscription. A separate link opens the exact
-renewal or subscription end date in Google Play. Subscription management remains
-visible when the user owns both lifetime and a valid subscription, without affecting
-lifetime access.
+Both purchase-type queries must succeed while the device has a validated network before treating ownership as online-resolved. Accepted purchase callbacks may grant provisional session access, then reconcile with a fresh snapshot. Only a successful complete online ownership refresh creates or renews the durable client access record and its seven-day timestamp. Subscriptions are shown as “Subscription”, since the client record does not reliably identify monthly versus yearly. Cancellation of auto-renewal does not itself remove access; Google Play supplies the exact renewal or end date. Settings and the Pro sheet link to subscription management, including lifetime owners who also have a subscription.
 
-`RecoverablePurchaseVerifier` and `VerifiedPaidAccess` define a cache contract for authenticated opaque evidence and verified subscription expiry. The manager can restore evidence only through that verifier. The actual `ClientPurchaseVerifier` implements only `PurchaseVerifier`, so it supplies no trusted offline cache: an offline cold start still has no paid Pro until Play responds. Session access survives temporary query failures, but this client cannot independently enforce trusted expiry or revocation. Never substitute an ever-purchased flag or initial purchase date for current ownership. Retiring a preview requires recoverable paid evidence; production rollout remains blocked on a real verifier and offline/device acceptance.
+The default verifier persists client-only last-known access across process death and offline cold starts: subscriptions for seven days from the last successful online check, lifetime until a successful online ownership refresh changes it. Restore/resume and periodic foreground checks reevaluate freshness and retry ownership. An offline or incomplete query cannot establish nonpaying ownership, clear the cache, or extend its timestamp. Expired offline subscription access disables new Pro editing without converting saved alarms or restarting a retired preview. The existing authenticated `RecoverablePurchaseVerifier` proof path is separate; local evidence must never be described as trusted server verification. Purchase-then-offline/device acceptance remains unexecuted unless recorded separately.
 
 The client acknowledges accepted purchases, retries transient failures with backoff
 up to 60 seconds while the manager is alive, and rediscovers unacknowledged purchases
@@ -167,7 +151,7 @@ on connection/resume/restore. Lifetime is never consumed. This cannot guarantee
 acknowledgement while the app is closed; failures must be resolved before Google's
 acknowledgement deadline to avoid automatic refunds.
 
-Before production:
+Optional future backend hardening (not a prerequisite for this client-only release):
 
 - Return verified subscription renewal status and `lineItems.expiryTime` from
   `purchases.subscriptionsv2.get`. Display the localized access end date after
@@ -209,9 +193,12 @@ purchases between scenarios: active Pro intentionally disables another purchase.
 | Reinstall + restore | Repeat for subscription and lifetime. Startup restores automatically; Restore purchases also reports the result. |
 | Subscription already owned | Startup normally restores and disables checkout. If ownership is discovered during checkout, `ITEM_ALREADY_OWNED` triggers restoration automatically. |
 | Lifetime already owned | Same recovery; never consumes ownership or sells a second copy. |
-| Disconnect/reconnect | Loading failure leaves unavailable choices disabled. Restore/resume retries connection, prices and ownership. Session Pro survives transient lookup failure. |
+| Disconnect/reconnect | Loading failure leaves unavailable choices disabled. Restore/resume retries connection, prices and ownership. Last-known subscription Pro survives up to seven days; lifetime survives until a successful online refresh. |
+| Offline cold start / running expiry | Buy and refresh online, terminate, then reopen offline: subscription Pro works before seven days and locks new Pro edits at the boundary with a reconnect action; lifetime remains available. Saved alarms and in-flight snapshots remain intact. Repeat while the app stays open. |
+| Failed/partial/pending refresh | Neither clear last-known access nor extend its timestamp. Checkout and preview reconciliation must not interpret this as confirmed free ownership. |
+| Successful online empty refresh | Both type queries succeed with a validated network and no owned purchases: clear saved access; subsequent offline start must not restore it. |
 | Acknowledgement failure | Interrupt the network after approval; acknowledgement retries after connectivity returns. Restart/restore retries any still-unacknowledged record. |
-| Cancel renewal / expire / refund-revoke | Renewal cancellation retains access while Play reports the purchase active. After expiry/revocation, a successful foreground/restore query removes that entitlement unless another valid Pro purchase exists. |
+| Cancel renewal / expire / refund-revoke | Renewal cancellation retains access while Play reports the purchase active. After expiry/revocation, a successful online foreground/restore snapshot of both product types removes that entitlement unless another valid Pro purchase exists. |
 | Release bypass | No test activation control; old debug preferences cannot unlock Pro. |
 
 The focused JVM tests cover client entitlement acceptance/rejection and catalog mapping;
@@ -228,6 +215,6 @@ Play Console configuration is complete when:
 - Grace period, account hold, and resubscription match this specification.
 - License testers can retrieve all three choices from an internal-track build.
 
-The later app/backend implementation is complete when monthly, yearly, lifetime, pending,
+Release acceptance is complete when monthly, yearly, lifetime, pending,
 cancellation, expiry, grace period, account hold, refund, restoration, reinstall, offline,
 and temporary-service-outage paths all follow this specification.

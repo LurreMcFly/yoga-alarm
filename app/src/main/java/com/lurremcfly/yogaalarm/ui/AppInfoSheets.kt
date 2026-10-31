@@ -70,6 +70,7 @@ fun AppSettingsSheet(
     onOpenPrivacy: () -> Unit,
     onOpenHelp: () -> Unit,
     monetizationTesting: @Composable (() -> Unit)? = null,
+    offlineAccessExpired: Boolean = false,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -141,6 +142,9 @@ fun AppSettingsSheet(
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Yoga Alarm Pro", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                    if (offlineAccessExpired) {
+                        Text("Connect to Google Play, then restore purchases to refresh Pro.", color = MutedInk, fontSize = 14.sp)
+                    }
                     if (entitlement == null) trialStatus?.let { Text(it, color = Forest) }
                     TextButton(onClick = onRestorePurchases) { Text("Restore purchases", color = Forest) }
                     when (entitlement) {
@@ -151,7 +155,7 @@ fun AppSettingsSheet(
                         ProEntitlement.SUBSCRIPTION -> {
                             Text("Subscription Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
                         }
-                        null -> {
+                        null -> if (!offlineAccessExpired) {
                             Text("More poses, sounds, and a routine that’s yours.", color = MutedInk, fontSize = 14.sp)
                             Button(
                                 onClick = onOpenPro,
@@ -312,6 +316,7 @@ fun ProPaywallSheet(
     entryFeature: String? = null,
     onViewFreeSettings: () -> Unit = {},
     onPlanSelected: (ProPlan) -> Unit = {},
+    offlineAccessExpired: Boolean = false,
 ) {
     val previewOnly = BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalPreviewOnly
     var selectedPlan by rememberSaveable { mutableStateOf<ProPlan?>(null) }
@@ -450,7 +455,7 @@ fun ProPaywallSheet(
                         )
                     }
                 }
-                billingMessage?.let { message ->
+                (if (offlineAccessExpired) "Connect to Google Play, then restore purchases to refresh Pro." else billingMessage)?.let { message ->
                     Text(
                         message,
                         modifier = Modifier.fillMaxWidth(),

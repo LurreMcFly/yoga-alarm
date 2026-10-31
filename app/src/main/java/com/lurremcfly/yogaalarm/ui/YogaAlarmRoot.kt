@@ -656,6 +656,8 @@ internal fun YogaAlarmRoot(
                     savedAlarmId = savedAlarmId,
                     onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
                     isPro = proEntitlement != null,
+                    offlineAccessExpired = billingState.offlineAccessExpired && !internalNonPaying,
+                    onRestorePurchases = billingManager::restorePurchases,
                     trialDaysRemaining = trial.remaining.takeIf { proEntitlement == null && (trial.active || trial.exhausted) },
                     onOpenPro = { if (onboardingStep == null) {
                         paywallEntry = if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalExpiryBanner && trial.exhausted) "expiry"
@@ -785,6 +787,7 @@ internal fun YogaAlarmRoot(
             catalogSettled = billingState.catalogSettled,
             canPurchase = billingState.canPurchase && !internalNonPaying,
             internalPreviewOnly = internalNonPaying,
+            offlineAccessExpired = billingState.offlineAccessExpired && !internalNonPaying,
             verifyingPurchase = billingState.verifyingPurchases,
             pendingPayment = billingState.pendingPurchase,
             trialActive = trial.active && proEntitlement == null,
@@ -813,6 +816,7 @@ internal fun YogaAlarmRoot(
         AppSettingsSheet(
             entitlement = billingState.entitlement,
             trialStatus = trialStatus,
+            offlineAccessExpired = billingState.offlineAccessExpired && !internalNonPaying,
             onRestorePurchases = billingManager::restorePurchases,
             subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
             weekStartsOnSunday = weekStartsOnSunday,

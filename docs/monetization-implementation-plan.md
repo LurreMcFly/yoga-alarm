@@ -1,7 +1,15 @@
 # Yoga Alarm monetization implementation plan
 
-Status: Android implementation present for internal validation; production preview enrollment and analytics are disabled by default. Production billing integration and device/store acceptance remain release blockers.
+Status: Android implementation present for internal validation; production preview enrollment and analytics are disabled by default. Device/store acceptance remains a release requirement. The client-only release decision below supersedes earlier backend prerequisites in this historical plan.
 Prepared: 2026-10-27. Code/UX review: 2026-10-28. Android is the reference implementation.
+
+## Release policy update — 2026-10-31
+
+The release now accepts persisted client-side last-known paid access; a backend verifier is optional future hardening, not a prerequisite. Subscriptions retain Pro for seven days after the last successful online ownership refresh; lifetime retains access until a successful online refresh changes ownership. A complete successful online snapshot requires both subscription and in-app type queries and Android's validated-network signal. Failed, partial, missing, pending-only and offline responses neither clear saved access nor renew its timestamp. Play may still return cached records with a validated network, so this is best-effort freshness, not server verification. The client cannot independently enforce refunds, revocations, actual paid-through expiry, or clock/storage tampering.
+
+At local subscription-window expiry, lock new Pro editing and show a reconnect action without confirming free ownership, converting saved alarms, or restarting a retired preview. Keep saved schedules, enabled states, order, routines/sounds and ringing/snoozed snapshots intact. Purchase callbacks can grant provisional session access but do not create or renew durable client evidence; only a successful complete online ownership refresh does. Paid access must be durably recoverable before retiring a preview. Keep the authenticated verifier/cache path separate from client evidence. Default analytics-disabled manifests retain `ACCESS_NETWORK_STATE` for refresh checks and remove `INTERNET`; analytics remains optional. Internal tester controls remain internal; a license-test lifetime purchase plus the non-paying switch provides the requested tester workflow.
+
+The current behavior and acceptance matrix are in [the billing specification](play-billing-setup.md) and [internal testing runbook](monetization-internal-testing.md). Earlier implementation records and design requirements below describe the previous trusted-backend target where they conflict with this update. Their historical test counts remain unchanged; no purchase, physical-device, offline restart, or online revocation acceptance is claimed by this policy update.
 
 ## Implementation record — 2026-10-28
 
@@ -18,9 +26,9 @@ Implemented stages:
 Build/rollout controls:
 
 - Normal builds: preview enrollment and analytics off. Already enrolled preview state/fallback policy remains intact when enrollment is disabled; automatic commercial prompts stop.
-- Internal product validation: the user requested the standard `release` signing workflow. This checkout now sets `proTrialInternalTesting=true` in `gradle.properties`, enabling preview enrollment and guarded Settings controls in release/debug without extra command-line flags. See the [internal testing runbook](monetization-internal-testing.md). Before public production distribution, set the property false and rebuild; `-PproTrialInternalTesting=false` overrides it for a single CLI build. The separate internalTesting variant was removed.
-- Production enrollment: `-PproTrialRolloutEnabled=true` requires `-PmonetizationAnalyticsEnabled=true`, `-PmonetizationPrivacyApproved=true`, real `app/google-services.json`, and `-PmonetizationBillingReady=true`. These are explicit build gates/attestations, **not implementations of consent, verification or acceptance**. Keep them off until the dependencies below are resolved.
-- Analytics-enabled builds select Firebase and retain network permissions. Default debug/release manifest overlays remove network permissions. Backup remains disabled; advertising ID collection and ad personalization defaults are disabled. Audit automatic SDK collection as well as the custom allowlist before enabling collection.
+- Internal product validation: the user requested the standard `release` signing workflow. This checkout defaults `proTrialInternalTesting=false` in `gradle.properties`. Opt in for internal QA with `-PproTrialInternalTesting=true` when building release/debug; sign the internal release artifact separately using the existing upload key. The Android Studio signing wizard can use a temporary local true property, restored to false immediately afterward. See the [internal testing runbook](monetization-internal-testing.md). For public signing, confirm the property is false and rebuild a separate artifact; explicitly pass `-PproTrialInternalTesting=false` for CLI builds. The separate internalTesting variant was removed.
+- Public enrollment requires `-PproTrialRolloutEnabled=true` and billing readiness. The five-day preview works with analytics disabled. Only a separately enabled analytics build requires Firebase configuration and privacy approval.
+- Analytics-enabled builds select Firebase and retain network permissions. Default debug/release manifest overlays remove `INTERNET` and retain `ACCESS_NETWORK_STATE` for purchase refresh checks. Backup remains disabled; advertising ID collection and ad personalization defaults are disabled. Audit automatic SDK collection as well as the custom allowlist before enabling collection.
 
 Validation record (updated during implementation):
 
@@ -37,7 +45,7 @@ Final scoped validation:
 - **Not run:** all fifteen section 9 physical-device/Google Play scenarios remain acceptance work. `adb devices -l` showed no device. In particular, no lock-screen/process-kill behavior, actual Google Play cancellation/pending/restoration/renewal/refund, paid purchase followed by airplane-mode restart, or visual/accessibility layout result is claimed.
 - **Not run:** full app assembly, the unrelated pose-detection suite, and any iOS build/test. Validation stayed scoped to affected behavior. Android changes remain uncommitted; retain `<pending>` implementation hashes.
 
-Concrete production dependencies:
+Previous backend-target dependencies (superseded by the 2026-10-31 policy; items 2 and 3 still apply only to a measured rollout):
 
 1. Implement and deploy the trusted Play verifier: authenticate purchase evidence, validate subscription expiry/renewal/refund/revocation, issue offline-verifiable proof, and wire the verifier into `PlayBillingManager` instead of `ClientPurchaseVerifier`. Supply real trust material/transport configuration; do not calculate subscription expiry from purchase time. Complete purchase/termination/airplane-mode/expiry/revocation acceptance before retiring paid previews in production.
 2. Supply the Firebase project configuration; approve collection/consent/retention, audit automatic events, update the **published** privacy policy and Play Data safety declarations, and verify delivery in DebugView. The repository documentation describes requirements; it does not update external declarations.

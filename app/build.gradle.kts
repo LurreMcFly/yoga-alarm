@@ -24,8 +24,8 @@ if (monetizationAnalyticsEnabled) {
     apply(plugin = "com.google.gms.google-services")
 }
 if (proTrialRolloutEnabled) {
-    check(monetizationAnalyticsEnabled && providers.gradleProperty("monetizationBillingReady").orNull == "true") {
-        "Trial rollout requires configured measurement and -PmonetizationBillingReady=true after trusted billing/device acceptance."
+    check(providers.gradleProperty("monetizationBillingReady").orNull == "true") {
+        "Trial rollout requires -PmonetizationBillingReady=true after billing/device acceptance."
     }
 }
 

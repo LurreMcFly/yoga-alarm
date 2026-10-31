@@ -14,17 +14,18 @@ export default function PrivacyPolicy() {
             <li><strong>Notifications and alarms:</strong> used to ring and display alarms at the time you choose.</li>
             <li><strong>Vibration and wake lock:</strong> used to alert you and keep the routine screen awake.</li>
             <li><strong>Google Play Billing:</strong> used to offer, restore, and manage optional Pro purchases.</li>
+            <li><strong>Network status:</strong> used to check whether a connection is available before refreshing purchase access.</li>
           </ul>
         </section>
 
         <section>
           <h2>Data stored on your device</h2>
-          <p>Alarm times, repeat days, routine choices, snooze settings, permission-readiness state, and local Pro test state are stored locally on your device. Yoga Alarm does not require an account and does not operate an advertising or analytics backend.</p>
+          <p>Alarm times, repeat days, routine choices, snooze settings, permission-readiness state, preview progress, and last-known Pro purchase status and refresh time are stored locally on your device. Internal testing builds also store local test preferences. Yoga Alarm does not require an account and does not operate an advertising or analytics backend in the default build.</p>
         </section>
 
         <section>
           <h2>Purchases</h2>
-          <p>Purchases are processed by Google Play under Google&apos;s terms and privacy policy. Yoga Alarm reads purchase status from Google Play to unlock Pro. It does not receive or store your payment-card details.</p>
+          <p>Purchases are processed by Google Play under Google&apos;s terms and privacy policy. Yoga Alarm reads purchase status from Google Play to unlock Pro and saves last-known access on your device for offline use. Subscription access can continue offline for up to seven days after a successful online ownership refresh; lifetime access continues until a successful online refresh changes ownership. It does not receive or store your payment-card details.</p>
         </section>
 
         <section>
@@ -47,7 +48,7 @@ export default function PrivacyPolicy() {
           <p>This policy may be updated as the app changes. For privacy questions, use the developer contact shown on Yoga Alarm&apos;s Google Play listing.</p>
         </section>
 
-        <footer>Effective September 3, 2026 · Yoga Alarm by LurreMcFly</footer>
+        <footer>Effective October 31, 2026 · Yoga Alarm by LurreMcFly</footer>
       </article>
     </main>
   );

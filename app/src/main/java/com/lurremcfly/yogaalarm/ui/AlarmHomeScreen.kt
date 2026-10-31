@@ -142,6 +142,8 @@ internal fun AlarmHomeScreen(
     reorderingEnabled: Boolean = true,
     onboardingTargets: OnboardingTargets? = null,
     trialDaysRemaining: Int? = null,
+    offlineAccessExpired: Boolean = false,
+    onRestorePurchases: () -> Unit = {},
 ) {
     val listState = rememberLazyListState()
     var displayedAlarms by remember(alarms) { mutableStateOf(alarms) }
@@ -284,6 +286,9 @@ internal fun AlarmHomeScreen(
                     ) {
                         Column(Modifier.align(Alignment.CenterVertically)) {
                             Text("Your alarms", color = Ink, fontSize = headerFontSize, fontWeight = FontWeight.Bold)
+                            if (offlineAccessExpired) {
+                                Text("Connect to Google Play to refresh Pro.", color = MutedInk, fontSize = 12.sp)
+                            }
                             if (trialDaysRemaining != null && trialDaysRemaining > 0) {
                                 Text(
                                     if (trialDaysRemaining == 1) "Pro trial · 1 alarm day left" else "Pro trial · $trialDaysRemaining alarm days left",
@@ -306,14 +311,14 @@ internal fun AlarmHomeScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             if (!isPro) Surface(
-                                modifier = Modifier.heightIn(min = 48.dp).clickable(onClick = onOpenPro),
+                                modifier = Modifier.heightIn(min = 48.dp).clickable(onClick = if (offlineAccessExpired) onRestorePurchases else onOpenPro),
                                 shape = RoundedCornerShape(999.dp),
                                 color = Color.White,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, Hairline),
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
-                                        if (trialDaysRemaining != null) "KEEP PRO" else "GET PRO",
+                                        if (offlineAccessExpired) "CHECK PRO" else if (trialDaysRemaining != null) "KEEP PRO" else "GET PRO",
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                         color = Forest,
                                         fontSize = 10.sp,

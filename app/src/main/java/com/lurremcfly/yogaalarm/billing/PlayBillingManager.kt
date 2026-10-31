@@ -2,6 +2,9 @@ package com.lurremcfly.yogaalarm.billing
 
 import android.app.Activity
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -53,6 +56,7 @@ data class BillingUiState(
     val checkoutCanceled: Boolean = false,
     val catalogSettled: Boolean = false,
     val recoverablePaidAccess: Boolean = false,
+    val offlineAccessExpired: Boolean = false,
     val entitlement: ProEntitlement? = null,
     val subscriptionAutoRenewing: Boolean? = null,
     val offers: Map<ProPlan, BillingOffer> = emptyMap(),
@@ -67,18 +71,31 @@ data class BillingUiState(
 class PlayBillingManager(
     context: Context,
     private val verifier: PurchaseVerifier = ClientPurchaseVerifier(context.packageName),
+    private val hasValidatedNetwork: () -> Boolean = {
+        val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java)
+        connectivity?.getNetworkCapabilities(connectivity.activeNetwork)?.let {
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        } == true
+    },
+    private val queryPurchases: (suspend (String) -> Pair<BillingResult, List<Purchase>>)? = null,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) : PurchasesUpdatedListener {
     private val analytics = MonetizationAnalytics(context.applicationContext)
+    private val preferences = context.applicationContext.getSharedPreferences("yoga_alarm_billing", Context.MODE_PRIVATE)
     private val paidCache = PaidEntitlementCache(
-        context.applicationContext.getSharedPreferences("yoga_alarm_billing", Context.MODE_PRIVATE),
+        preferences,
         verifier as? RecoverablePurchaseVerifier,
     )
+    private val clientCache = LastKnownPaidAccessCache(preferences)
+    private val cachedClientAccess = if (verifier is ClientPurchaseVerifier) clientCache.restore() else null
+    private var lastKnownAccess = cachedClientAccess?.takeIf { it.isValidAt(nowEpochMillis()) }
     private val cachedAccess = paidCache.restore(nowEpochMillis())
     private var verifiedAccess = cachedAccess
     private val mutableState = MutableStateFlow(BillingUiState(
-        entitlement = cachedAccess?.entitlement,
-        recoverablePaidAccess = cachedAccess != null,
+        entitlement = cachedAccess?.entitlement ?: lastKnownAccess?.entitlement,
+        recoverablePaidAccess = cachedAccess != null || lastKnownAccess != null,
+        offlineAccessExpired = cachedClientAccess != null && lastKnownAccess == null && cachedAccess == null,
     ))
     val state: StateFlow<BillingUiState> = mutableState.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -91,6 +108,14 @@ class PlayBillingManager(
     private var offersJob: Job? = null
     private var purchaseJob: Job? = null
     private var paidExpiryJob: Job? = null
+    private val connectivity = context.applicationContext.getSystemService(ConnectivityManager::class.java)
+    private var networkValidated = hasValidatedNetwork()
+    private var networkGeneration = 0L
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = networkChanged()
+        override fun onLost(network: Network) = networkChanged()
+    }
+    private var observingNetwork = false
     private val acknowledging = mutableSetOf<String>()
     private val acknowledged = mutableSetOf<String>()
     private val billingClient = BillingClient.newBuilder(context.applicationContext)
@@ -100,7 +125,26 @@ class PlayBillingManager(
         .build()
 
     init {
+        observingNetwork = runCatching {
+            connectivity?.registerDefaultNetworkCallback(networkCallback)
+            connectivity != null
+        }.getOrDefault(false)
         schedulePaidExpiry()
+    }
+
+    private fun networkChanged() {
+        scope.launch {
+            if (closed) return@launch
+            val online = hasValidatedNetwork()
+            if (online == networkValidated) return@launch
+            networkValidated = online
+            networkGeneration++
+            if (online) {
+                if (billingClient.isReady) {
+                    if (purchaseJob?.isActive != true) refresh()
+                } else start()
+            }
+        }
     }
 
     fun start() {
@@ -122,7 +166,7 @@ class PlayBillingManager(
                     if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                         retryJob?.cancel()
                         retryDelay = 1_000L
-                        mutableState.value = mutableState.value.copy(connected = true, message = null)
+                        mutableState.value = mutableState.value.copy(connected = true)
                         queryOffers()
                         if (purchaseJob?.isActive != true) refresh()
                     } else {
@@ -149,10 +193,15 @@ class PlayBillingManager(
 
     private fun schedulePaidExpiry() {
         paidExpiryJob?.cancel()
-        if (verifiedAccess?.validUntilEpochMillis == null || closed) return
+        if (paidAccessDeadline() == null || closed) return
         paidExpiryJob = scope.launch {
             while (true) {
-                val deadline = verifiedAccess?.validUntilEpochMillis ?: return@launch
+                expireKnownPaidAccess()
+                val deadline = paidAccessDeadline()
+                if (deadline == null) {
+                    if (billingClient.isReady && !state.value.verifyingPurchases) refresh()
+                    return@launch
+                }
                 val remaining = deadline - nowEpochMillis()
                 if (remaining > 0) {
                     // Bound the clock recheck so a wall-clock change cannot leave a stale grant
@@ -161,26 +210,35 @@ class PlayBillingManager(
                 } else {
                     expireKnownPaidAccess()
                     if (billingClient.isReady && !state.value.verifyingPurchases) refresh()
-                    if (verifiedAccess?.validUntilEpochMillis == null) return@launch
+                    if (paidAccessDeadline() == null) return@launch
                 }
             }
         }
     }
 
+    private fun paidAccessDeadline(): Long? = if (verifiedAccess != null) {
+        verifiedAccess?.validUntilEpochMillis
+    } else lastKnownAccess?.validUntilEpochMillis
+
     private fun expireKnownPaidAccess() = synchronized(AlarmStorageLock) {
-        val previous = verifiedAccess ?: return@synchronized
         val now = nowEpochMillis()
-        if (previous.isValidAt(now)) return@synchronized
-        // Only a known verified validity boundary removes access. Query failures carry no
-        // expiry information. A newer authenticated proof can supersede the expired grant.
+        val previous = verifiedAccess
+        val clientPrevious = lastKnownAccess
+        if (previous == null && clientPrevious == null) return@synchronized
+        if (previous?.isValidAt(now) == true || (previous == null && clientPrevious?.isValidAt(now) == true)) return@synchronized
+        // Query failures cannot revoke ownership. Only the authenticated validity boundary
+        // or the client subscription grace deadline expires an existing grant here.
         val restored = paidCache.restore(now)
         verifiedAccess = restored
-        if (restored == null) paidCache.clear()
+        if (previous != null && restored == null) paidCache.clear()
+        lastKnownAccess = clientCache.restore()?.takeIf { verifier is ClientPurchaseVerifier && it.isValidAt(now) }
+        val entitlement = restored?.entitlement ?: lastKnownAccess?.entitlement
         mutableState.value = state.value.copy(
-            entitlement = if (state.value.entitlement == previous.entitlement) restored?.entitlement else state.value.entitlement,
-            recoverablePaidAccess = restored != null,
-            ownershipResolution = if (restored == null) OwnershipResolution.UNAVAILABLE else state.value.ownershipResolution,
-            subscriptionAutoRenewing = if (restored?.entitlement == ProEntitlement.SUBSCRIPTION) state.value.subscriptionAutoRenewing else null,
+            entitlement = entitlement,
+            recoverablePaidAccess = entitlement != null,
+            offlineAccessExpired = clientPrevious != null && lastKnownAccess == null && restored == null,
+            ownershipResolution = if (entitlement == null) OwnershipResolution.UNAVAILABLE else state.value.ownershipResolution,
+            subscriptionAutoRenewing = if (entitlement == ProEntitlement.SUBSCRIPTION) state.value.subscriptionAutoRenewing else null,
         )
     }
 
@@ -196,6 +254,7 @@ class PlayBillingManager(
 
     fun close() {
         closed = true
+        if (observingNetwork) runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
         scope.cancel()
         billingClient.endConnection()
     }
@@ -237,6 +296,7 @@ class PlayBillingManager(
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: List<Purchase>?) {
         scope.launch {
+            if (closed) return@launch
             refreshJob?.cancel() // A snapshot begun before checkout must not overwrite its result.
             purchaseJob?.cancel()
             mutableState.value = state.value.copy(
@@ -331,15 +391,19 @@ class PlayBillingManager(
                 plan to offer
             }
 
-    private fun refresh() {
+    internal fun refresh() {
+        if (closed) return
         refreshJob?.cancel()
         refreshJob = scope.launch {
+            expireKnownPaidAccess()
+            val onlineAtStart = hasValidatedNetwork()
+            val checkNetworkGeneration = networkGeneration
             mutableState.value = state.value.copy(
                 loading = true, ownershipResolution = OwnershipResolution.LOADING,
             )
             val queries = listOf(BillingClient.ProductType.SUBS, BillingClient.ProductType.INAPP).map { type ->
                 async {
-                    suspendCancellableCoroutine { continuation ->
+                    queryPurchases?.invoke(type) ?: suspendCancellableCoroutine { continuation ->
                         billingClient.queryPurchasesAsync(
                             QueryPurchasesParams.newBuilder().setProductType(type).build(),
                         ) { result, purchases ->
@@ -362,7 +426,11 @@ class PlayBillingManager(
             }
             try {
                 mutableState.value = state.value.copy(verifyingPurchases = true)
-                applyPurchases(results.flatMap { it.second }, replace = true)
+                applyPurchases(
+                    results.flatMap { it.second }, replace = true,
+                    onlineOwnershipCheck = onlineAtStart,
+                    checkNetworkGeneration = checkNetworkGeneration,
+                )
                 restoreRequested = false
             } catch (error: CancellationException) {
                 throw error
@@ -377,10 +445,16 @@ class PlayBillingManager(
         }
     }
 
-    private suspend fun applyPurchases(purchases: List<Purchase>, replace: Boolean) {
-        var entitlement = if (replace) null else state.value.entitlement
-        var subscriptionAutoRenewing = if (replace) null else state.value.subscriptionAutoRenewing
-        var recoverableAccess = if (replace) null else paidCache.restore(nowEpochMillis())
+    private suspend fun applyPurchases(
+        purchases: List<Purchase>,
+        replace: Boolean,
+        onlineOwnershipCheck: Boolean = hasValidatedNetwork(),
+        checkNetworkGeneration: Long = networkGeneration,
+    ) {
+        var observedEntitlement: ProEntitlement? = null
+        var observedAutoRenewing: Boolean? = null
+        var recoverableAccess: VerifiedPaidAccess? = null
+        var rejected = false
         val accepted = mutableListOf<Purchase>()
         for (purchase in purchases.distinctBy(Purchase::getPurchaseToken)) {
             if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) continue
@@ -391,15 +465,18 @@ class PlayBillingManager(
             val verified = if (verifier is RecoverablePurchaseVerifier) {
                 recoverable?.takeIf { it.isValidAt(nowEpochMillis()) }?.entitlement
             } else verifier.verify(evidence)
-            if (verified == null) continue
+            if (verified == null) {
+                if (purchase.products.any { it == ProPlan.MONTHLY.productId || it == ProPlan.LIFETIME.productId }) rejected = true
+                continue
+            }
             if (recoverable != null && recoverableAccess?.entitlement != ProEntitlement.LIFETIME) {
                 recoverableAccess = recoverable
             }
             accepted += purchase
             if (verified == ProEntitlement.SUBSCRIPTION) {
-                subscriptionAutoRenewing = purchase.isAutoRenewing
+                observedAutoRenewing = purchase.isAutoRenewing
             }
-            if (entitlement != ProEntitlement.LIFETIME) entitlement = verified
+            if (observedEntitlement != ProEntitlement.LIFETIME) observedEntitlement = verified
         }
         val pending = purchases.any {
             it.purchaseState == Purchase.PurchaseState.PENDING &&
@@ -408,25 +485,69 @@ class PlayBillingManager(
         // A verifier can finish after cancellation. Never let an obsolete ownership snapshot
         // overwrite a purchase callback or its durable proof.
         coroutineContext.ensureActive()
+        if (closed) return
+        expireKnownPaidAccess()
+        // Play can return its device cache even with OK. Validated connectivity is only a
+        // best-effort client freshness boundary; it is not store attestation.
+        val online = onlineOwnershipCheck && hasValidatedNetwork() && checkNetworkGeneration == networkGeneration
+        val replaceOwnership = replace && online && !pending &&
+            (!rejected || verifier !is ClientPurchaseVerifier)
+        var entitlement = state.value.entitlement
+        var subscriptionAutoRenewing = state.value.subscriptionAutoRenewing
         synchronized(AlarmStorageLock) {
-            val recoverablePaidAccess = if (entitlement != null && recoverableAccess != null && recoverableAccess.entitlement == entitlement) {
-                paidCache.save(recoverableAccess, nowEpochMillis())
-            } else {
-                if (replace) paidCache.clear()
-                false
+            // An authenticated verifier can grant using its own evidence. Client observations
+            // need connectivity, and incomplete/pending snapshots cannot replace known ownership.
+            val mayGrant = verifier !is ClientPurchaseVerifier || (online && !pending && !rejected)
+            if (replaceOwnership) {
+                entitlement = observedEntitlement
+                subscriptionAutoRenewing = observedAutoRenewing
+            } else if (mayGrant && observedEntitlement != null && entitlement != ProEntitlement.LIFETIME) {
+                entitlement = observedEntitlement
+                subscriptionAutoRenewing = observedAutoRenewing
             }
-            verifiedAccess = recoverableAccess?.takeIf { it.entitlement == entitlement }
+            var recoverablePaidAccess = state.value.recoverablePaidAccess
+            if (verifier is ClientPurchaseVerifier) {
+                if (replaceOwnership) {
+                    lastKnownAccess = entitlement?.let { LastKnownPaidAccess(it, nowEpochMillis()) }
+                    recoverablePaidAccess = lastKnownAccess?.let(clientCache::save) ?: run {
+                        clientCache.clear()
+                        false
+                    }
+                } else if (!replace && mayGrant && entitlement != null && lastKnownAccess?.entitlement != entitlement) {
+                    // Checkout unlocks promptly, but only the complete online ownership check
+                    // makes this recoverable. Replayed callbacks never renew a cached deadline.
+                    lastKnownAccess = LastKnownPaidAccess(requireNotNull(entitlement), nowEpochMillis())
+                    recoverablePaidAccess = false
+                }
+            } else if (recoverableAccess != null && recoverableAccess.entitlement == entitlement) {
+                // A callback carrying weaker ownership must not overwrite a saved lifetime grant.
+                if (replaceOwnership || verifiedAccess?.entitlement != ProEntitlement.LIFETIME) {
+                    verifiedAccess = recoverableAccess
+                    recoverablePaidAccess = paidCache.save(recoverableAccess, nowEpochMillis())
+                }
+            } else if (replaceOwnership) {
+                paidCache.clear()
+                verifiedAccess = null
+                recoverablePaidAccess = false
+            }
             mutableState.value = state.value.copy(
                 loading = false,
-                ownershipResolution = if (replace) OwnershipResolution.RESOLVED else state.value.ownershipResolution,
+                ownershipResolution = when {
+                    replaceOwnership -> OwnershipResolution.RESOLVED
+                    replace -> OwnershipResolution.UNAVAILABLE
+                    else -> state.value.ownershipResolution
+                },
                 verifyingPurchases = false,
                 pendingPurchase = pending || (!replace && state.value.pendingPurchase),
                 recoverablePaidAccess = recoverablePaidAccess,
+                offlineAccessExpired = if (replaceOwnership || (online && observedEntitlement != null && !pending && !rejected)) false else state.value.offlineAccessExpired,
                 entitlement = entitlement,
                 subscriptionAutoRenewing = subscriptionAutoRenewing,
                 message = when {
                     pending -> "Purchase pending. Pro unlocks after Google Play confirms payment."
-                    replace && restoreRequested -> if (entitlement == null) "No previous Pro purchase was found." else "Pro purchase restored."
+                    replaceOwnership && restoreRequested -> if (entitlement == null) "No previous Pro purchase was found." else "Pro purchase restored."
+                    replaceOwnership -> null
+                    replace && !replaceOwnership -> "Connect to the internet to check your Pro purchases."
                     else -> state.value.message?.takeUnless { it.startsWith("Purchase pending.") }
                 },
             )
@@ -451,7 +572,11 @@ class PlayBillingManager(
         } else if (restoreRequested && entitlement != null) {
             analytics.record("purchase_restored")
         }
-        accepted.forEach(::acknowledge)
+        // A client-cached offline callback is not a newly fulfilled purchase. Leave it for
+        // the next online check instead of acknowledging an unlock we did not grant.
+        if (verifier !is ClientPurchaseVerifier || (online && !pending && !rejected)) {
+            accepted.forEach(::acknowledge)
+        }
     }
 
     private fun acknowledge(purchase: Purchase) {

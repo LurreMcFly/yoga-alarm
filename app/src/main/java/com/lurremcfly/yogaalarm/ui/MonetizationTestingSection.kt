@@ -66,10 +66,11 @@ internal fun MonetizationTestingSection(
                 "Billing: ${billing.ownershipResolution} · connected: ${billing.connected}\n" +
                 "Catalog settled: ${billing.catalogSettled} · offers: ${billing.offers.size} · can buy: ${billing.canPurchase}\n" +
                 "Checkout: ${billing.purchasing} · verifying: ${billing.verifyingPurchases} · pending: ${billing.pendingPurchase}\n" +
-                "Trusted offline paid access: ${billing.recoverablePaidAccess}",
+                "Recoverable paid access: ${billing.recoverablePaidAccess}\n" +
+                "Offline subscription window expired: ${billing.offlineAccessExpired}",
             color = MutedInk,
         )
-        Text("Release blocker: ClientPurchaseVerifier cannot recover trusted paid access after an offline cold start.", color = MutedInk)
+        Text("Client-only release policy: last-known subscription access lasts seven days after an online ownership check; lifetime lasts until a successful online refresh. This is local evidence, not server-verified expiry or revocation.", color = MutedInk)
         if (!enabled) Text("Controls paused during alarms, snooze, routines or billing activity.", color = MutedInk)
         OutlinedButton(onClick = { confirmReset = true }, enabled = previewControlsEnabled, modifier = Modifier.fillMaxWidth()) {
             Text("Start / reset local preview")

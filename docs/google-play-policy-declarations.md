@@ -1,12 +1,12 @@
 # Google Play policy declarations
 
-Prepared for package `com.lurremcfly.yogaalarm`; repository review updated 2026-10-28. These draft answers describe the default analytics-disabled build. They do not update any published policy or Play Console declaration. Reassess for each release configuration.
+Prepared for package `com.lurremcfly.yogaalarm`; repository review updated 2026-10-31. These draft answers describe the default analytics-disabled build. They do not update any published policy or Play Console declaration. Reassess for each release configuration.
 
 ## Data Safety
 
 - Proposed answer for the default SDK-disabled build: **No app-operated collection or sharing**; confirm the final artifact and all applicable Play data types before submission. This answer must not be reused for an analytics-enabled build.
 - Camera frames are processed ephemerally on-device by MediaPipe. They are not recorded, retained, or transmitted.
-- Alarm configuration, routine choices, permission-readiness flags, wake progress, preview assignment/dates, confirmed fallbacks, and occurrence snapshots/outcomes are stored in app-private local preferences. Backup remains disabled; reinstall/clear-data can reset the local preview. Debug activation does not grant paid access.
+- Alarm configuration, routine choices, permission-readiness flags, wake progress, preview assignment/dates, confirmed fallbacks, occurrence snapshots/outcomes, and last-known paid access/refresh timestamps are stored in app-private local preferences. Backup remains disabled; reinstall/clear-data can reset the local preview. Debug activation does not grant paid access.
 - The default build has no account system, app backend, ads, analytics SDK, or crash-reporting SDK. An optional Firebase Analytics build path is authored but excluded unless explicitly enabled.
 - Google Play handles purchase transactions. The app reads purchase and entitlement status through Play Billing and never receives payment-card information.
 - Data deletion: users can delete individual alarms, clear app storage, or uninstall the app. There is no Yoga Alarm account to delete.
@@ -16,7 +16,7 @@ Do not enter the planned URL in Play Console until it is publicly reachable over
 contains the final support email and developer identity, and has been checked on mobile.
 Until then, retain the currently working hosted policy URL.
 
-Confirm the default merged release manifest removes `INTERNET` and `ACCESS_NETWORK_STATE`, excludes Firebase Analytics, and retains `allowBackup="false"` before submitting these default-build answers.
+Confirm the default merged release manifest removes `INTERNET`, retains `ACCESS_NETWORK_STATE` solely for purchase-refresh connectivity checks, excludes Firebase Analytics, and retains `allowBackup="false"` before submitting these default-build answers.
 
 Before enabling `-PmonetizationAnalyticsEnabled=true`, provide the real Firebase project configuration and pass `-PmonetizationPrivacyApproved=true` only after review. The enabled sink explicitly enables collection; audit Firebase automatic events/identifiers as well as the coarse custom funnel events, determine consent and retention settings, update the actual published policy and Play Data Safety answers, inspect the enabled release manifest, and verify delivery on device. Assignment identifiers are pseudonymous, not anonymous. Custom events exclude camera frames/landmarks, pose sequences, alarm names/times, raw purchase tokens, and monetary events; automatic SDK behavior still needs its own audit. Repository drafts do not establish that any of this external work is complete.
 
@@ -53,9 +53,9 @@ Store-listing disclaimer:
 
 ## Billing and subscriptions
 
-The Android client uses the production catalog below and client acknowledgement. Its current `ClientPurchaseVerifier` checks local Play records, not signatures or backend evidence. A recoverable verifier/cache contract is authored, but the actual client verifier cannot restore trusted paid access on an offline cold start. Backend verification, expiry/refund reconciliation, and device acceptance remain release dependencies; see the [billing specification](play-billing-setup.md).
+The Android client uses the production catalog below and client acknowledgement. Its current `ClientPurchaseVerifier` checks local Play records, not signatures or backend evidence. The release policy persists client-only last-known paid access after a successful complete online ownership refresh: subscriptions last seven days, lifetime until a successful online refresh changes ownership. This is best-effort client evidence: even a validated network does not prove Play returned fresh server state, and expiry/refund/revocation/tampering cannot be independently enforced. Backend verification is optional future hardening; device/Play acceptance remains required; see the [billing specification](play-billing-setup.md).
 
-The paywall lists lifetime, yearly, monthly, with localized Play prices. The app-managed five-successful-alarm-day preview is authored behind a default-off public rollout gate; it is not a store subscription trial, requires no card or automatic charge, and does not change the permanent free tier. Enabling the public experiment also requires measurement configuration and trusted billing acceptance. Free routines have exactly three 20-second slots selected from four free poses (Mountain, Warrior II, Tree, Squat); Pro unlocks all nine current poses and ten sounds.
+The paywall lists lifetime, yearly, monthly, with localized Play prices. The app-managed five-successful-alarm-day preview is authored behind a default-off public rollout gate; it is not a store subscription trial, requires no card or automatic charge, and does not change the permanent free tier. Enabling the public experiment requires billing-policy/device acceptance; analytics and its separate configuration/privacy approval remain optional. Free routines have exactly three 20-second slots selected from four free poses (Mountain, Warrior II, Tree, Squat); Pro unlocks all nine current poses and ten sounds.
 
 - Products: monthly, yearly, and lifetime Pro.
 - Show Play-localized price, billing period, auto-renewal behavior, and restore/manage-purchase actions before purchase.
