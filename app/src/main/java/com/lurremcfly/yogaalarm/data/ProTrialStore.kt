@@ -59,10 +59,6 @@ class ProTrialStore(private val context: Context) {
         }
     }
 
-    fun internalNonPayingEnabled(): Boolean = synchronized(AlarmStorageLock) {
-        BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_non_paying", false)
-    }
-
     fun internalTestProEnabled(): Boolean = synchronized(AlarmStorageLock) {
         BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_paid", false)
     }
@@ -70,24 +66,20 @@ class ProTrialStore(private val context: Context) {
     fun setInternalTestProEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
         if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = internalTestProEnabled()
+        val previousNonPaying = preferences.getBoolean("pro_preview_internal_non_paying", false)
         val committed = preferences.edit()
             .putBoolean("pro_preview_internal_paid", enabled)
             .remove("pro_preview_internal_non_paying")
             .commit()
-        if (!committed) preferences.edit().putBoolean("pro_preview_internal_paid", previous).commit()
+        if (!committed) preferences.edit()
+            .putBoolean("pro_preview_internal_paid", previous)
+            .putBoolean("pro_preview_internal_non_paying", previousNonPaying)
+            .commit()
         committed
     }
 
     // Local preview/editor policy only. Google Play ownership and verification remain authoritative.
-    fun hasPaidAccess(paid: Boolean): Boolean = internalTestProEnabled() || (paid && !internalNonPayingEnabled())
-
-    fun setInternalNonPaying(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
-        val previous = internalNonPayingEnabled()
-        val committed = preferences.edit().putBoolean("pro_preview_internal_non_paying", enabled).commit()
-        if (!committed) preferences.edit().putBoolean("pro_preview_internal_non_paying", previous).commit()
-        committed
-    }
+    fun hasPaidAccess(paid: Boolean): Boolean = if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) internalTestProEnabled() else paid
 
     fun internalExpiryBannerEnabled(): Boolean = synchronized(AlarmStorageLock) {
         BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_expiry_banner", false)

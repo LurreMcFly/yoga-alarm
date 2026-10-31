@@ -267,6 +267,7 @@ class PlayBillingLastKnownAccessTest {
     @Test fun cachedOwnershipRetiresPreviewDurablyAcrossRestart() = billingTest {
         val trials = ProTrialStore(context)
         trials.enroll(true, true)
+        if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING) assertTrue(trials.setInternalTestProEnabled(true, { false }))
         assertTrue(cache.save(LastKnownPaidAccess(ProEntitlement.SUBSCRIPTION, checkedAt)))
         val offline = manager()
         val state = offline.state.value
@@ -284,12 +285,12 @@ class PlayBillingLastKnownAccessTest {
         assertTrue(ProTrialStore(context).reconcile(false, false, ownershipResolved = false).retired)
     }
 
-    @Test fun internalNonPayingIgnoresGenuineCachedAccessWithoutChangingIt() = billingTest {
+    @Test fun internalTestProOverridesGenuineCachedAccessWithoutChangingIt() = billingTest {
         assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
         val original = LastKnownPaidAccess(ProEntitlement.LIFETIME, checkedAt)
         assertTrue(cache.save(original))
         val trials = ProTrialStore(context)
-        assertTrue(trials.setInternalNonPaying(true, { false }))
+        assertTrue(trials.setInternalTestProEnabled(false, { false }))
         assertTrue(trials.resetForInternalTesting({ true }, { false }))
         val offline = manager { ok to emptyList() }
         assertEquals(ProEntitlement.LIFETIME, offline.state.value.entitlement)
@@ -302,8 +303,9 @@ class PlayBillingLastKnownAccessTest {
         val restarted = manager()
         assertFalse(ProTrialStore(context).hasPaidAccess(restarted.state.value.entitlement != null))
         assertEquals(original, cache.restore())
-        assertTrue(trials.setInternalNonPaying(false, { false }))
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
         assertTrue(trials.hasPaidAccess(restarted.state.value.entitlement != null))
+        assertEquals(original, cache.restore())
     }
 
     private fun billingTest(block: suspend TestScope.() -> Unit) = runTest {

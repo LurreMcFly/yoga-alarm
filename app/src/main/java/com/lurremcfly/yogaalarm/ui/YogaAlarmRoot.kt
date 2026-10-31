@@ -84,7 +84,7 @@ internal fun YogaAlarmRoot(
     val context = androidx.compose.ui.platform.LocalContext.current
     val routineViewModel: RoutineViewModel = viewModel()
     val trialStore = remember { ProTrialStore(context.applicationContext) }
-    var trial by remember { mutableStateOf(trialStore.enroll(BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED)) }
+    var trial by remember { mutableStateOf(trialStore.enroll(BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED && !BuildConfig.PRO_TRIAL_INTERNAL_TESTING)) }
     val analytics = remember { MonetizationAnalytics(context.applicationContext) }
     val occurrenceStore = remember { AlarmOccurrenceStore(context.applicationContext) }
     val store = remember { AlarmStore(context.applicationContext) }
@@ -107,9 +107,7 @@ internal fun YogaAlarmRoot(
     var internalTestPro by remember { mutableStateOf(trialStore.internalTestProEnabled()) }
     val internalTestMode = BuildConfig.PRO_TRIAL_INTERNAL_TESTING
     val proEntitlement = billingState.entitlement
-    // In the test build, resolve offers as though the tester were not a Play owner.
-    val trialOfferAvailable = (if (internalTestMode && !internalTestPro) billingState.copy(entitlement = null).canPurchase
-        else billingState.canPurchase) && billingState.offers.isNotEmpty()
+    val trialOfferAvailable = billingState.canPurchase && billingState.offers.isNotEmpty()
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
     var privacySheetOpen by rememberSaveable { mutableStateOf(false) }
     var settingsSheetOpen by rememberSaveable { mutableStateOf(false) }
@@ -634,7 +632,7 @@ internal fun YogaAlarmRoot(
                     onStreakPresented = { presentedStreakDays = wakeProgress.streakDays },
                     savedAlarmId = savedAlarmId,
                     onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
-                    isPro = effectivePro,
+                    isPro = if (internalTestMode) internalTestPro else proEntitlement != null,
                     offlineAccessExpired = billingState.offlineAccessExpired && !internalTestMode,
                     onRestorePurchases = billingManager::restorePurchases,
                     trialDaysRemaining = trial.remaining.takeIf { !internalTestMode && proEntitlement == null && (trial.active || trial.exhausted) },
@@ -757,8 +755,6 @@ internal fun YogaAlarmRoot(
     if (paywallVisible) {
         ProPaywallSheet(
             entitlement = proEntitlement,
-            testAccessMode = internalTestMode,
-            testProAccess = internalTestPro,
             subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
             prices = billingState.offers.mapValues { it.value.formattedPrice },
             billingReady = billingState.connected,
@@ -795,6 +791,8 @@ internal fun YogaAlarmRoot(
     if (settingsSheetOpen) {
         AppSettingsSheet(
             entitlement = billingState.entitlement,
+            testAccessMode = internalTestMode,
+            testProAccess = internalTestPro,
             trialStatus = trialStatus,
             offlineAccessExpired = billingState.offlineAccessExpired && !internalTestMode,
             onRestorePurchases = billingManager::restorePurchases,

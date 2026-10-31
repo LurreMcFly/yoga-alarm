@@ -1,8 +1,10 @@
 package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.*
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -72,5 +74,22 @@ class AlarmStoreTrialTest {
         store.save(listOf(alarm))
         assertEquals(alarm, AlarmStore(context).load().single())
         assertEquals(alarm, store.decode(store.encode(alarm)))
+    }
+
+    @Test fun internalTestSwitchControlsEditingRegardlessOfPlayOwnershipAndPreservesSavedAlarms() {
+        assumeTrue(BuildConfig.PRO_TRIAL_INTERNAL_TESTING)
+        val trials = ProTrialStore(context)
+        val premium = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
+        assertNull(store.saveEdited(premium, null, paid = true))
+        assertTrue(store.load().isEmpty())
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
+        assertEquals(premium, store.saveEdited(premium, null, paid = false))
+        assertTrue(trials.setInternalTestProEnabled(false, { false }))
+        assertEquals(premium, store.load().single())
+        assertNull(store.saveEdited(premium.copy(sound = AlarmSound.RICE_PAPER_DAWN), premium, paid = true))
+        assertEquals(premium, store.load().single())
+        val free = premium.suggestedFreeFallback()
+        val freeDraft = premium.copy(routine = free.routine, sound = free.sound)
+        assertEquals(freeDraft, store.saveEdited(freeDraft, premium, paid = true))
     }
 }
