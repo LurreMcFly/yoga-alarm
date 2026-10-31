@@ -37,14 +37,18 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 34
-        versionName = "1.0.33"
+        versionCode = 35
+        versionName = "1.0.34"
         buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
         buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", (proTrialRolloutEnabled || proTrialInternalTesting).toString())
         buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", proTrialInternalTesting.toString())
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
+            buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", "true")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
