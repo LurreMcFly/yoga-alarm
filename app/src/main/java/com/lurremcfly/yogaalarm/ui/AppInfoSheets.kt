@@ -59,6 +59,8 @@ import java.util.Locale
 @Composable
 fun AppSettingsSheet(
     entitlement: ProEntitlement?,
+    testAccessMode: Boolean = false,
+    testProAccess: Boolean = false,
     trialStatus: String? = null,
     onRestorePurchases: () -> Unit = {},
     subscriptionAutoRenewing: Boolean?,
@@ -142,32 +144,39 @@ fun AppSettingsSheet(
             ) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Yoga Alarm Pro", color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    if (offlineAccessExpired) {
-                        Text("Connect to Google Play, then restore purchases to refresh Pro.", color = MutedInk, fontSize = 14.sp)
-                    }
-                    if (entitlement == null) trialStatus?.let { Text(it, color = Forest) }
-                    TextButton(onClick = onRestorePurchases) { Text("Restore purchases", color = Forest) }
-                    when (entitlement) {
-                        ProEntitlement.LIFETIME -> {
-                            Text("Lifetime Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
-                            Text("One-time purchase. No renewal or expiry date.", color = MutedInk, fontSize = 14.sp)
+                    if (testAccessMode) {
+                        Text(
+                            if (testProAccess) "Pro features are on for testing." else "Free features are on for testing.",
+                            color = Forest,
+                        )
+                    } else {
+                        if (offlineAccessExpired) {
+                            Text("Connect to Google Play, then restore purchases to refresh Pro.", color = MutedInk, fontSize = 14.sp)
                         }
-                        ProEntitlement.SUBSCRIPTION -> {
-                            Text("Subscription Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
-                        }
-                        null -> if (!offlineAccessExpired) {
-                            Text("More poses, sounds, and a routine that’s yours.", color = MutedInk, fontSize = 14.sp)
-                            Button(
-                                onClick = onOpenPro,
-                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
-                            ) {
-                                Text(if (trialStatus != null) "Keep Pro" else "Get Pro", fontWeight = FontWeight.SemiBold)
+                        if (entitlement == null) trialStatus?.let { Text(it, color = Forest) }
+                        TextButton(onClick = onRestorePurchases) { Text("Restore purchases", color = Forest) }
+                        when (entitlement) {
+                            ProEntitlement.LIFETIME -> {
+                                Text("Lifetime Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
+                                Text("One-time purchase. No renewal or expiry date.", color = MutedInk, fontSize = 14.sp)
+                            }
+                            ProEntitlement.SUBSCRIPTION -> {
+                                Text("Subscription Pro active", color = Forest, fontWeight = FontWeight.SemiBold)
+                            }
+                            null -> if (!offlineAccessExpired) {
+                                Text("More poses, sounds, and a routine that’s yours.", color = MutedInk, fontSize = 14.sp)
+                                Button(
+                                    onClick = onOpenPro,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
+                                ) {
+                                    Text(if (trialStatus != null) "Keep Pro" else "Get Pro", fontWeight = FontWeight.SemiBold)
+                                }
                             }
                         }
                     }
-                    if (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null) {
+                    if (!testAccessMode && (entitlement == ProEntitlement.SUBSCRIPTION || subscriptionAutoRenewing != null)) {
                         Text(
                             when (subscriptionAutoRenewing) {
                                 false -> "Subscription renewal canceled. View your end date in Google Play."

@@ -2,9 +2,13 @@
 
 This is a local preview and Play Billing acceptance runbook, not production approval. The release policy accepts client-side last-known Pro: subscriptions for seven days after a successful online ownership refresh, lifetime until a successful online refresh changes ownership. Backend verification is future hardening, not a release prerequisite. Client evidence cannot independently validate subscription expiry, refunds, revocations, or tampering, and a validated network does not prove Play returned fresh server data. Device/Play acceptance remains required; do not enable `monetizationBillingReady` merely to run these tests.
 
+## Quick app testing
+
+Connect your phone, select the `debug` build variant, and press **Run** in Android Studio. It installs as **Yoga Alarm (test)** beside the regular app. In test app Settings, switch **Test Pro access** off for the free experience or on for Pro. The choice is saved on the phone and does not make a Google Play purchase. No signed bundle or Play upload is needed. Ordinary releases hide the switch.
+
 ## Build and signing
 
-Testing controls are **off by default**: the checked-in `gradle.properties` contains `proTrialInternalTesting=false`. Opt in for each internal QA build with `-PproTrialInternalTesting=true`, or use the temporary local property change below for Android Studio's signing wizard. The separate `internalTesting` variant was removed. Google Play track membership itself does not enable app build flags.
+Release testing controls are **off by default**: the checked-in `gradle.properties` contains `proTrialInternalTesting=false`. Opt in for each internal QA release with `-PproTrialInternalTesting=true`, or use the temporary local property change below for Android Studio's signing wizard. Debug builds include the simple access switch automatically. Google Play track membership itself does not enable app build flags.
 
 In Android Studio:
 
@@ -57,11 +61,11 @@ Internal track access and license testing are separate settings:
 
 License testers can also sideload matching-package debug builds for development. That does not replace acceptance of the signed Play-installed release. See [Google's billing testing guide](https://developer.android.com/google/play/billing/test) and [license tester setup](https://support.google.com/googleplay/android-developer/answer/6062777).
 
-For a personal Pro switch on the internal build, leave **Test as non-paying user** off and use a license-test payment method to buy lifetime Pro once. After checkout and a successful complete online ownership refresh, switch it on to ignore that purchase locally, and off to resume Pro. If a preview is active, advance its remaining days to test fully free access. An account that already owns Pro can skip checkout.
+The Settings switch is only a local feature preview. It does not verify purchases, checkout, or restore behavior. Use a license tester and a signed Play-installed build for real billing checks.
 
-## Local preview controls
+## Historical preview controls
 
-Settings exposes internal preview controls only in explicitly opted-in builds. They never fabricate a Play purchase, bypass checkout, or acknowledge a token. Real paid ownership still comes from the billing manager.
+The detailed controls and phone sequence below describe the previous internal UI and are retained as historical test notes. The current simple workflow is **Quick app testing** above.
 
 - **Test as non-paying user** lets an existing lifetime/subscription owner exercise the free/preview flow without refunding the purchase or changing Play accounts. It defaults off and persists in testing-enabled builds; builds with the testing flag false ignore a stale saved value. While on, preview UI, editing access, and real/synthetic preview-day accounting ignore paid access locally, and checkout is disabled. Actual Play entitlement, token verification, and ownership remain unchanged. This does not simulate a paid purchase or offline restoration. Use the license-test lifetime purchase described above for real paid/offline testing.
 - Reset deterministically starts a fresh preview at zero of five days. It preserves current routines, sounds, schedules, alarms, confirmed fallback/customization metadata, purchases, occurrence history, and wake progress. The old trial-original restoration snapshot and the previous restoration-offer dismissal marker are cleared, allowing a later real purchase to offer restoration again. It never restores expired Pro configurations; to test another fallback conversion after expiry, re-edit through the normal editor and review the fallback again.
@@ -74,7 +78,7 @@ For offline acceptance, buy or restore online, force-stop and reopen in airplane
 
 First test free access, preview enrollment, customization/fallback confirmation, five advances, and expiry. Verify configured fallbacks apply to future alarms and controls never interrupt an in-flight alarm. Reset and repeat; verify expired Pro configurations are not resurrected. Then run the complete [Play acceptance checklist](play-billing-setup.md#internal-testing-acceptance-checklist), including pending payments, restoration, cancellation, and offline behavior. A local advance is a testing shortcut, not measured retention or a genuine successful-alarm day.
 
-## Short phone sequence
+## Historical phone sequence
 
 On 2026-10-31 the tester reported that real alarms and Mountain recognition worked on their phone. The cause of the earlier recognition failure remains unknown. This retest did not cover Play purchases.
 

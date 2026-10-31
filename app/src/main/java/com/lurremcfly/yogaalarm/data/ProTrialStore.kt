@@ -63,8 +63,23 @@ class ProTrialStore(private val context: Context) {
         BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_non_paying", false)
     }
 
+    fun internalTestProEnabled(): Boolean = synchronized(AlarmStorageLock) {
+        BuildConfig.PRO_TRIAL_INTERNAL_TESTING && preferences.getBoolean("pro_preview_internal_paid", false)
+    }
+
+    fun setInternalTestProEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
+        if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        val previous = internalTestProEnabled()
+        val committed = preferences.edit()
+            .putBoolean("pro_preview_internal_paid", enabled)
+            .remove("pro_preview_internal_non_paying")
+            .commit()
+        if (!committed) preferences.edit().putBoolean("pro_preview_internal_paid", previous).commit()
+        committed
+    }
+
     // Local preview/editor policy only. Google Play ownership and verification remain authoritative.
-    fun hasPaidAccess(paid: Boolean): Boolean = paid && !internalNonPayingEnabled()
+    fun hasPaidAccess(paid: Boolean): Boolean = internalTestProEnabled() || (paid && !internalNonPayingEnabled())
 
     fun setInternalNonPaying(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
         if (!BuildConfig.PRO_TRIAL_INTERNAL_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false

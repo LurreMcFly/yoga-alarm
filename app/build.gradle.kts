@@ -37,8 +37,9 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 35
-        versionName = "1.0.34"
+        versionCode = 36
+        versionName = "1.0.35"
+        manifestPlaceholders["appLabel"] = "Yoga Alarm"
         buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
         buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", (proTrialRolloutEnabled || proTrialInternalTesting).toString())
         buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", proTrialInternalTesting.toString())
@@ -46,6 +47,9 @@ android {
 
     buildTypes {
         debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            manifestPlaceholders["appLabel"] = "Yoga Alarm (test)"
             buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
             buildConfigField("boolean", "PRO_TRIAL_INTERNAL_TESTING", "true")
         }
