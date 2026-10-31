@@ -150,7 +150,7 @@ class AlarmNotificationTest {
         ring(alarm(), remainingSnoozes = 2)
         ring(alarm(), remainingSnoozes = 1)
         service.dismissNotificationPopup(1L)
-        val notification = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+        val notification = shadowOf(service).lastForegroundNotification
 
         assertTrue(inflate(notification.bigContentView, 320).findViewById<View>(R.id.notification_start).performClick())
         val intent = shadowOf(RuntimeEnvironment.getApplication()).nextStartedActivity
@@ -166,8 +166,12 @@ class AlarmNotificationTest {
 
         service.dismissNotificationPopup(1L)
 
-        val updated = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+        assertTrue(shadowOf(service).lastForegroundNotificationId != AlarmScheduler.NOTIFICATION_ID)
+        assertNull(shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID))
+        val updated = shadowOf(service).lastForegroundNotification
         assertNotNull(updated)
+        assertEquals(NotificationManager.IMPORTANCE_LOW, manager.getNotificationChannel(updated.channelId).importance)
+        assertNull(updated.headsUpContentView)
         assertNull(updated.fullScreenIntent)
         assertTrue(NotificationCompat.getOngoing(updated))
         assertTrue(NotificationCompat.getOnlyAlertOnce(updated))
@@ -175,7 +179,7 @@ class AlarmNotificationTest {
         assertEquals(notification.contentIntent, updated.contentIntent)
         assertEquals(1L to 2, AlarmForegroundService.ringingAlarm.value)
         assertNull(service.finishedAlarmId.value)
-        for (content in listOf(updated.contentView, updated.bigContentView, updated.headsUpContentView)) {
+        for (content in listOf(updated.contentView, updated.bigContentView)) {
             val view = inflate(content, 320)
             for (id in listOf(R.id.notification_start, R.id.notification_stop, R.id.notification_snooze)) {
                 assertEquals(View.VISIBLE, view.findViewById<View>(id).visibility)
@@ -193,6 +197,7 @@ class AlarmNotificationTest {
 
         val current = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
         assertSame(notification, current)
+        assertEquals(AlarmScheduler.NOTIFICATION_ID, shadowOf(service).lastForegroundNotificationId)
         assertNotNull(current.fullScreenIntent)
         assertFalse(NotificationCompat.getOnlyAlertOnce(current))
         assertEquals(2L to 1, AlarmForegroundService.ringingAlarm.value)
@@ -218,7 +223,7 @@ class AlarmNotificationTest {
         notification.deleteIntent.send()
         shadowOf(Looper.getMainLooper()).idle()
 
-        val restored = shadowOf(manager).getNotification(AlarmScheduler.NOTIFICATION_ID)
+        val restored = shadowOf(manager).getNotification(shadowOf(service).lastForegroundNotificationId)
         assertNotNull(restored)
         assertNull(restored.fullScreenIntent)
         assertTrue(NotificationCompat.getOngoing(restored))
@@ -228,7 +233,7 @@ class AlarmNotificationTest {
         assertNull(service.finishedAlarmId.value)
         assertNotNull(restored.contentView)
         assertNotNull(restored.bigContentView)
-        assertNotNull(restored.headsUpContentView)
+        assertNull(restored.headsUpContentView)
     }
 
     @Test

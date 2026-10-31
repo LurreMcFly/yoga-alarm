@@ -318,7 +318,7 @@ class ProTrialStoreTest {
         repeat(5) { index ->
             assertTrue(trials.advanceDayForInternalTesting(first, { false }, { false }))
             assertEquals(index + 1, trials.load().dates.size)
-            if (index + 1 in setOf(2, 4, 5)) assertEquals(index + 1, trials.load().pendingMilestone)
+            assertEquals(if (index == 4) 5 else null, trials.load().pendingMilestone)
         }
         assertEquals((0L..4L).map { first.toLocalDate().plusDays(it) }.toSet(), trials.load().dates)
         assertEquals(FreeTransition.APPLIED, trials.load().transition)

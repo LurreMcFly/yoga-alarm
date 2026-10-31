@@ -77,12 +77,12 @@ internal fun MonetizationTestingSection(
         OutlinedButton(onClick = onAdvance, enabled = previewControlsEnabled && trial.active, modifier = Modifier.fillMaxWidth()) {
             Text("Advance one qualifying day")
         }
-        Text("Advance uses a synthetic distinct date. It can convert future alarms on day five, but never rings an alarm or adds streak/history entries. Close Settings to see milestones.", color = MutedInk)
+        Text("Advance uses a synthetic distinct date. It can convert future alarms on day five, but never rings an alarm or adds streak/history entries. Close Settings to see the trial countdown.", color = MutedInk)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Expiry banner with optional upgrade", modifier = Modifier.weight(1f), color = Ink)
+            Text("Keep Pro pill only at expiry", modifier = Modifier.weight(1f), color = Ink)
             Switch(checked = expiryBanner, onCheckedChange = onExpiryBannerChange, enabled = enabled)
         }
-        Text(if (expiryBanner) "Banner selected. Reset and repeat to compare flows." else "Automatic paywall selected (current behavior). It waits for a safe Home screen and buyable Play offers.", color = MutedInk)
+        Text(if (expiryBanner) "At expiry, open the offer from the Keep Pro pill on Home." else "Automatic paywall selected. It waits for a safe Home screen and buyable Play offers.", color = MutedInk)
         message?.let { Text(it, color = Forest) }
         billing.message?.let { Text(it, color = MutedInk) }
         Text("Saved alarm customization", color = Ink, fontWeight = FontWeight.SemiBold)

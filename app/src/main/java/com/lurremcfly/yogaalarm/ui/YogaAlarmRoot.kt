@@ -133,7 +133,6 @@ internal fun YogaAlarmRoot(
     var restoreSelected by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var paywallEntry by rememberSaveable { mutableStateOf("manual") }
     var paywallFeature by rememberSaveable { mutableStateOf<String?>(null) }
-    var visibleMilestone by rememberSaveable { mutableStateOf<Int?>(null) }
     var internalExpiryBanner by remember { mutableStateOf(trialStore.internalExpiryBannerEnabled()) }
     var testingBusy by remember { mutableStateOf(false) }
     var testingMessage by remember { mutableStateOf<String?>(null) }
@@ -307,7 +306,6 @@ internal fun YogaAlarmRoot(
         alarms = store.load()
         if (trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) {
             proPaywallOpen = false
-            visibleMilestone = null
             restoreSelected = alarms.filter { it.trialOriginal != null && it.customization == it.trialFallback }.map { it.id }.toSet()
             if (!restorationOffered && restoreSelected.isNotEmpty()) restoreOpen = true
         }
@@ -375,7 +373,6 @@ internal fun YogaAlarmRoot(
         settingsSheetOpen = false
         freeSettingsOpen = false
         restoreOpen = false
-        visibleMilestone = null
         onboardingPractice = false
         onboardingPracticeComplete = false
         onboardingPending = !onboardingPreferences.getBoolean("completed_v1", false)
@@ -418,7 +415,6 @@ internal fun YogaAlarmRoot(
                 alarms = store.load()
                 internalExpiryBanner = trialStore.internalExpiryBannerEnabled()
                 internalNonPaying = trialStore.internalNonPayingEnabled()
-                visibleMilestone = null
                 testingMessage = if (changed) "Saved. Close Settings to see the Home presentation."
                     else "No change saved. An alarm or billing operation may be active; retry when idle."
                 if (changed && reset) {
@@ -446,15 +442,14 @@ internal fun YogaAlarmRoot(
         }
     }
     LaunchedEffect(safeHome, trial.pendingMilestone, trialOfferAvailable, proPaywallOpen, internalExpiryBanner, internalNonPaying) {
-        val milestone = trial.pendingMilestone ?: return@LaunchedEffect
-        if (!safeHome || proPaywallOpen || trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) return@LaunchedEffect
-        if (milestone == 4) visibleMilestone = milestone
-        else if (BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED && trialOfferAvailable) {
-            if (milestone == 2 || (milestone == 5 && BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalExpiryBanner)) visibleMilestone = milestone
-            else {
-                paywallEntry = "expiry"
-                proPaywallOpen = true
-            }
+        if (trial.pendingMilestone != 5 || !safeHome || proPaywallOpen || !BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED ||
+            !trialOfferAvailable || trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) return@LaunchedEffect
+        if (internalExpiryBanner) {
+            withContext(Dispatchers.IO) { trialStore.markPresented(5) }
+            trial = trialStore.load()
+        } else {
+            paywallEntry = "expiry"
+            proPaywallOpen = true
         }
     }
     val paywallVisible = proPaywallOpen && resumed && !firedRoutine && firedAlarmId == null &&
@@ -661,23 +656,10 @@ internal fun YogaAlarmRoot(
                     savedAlarmId = savedAlarmId,
                     onSavedAlarmPresented = { if (savedAlarmId == it) savedAlarmId = null },
                     isPro = proEntitlement != null,
-                    trialStatus = trialStatus,
-                    trialMilestone = if (safeHome) visibleMilestone ?: trial.pendingMilestone else null,
-                    internalExpiryBanner = BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalExpiryBanner && trial.exhausted,
-                    offerAvailable = trialOfferAvailable,
-                    onTrialMilestonePresented = { milestone ->
-                        if (trial.pendingMilestone == milestone) snackbarScope.launch {
-                            withContext(Dispatchers.IO) { trialStore.markPresented(milestone) }
-                            trial = trialStore.load()
-                            analytics.record("trial_milestone_presented", mapOf("milestone" to milestone.toString()))
-                        }
-                    },
-                    onDismissTrialMilestone = { visibleMilestone = null },
-                    onViewFreeSettings = { freeSettingsOpen = true },
-                    onRetryOffer = billingManager::start,
+                    trialDaysRemaining = trial.remaining.takeIf { proEntitlement == null && (trial.active || trial.exhausted) },
                     onOpenPro = { if (onboardingStep == null) {
                         paywallEntry = if (BuildConfig.PRO_TRIAL_INTERNAL_TESTING && internalExpiryBanner && trial.exhausted) "expiry"
-                            else if (visibleMilestone == 2) "completion_two" else "home"
+                            else "home"
                         paywallFeature = null
                         proPaywallOpen = true
                     } },

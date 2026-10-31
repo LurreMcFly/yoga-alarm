@@ -40,7 +40,7 @@ class ProTrialStore(private val context: Context) {
                 enrolledAt = json.optLong("enrolledAt"),
                 dates = json.optString("dates").split(',').filter { it.isNotEmpty() }.map(LocalDate::parse).take(5).toSet(),
                 retired = json.optBoolean("retired"),
-                pendingMilestone = json.optInt("pending").takeIf { it in setOf(2, 4, 5) },
+                pendingMilestone = json.optInt("pending").takeIf { it == 5 },
                 presented = json.optString("presented").split(',').mapNotNull(String::toIntOrNull).toSet(),
                 transition = FreeTransition.valueOf(json.optString("transition", "NOT_NEEDED")),
                 awaitingPurchaseResolution = json.optBoolean("awaitingPurchaseResolution"),

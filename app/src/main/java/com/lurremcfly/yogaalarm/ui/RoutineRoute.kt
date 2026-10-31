@@ -119,6 +119,12 @@ internal fun CameraPermissionRoute(
     var emergencyStopOpen by rememberSaveable { mutableStateOf(false) }
     val currentService by rememberUpdatedState(alarmService)
     var foreground by remember { mutableStateOf(lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) }
+    val ringingToken by AlarmForegroundService.ringingOccurrenceToken.collectAsStateWithLifecycle()
+    LaunchedEffect(alarmService, foreground, ringingToken, occurrenceToken) {
+        if (foreground && occurrenceToken != null && ringingToken == occurrenceToken) {
+            alarmService?.dismissNotificationPopup(alarm.id, occurrenceToken)
+        }
+    }
     val currentState by rememberUpdatedState(uiState)
     val currentOnBack by rememberUpdatedState(onBack)
     val currentOnRoutineComplete by rememberUpdatedState(onRoutineComplete)
@@ -152,7 +158,6 @@ internal fun CameraPermissionRoute(
         val connection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 alarmService = (binder as? AlarmForegroundService.LocalBinder)?.service
-                alarmService?.dismissNotificationPopup(alarm.id, occurrenceToken)
             }
             override fun onServiceDisconnected(name: ComponentName?) { alarmService = null }
         }

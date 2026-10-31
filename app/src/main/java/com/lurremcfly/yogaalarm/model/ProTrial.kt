@@ -27,7 +27,7 @@ data class ProTrial(
         val updated = dates + date
         return copy(
             dates = updated,
-            pendingMilestone = updated.size.takeIf { it in setOf(2, 4, 5) } ?: pendingMilestone,
+            pendingMilestone = updated.size.takeIf { it == 5 },
             transition = if (updated.size == 5) FreeTransition.PENDING else transition,
         )
     }

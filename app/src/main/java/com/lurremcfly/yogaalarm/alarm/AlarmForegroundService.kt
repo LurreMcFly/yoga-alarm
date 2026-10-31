@@ -68,13 +68,18 @@ class AlarmForegroundService : Service() {
 
     fun dismissNotificationPopup(alarmId: Long, occurrenceToken: String? = activeOccurrenceToken) {
         if (activeAlarmId != alarmId || activeOccurrenceToken != occurrenceToken) return
-        // Keep foreground playback and shade controls, but remove the heads-up alert.
+        // A silent update of the same notification can leave its heads-up window pinned.
+        // Changing the foreground ID withdraws the ringing alert while keeping playback active.
         val notification = activeNotificationBuilder
+            ?.setChannelId(ROUTINE_CHANNEL_ID)
+            ?.setPriority(NotificationCompat.PRIORITY_LOW)
             ?.setFullScreenIntent(null, false)
+            ?.setCustomHeadsUpContentView(null)
             ?.setSilent(true)
             ?.setOnlyAlertOnce(true)
             ?.build() ?: return
-        getSystemService(NotificationManager::class.java).notify(AlarmScheduler.NOTIFICATION_ID, notification)
+        startForeground(ROUTINE_NOTIFICATION_ID, notification)
+        getSystemService(NotificationManager::class.java).cancel(AlarmScheduler.NOTIFICATION_ID)
     }
 
     fun finishRoutine(alarmId: Long, occurrenceToken: String? = activeOccurrenceToken, persistStop: Boolean = true) {
@@ -223,8 +228,8 @@ class AlarmForegroundService : Service() {
         activeNotificationBuilder = notificationBuilder
         activeAlarmId = alarmId
         activeOccurrenceToken = occurrenceToken
-        mutableRingingOccurrenceToken.value = occurrenceToken
         startForeground(AlarmScheduler.NOTIFICATION_ID, notificationBuilder.build())
+        mutableRingingOccurrenceToken.value = occurrenceToken
         mutableFinishedAlarmId.value = null
 
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -335,6 +340,8 @@ class AlarmForegroundService : Service() {
         const val ACTION_STOP_ALARM = "com.lurremcfly.yogaalarm.STOP_ALARM"
         private const val ACTION_NOTIFICATION_DISMISSED = "com.lurremcfly.yogaalarm.NOTIFICATION_DISMISSED"
         const val CHANNEL_ID = "active_alarm_v2"
+        private const val ROUTINE_CHANNEL_ID = "alarm_routine"
+        private const val ROUTINE_NOTIFICATION_ID = 7003
         private const val MISSED_ALARM_CHANNEL_ID = "missed_alarms"
         private const val MISSED_ALARM_NOTIFICATION_ID = 7002
 
@@ -345,6 +352,12 @@ class AlarmForegroundService : Service() {
                     setSound(null, null)
                     enableVibration(false)
                     lockscreenVisibility = NotificationCompat.VISIBILITY_PUBLIC
+                },
+            )
+            context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+                NotificationChannel(ROUTINE_CHANNEL_ID, "Ongoing alarm controls", NotificationManager.IMPORTANCE_LOW).apply {
+                    setSound(null, null)
+                    enableVibration(false)
                 },
             )
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(

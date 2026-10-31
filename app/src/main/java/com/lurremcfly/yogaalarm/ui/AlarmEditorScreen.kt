@@ -309,21 +309,20 @@ internal fun AlarmEditorScreen(
                 .windowInsetsPadding(WindowInsets.navigationBars)
                 .padding(bottom = 90.dp),
         ) {
-            if (trialActive || needsFreeReview) {
+            if (needsFreeReview) {
                 Text(
-                    if (needsFreeReview) "Your preview has ended. This alarm still uses its saved routine. Choose free settings to save changes."
-                    else "Try Pro for 5 successful alarm days. No payment details or automatic charge. Only your first success on each date counts. After the fifth, future alarms use your confirmed free settings unless you buy Pro.",
+                    "Your preview has ended. This alarm still uses its saved routine. Choose free settings to save changes.",
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
                     color = MutedInk,
                     fontSize = 13.sp,
                 )
-                if (!draft.customization.isFree) {
-                    val fallback = draft.trialFallback?.takeIf { it.isFree } ?: draft.suggestedFreeFallback()
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        Text(if (needsFreeReview) "Suggested free settings: ${fallback.summary}" else "After Pro preview: ${fallback.summary}", color = Forest, fontSize = 13.sp)
-                        TextButton(onClick = { fallbackReview = fallback }) {
-                            Text(if (trialActive && draft.trialFallback == fallback) "Review confirmed free settings" else "Review free settings")
-                        }
+            }
+            if ((trialActive || needsFreeReview) && !draft.customization.isFree) {
+                val fallback = draft.trialFallback?.takeIf { it.isFree } ?: draft.suggestedFreeFallback()
+                Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                    Text(if (needsFreeReview) "Suggested free settings: ${fallback.summary}" else "After Pro preview: ${fallback.summary}", color = Forest, fontSize = 13.sp)
+                    TextButton(onClick = { fallbackReview = fallback }) {
+                        Text(if (trialActive && draft.trialFallback == fallback) "Review confirmed free settings" else "Review free settings")
                     }
                 }
             }

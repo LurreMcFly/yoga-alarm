@@ -21,19 +21,19 @@ class ProTrialTest {
         assertEquals(trial, trial.complete(first.plusDays(100)))
     }
 
-    @Test fun newerMilestoneSupersedesUnpresentedOfferAndPresentationIsIdempotent() {
+    @Test fun onlyExpiryQueuesAnOfferAndPresentationIsIdempotent() {
         var trial = ProTrial(enrollment = TrialEnrollment.PREVIEW)
         val first = LocalDate.of(2026, 10, 1)
-        repeat(2) { trial = trial.complete(first.plusDays(it.toLong())) }
-        assertEquals(2, trial.pendingMilestone)
-        repeat(2) { trial = trial.complete(first.plusDays(it + 2L)) }
-        assertEquals(4, trial.pendingMilestone)
-        assertEquals(trial, trial.presented(2))
-        trial = trial.presented(4)
+        repeat(4) {
+            trial = trial.complete(first.plusDays(it.toLong()))
+            assertNull(trial.pendingMilestone)
+        }
+        trial = trial.complete(first.plusDays(4))
+        assertEquals(5, trial.pendingMilestone)
+        trial = trial.presented(5)
         assertNull(trial.pendingMilestone)
-        assertEquals(setOf(4), trial.presented)
-        assertEquals(trial, trial.presented(4))
-        assertEquals(5, trial.complete(first.plusDays(4)).pendingMilestone)
+        assertEquals(setOf(5), trial.presented)
+        assertEquals(trial, trial.presented(5))
     }
 
     @Test fun controlIneligibleAndRetiredTrialsNeverConsumeDates() {
