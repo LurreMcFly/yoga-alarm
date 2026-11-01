@@ -106,8 +106,10 @@ internal fun YogaAlarmRoot(
     var presentedStreakDays by rememberSaveable { mutableStateOf(wakeProgress.streakDays) }
     var savedAlarmId by rememberSaveable { mutableStateOf<Long?>(null) }
     var internalTestPro by remember { mutableStateOf(trialStore.internalTestProEnabled()) }
-    val proEntitlement = billingState.entitlement
-    val trialOfferAvailable = billingState.canPurchase && billingState.offers.isNotEmpty()
+    var internalTestTrial by remember { mutableStateOf(trialStore.internalTestTrialEnabled()) }
+    val proEntitlement = billingState.entitlement.takeUnless { internalTestMode }
+    val trialOfferAvailable = (if (internalTestTrial) billingState.copy(entitlement = null).canPurchase
+        else billingState.canPurchase) && billingState.offers.isNotEmpty()
     var proPaywallOpen by rememberSaveable { mutableStateOf(false) }
     var privacySheetOpen by rememberSaveable { mutableStateOf(false) }
     var settingsSheetOpen by rememberSaveable { mutableStateOf(false) }
@@ -134,10 +136,11 @@ internal fun YogaAlarmRoot(
     var paywallFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var testingBusy by remember { mutableStateOf(false) }
     var resumed by remember { mutableStateOf(false) }
-    val activeTrial = trial.active && !internalTestMode
-    val effectivePro = if (internalTestMode) internalTestPro else proEntitlement != null || activeTrial
-    val hasUnreviewedAlarms = !internalTestMode && !effectivePro && alarms.any(trial::needsFreeReview)
-    val trialStatus = (if (proEntitlement != null || internalTestMode) null else when {
+    val trialEnabled = !internalTestMode || internalTestTrial
+    val activeTrial = trial.active && trialEnabled
+    val effectivePro = (if (internalTestMode) internalTestPro else proEntitlement != null) || activeTrial
+    val hasUnreviewedAlarms = trialEnabled && !effectivePro && alarms.any(trial::needsFreeReview)
+    val trialStatus = (if (proEntitlement != null || !trialEnabled) null else when {
         activeTrial -> "Pro preview · ${trial.remaining} alarm days left"
         hasUnreviewedAlarms -> "Pro preview complete. Review free settings for alarms that still use a Pro routine or sound."
         trial.awaitingPurchaseResolution -> "Pro preview complete. Checking purchase status."
@@ -175,13 +178,13 @@ internal fun YogaAlarmRoot(
             snackbarScope.launch { snackbarHost.showSnackbar("Settings changed. Review your routine and free settings before saving.") }
             return null
         }
-        val repaired = !internalTestMode && !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
+        val repaired = trialEnabled && !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
         val scheduled = AlarmScheduler.schedule(context, savedDraft, preserveSnooze = repaired)
         val saved = if (savedDraft.enabled && !scheduled) savedDraft.copy(enabled = false) else savedDraft
         alarms = if (saved != savedDraft) store.update { list -> list.map { if (it.id == saved.id) it.copy(enabled = false) else it } } else store.load()
         wakeProgress = wakeProgressStore.load()
         if (base == null) analytics.recordOnce("first_alarm_saved", "installation")
-        if (activeTrial && !saved.customization.isFree) {
+        if (!internalTestMode && activeTrial && !saved.customization.isFree) {
             analytics.record("trial_customization_saved", mapOf(
                 "pose_count" to saved.routine.size.toString(),
                 "hold_customized" to saved.routine.any { it.durationSeconds != 20 }.toString(),
@@ -287,14 +290,14 @@ internal fun YogaAlarmRoot(
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { resumed = false }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            analytics.setAssignment(if (trial.enrollment == com.lurremcfly.yogaalarm.model.TrialEnrollment.PREVIEW) "trial" else trial.enrollment.name.lowercase(), 1, trial.enrolledAt)
+            if (!internalTestMode) analytics.setAssignment(if (trial.enrollment == com.lurremcfly.yogaalarm.model.TrialEnrollment.PREVIEW) "trial" else trial.enrollment.name.lowercase(), 1, trial.enrolledAt)
             analytics.recordOnce("first_launch", "installation")
-            analytics.recordOnce("experiment_assigned", "installation")
+            if (!internalTestMode) analytics.recordOnce("experiment_assigned", "installation")
             occurrenceStore.pendingCompletions().sortedBy { it.completedAt }.forEach(::recordCompletionProgress)
         }
         wakeProgress = wakeProgressStore.load()
     }
-    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalTestMode, internalTestPro, hasUnreviewedAlarms) {
+    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalTestMode, internalTestPro, internalTestTrial, hasUnreviewedAlarms) {
         trial = withContext(Dispatchers.IO) {
             val state = billingManager.state.value
             trialStore.reconcile(state.entitlement != null, state.verifyingPurchases || state.purchasing, state.recoverablePaidAccess,
@@ -408,6 +411,8 @@ internal fun YogaAlarmRoot(
                 if (saved) {
                     internalTestMode = trialStore.internalTestingEnabled()
                     internalTestPro = trialStore.internalTestProEnabled()
+                    internalTestTrial = trialStore.internalTestTrialEnabled()
+                    trial = trialStore.load()
                 }
             } finally {
                 testingBusy = false
@@ -424,9 +429,9 @@ internal fun YogaAlarmRoot(
                 trialFallback = current.trialFallback, trialCustomization = current.trialCustomization, trialOriginal = current.trialOriginal)
         }
     }
-    LaunchedEffect(safeHome, trial.pendingMilestone, trialOfferAvailable, proPaywallOpen, internalTestMode, internalTestPro) {
-        if (trial.pendingMilestone != 5 || !safeHome || proPaywallOpen || !BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED ||
-            internalTestMode || !trialOfferAvailable || trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) return@LaunchedEffect
+    LaunchedEffect(safeHome, trial.pendingMilestone, trialOfferAvailable, proPaywallOpen, internalTestMode, internalTestPro, internalTestTrial) {
+        if (trial.pendingMilestone != 5 || !safeHome || proPaywallOpen || (!BuildConfig.PRO_TRIAL_ROLLOUT_ENABLED && !internalTestTrial) ||
+            !trialEnabled || !trialOfferAvailable || trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) return@LaunchedEffect
         paywallEntry = "expiry"
         proPaywallOpen = true
     }
@@ -437,15 +442,15 @@ internal fun YogaAlarmRoot(
         if (paywallVisible && proEntitlement == null) {
             if (trialOfferAvailable) {
                 if (!paywallMeasured) {
-                    analytics.record("paywall_viewed", mapOf("entry_point" to paywallEntry))
+                    if (!internalTestMode) analytics.record("paywall_viewed", mapOf("entry_point" to paywallEntry))
                     paywallMeasured = true
                 }
                 if (paywallEntry == "expiry" && trial.pendingMilestone == 5 && safeHome) {
                     withContext(Dispatchers.IO) { trialStore.markPresented(5) }
                     trial = trialStore.load()
-                    analytics.record("trial_milestone_presented", mapOf("milestone" to "5"))
+                    if (!internalTestMode) analytics.record("trial_milestone_presented", mapOf("milestone" to "5"))
                 }
-            } else analytics.record("offer_unavailable", mapOf("entry_point" to paywallEntry))
+            } else if (!internalTestMode) analytics.record("offer_unavailable", mapOf("entry_point" to paywallEntry))
         }
     }
 
@@ -475,7 +480,7 @@ internal fun YogaAlarmRoot(
                         weekStartsOnSunday = weekStartsOnSunday,
                         isPro = effectivePro,
                         trialActive = activeTrial && proEntitlement == null,
-                        needsFreeReview = !internalTestMode && !effectivePro && current != null && trial.needsFreeReview(current),
+                        needsFreeReview = trialEnabled && !effectivePro && current != null && trial.needsFreeReview(current),
                         onUpgrade = { feature ->
                             paywallEntry = "locked_feature"
                             paywallFeature = when (feature) {
@@ -564,7 +569,7 @@ internal fun YogaAlarmRoot(
                                         alarms = store.load()
                                         analytics.recordOnce("first_real_alarm_completed", "installation")
                                         analytics.recordOnce("alarm_day_completed", completedAt.toLocalDate().toString())
-                                        if (trial.transition != previousTrial.transition && trial.transition == com.lurremcfly.yogaalarm.model.FreeTransition.APPLIED) analytics.recordOnce("free_transition_applied", "preview_v1")
+                                        if (!internalTestMode && trial.transition != previousTrial.transition && trial.transition == com.lurremcfly.yogaalarm.model.FreeTransition.APPLIED) analytics.recordOnce("free_transition_applied", "preview_v1")
                                     }
                                 }
                             }
@@ -636,7 +641,7 @@ internal fun YogaAlarmRoot(
                     isPro = if (internalTestMode) internalTestPro else proEntitlement != null,
                     offlineAccessExpired = billingState.offlineAccessExpired && !internalTestMode,
                     onRestorePurchases = billingManager::restorePurchases,
-                    trialDaysRemaining = trial.remaining.takeIf { !internalTestMode && proEntitlement == null && (trial.active || trial.exhausted) },
+                    trialDaysRemaining = trial.remaining.takeIf { trialEnabled && proEntitlement == null && (trial.active || trial.exhausted) },
                     onOpenPro = { if (onboardingStep == null) {
                         paywallEntry = "home"
                         paywallFeature = null
@@ -670,7 +675,7 @@ internal fun YogaAlarmRoot(
                     },
                     onToggleAlarm = { id, enabled ->
                         if (onboardingStep == null) store.load().firstOrNull { it.id == id }?.let {
-                            val reviewExpired = !internalTestMode && !effectivePro && trial.needsFreeReview(it)
+                            val reviewExpired = trialEnabled && !effectivePro && trial.needsFreeReview(it)
                             val reviewPreview = activeTrial && !it.customization.isFree && it.trialFallback == null
                             if (enabled && (reviewExpired || reviewPreview)) {
                                 editorBase = it; editingAlarmId = it.id; pendingEditorAlarm = it; route = "editor"
@@ -756,30 +761,30 @@ internal fun YogaAlarmRoot(
     if (paywallVisible) {
         ProPaywallSheet(
             entitlement = proEntitlement,
-            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
+            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing.takeUnless { internalTestMode },
             prices = billingState.offers.mapValues { it.value.formattedPrice },
             billingReady = billingState.connected,
             loadingPrices = billingState.loadingOffers,
             purchaseInProgress = billingState.purchasing,
             catalogSettled = billingState.catalogSettled,
-            canPurchase = billingState.canPurchase && !internalTestPro,
-            internalPreviewOnly = false,
+            canPurchase = billingState.canPurchase && !internalTestPro && !internalTestTrial,
+            internalPreviewOnly = internalTestTrial,
             offlineAccessExpired = billingState.offlineAccessExpired && !internalTestMode,
             verifyingPurchase = billingState.verifyingPurchases,
             pendingPayment = billingState.pendingPurchase,
             trialActive = activeTrial && proEntitlement == null,
-            trialExhausted = !internalTestMode && trial.exhausted && proEntitlement == null,
+            trialExhausted = trialEnabled && trial.exhausted && proEntitlement == null,
             entryFeature = paywallFeature,
-            customizationSummary = if (!internalTestMode && (trial.active || trial.exhausted)) {
+            customizationSummary = if (trialEnabled && (trial.active || trial.exhausted)) {
                 if (alarms.none { it.trialCustomization != null || !it.customization.isFree }) "Your current routine can continue free unchanged."
                 else "Pro keeps your customized poses, timing and sounds. Your alarms and streak remain available free."
             } else null,
             onViewFreeSettings = { proPaywallOpen = false; freeSettingsOpen = true },
-            onPlanSelected = { analytics.record("plan_selected", mapOf("plan" to it.name.lowercase(), "entry_point" to paywallEntry)) },
+            onPlanSelected = { if (!internalTestMode) analytics.record("plan_selected", mapOf("plan" to it.name.lowercase(), "entry_point" to paywallEntry)) },
             billingMessage = billingState.message,
             onDismiss = { proPaywallOpen = false },
             onPurchase = { selectedPlan ->
-                if (!internalTestMode || !internalTestPro) billingManager.purchase(context as Activity, selectedPlan)
+                if (!internalTestTrial && (!internalTestMode || !internalTestPro)) billingManager.purchase(context as Activity, selectedPlan)
             },
             onRestorePurchases = billingManager::restorePurchases,
             onRetry = billingManager::start,
@@ -791,13 +796,13 @@ internal fun YogaAlarmRoot(
 
     if (settingsSheetOpen) {
         AppSettingsSheet(
-            entitlement = billingState.entitlement,
-            testAccessMode = internalTestMode,
+            entitlement = proEntitlement,
+            testAccessMode = internalTestMode && !internalTestTrial,
             testProAccess = internalTestPro,
             trialStatus = trialStatus,
             offlineAccessExpired = billingState.offlineAccessExpired && !internalTestMode,
             onRestorePurchases = billingManager::restorePurchases,
-            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing,
+            subscriptionAutoRenewing = billingState.subscriptionAutoRenewing.takeUnless { internalTestMode },
             weekStartsOnSunday = weekStartsOnSunday,
             onWeekStartsOnSundayChange = {
                 weekStartsOnSunday = it
@@ -831,12 +836,16 @@ internal fun YogaAlarmRoot(
                 MonetizationTestingSection(
                     testingMode = internalTestMode,
                     proAccess = internalTestPro,
+                    trialDaysRemaining = trial.remaining.takeIf { internalTestTrial },
                     enabled = !testingBusy && !testingBlocked(),
                     onTestingModeChange = { enabled ->
                         changeTestingState { trialStore.setInternalTestingEnabled(enabled, ::testingBlocked) }
                     },
                     onProAccessChange = { enabled ->
                         changeTestingState { trialStore.setInternalTestProEnabled(enabled, ::testingBlocked) }
+                    },
+                    onTrialDaysRemainingChange = { remaining ->
+                        changeTestingState { trialStore.setInternalTrialDaysRemaining(remaining, blocked = ::testingBlocked) }
                     },
                 )
             },
@@ -889,7 +898,7 @@ internal fun YogaAlarmRoot(
         } },
         confirmButton = { TextButton(onClick = {
             alarms = trialStore.restore(restoreSelected) { billingManager.state.value.entitlement != null }
-            analytics.record("trial_routine_restored")
+            if (!internalTestMode) analytics.record("trial_routine_restored")
             finishRestoration()
         }) { Text("Restore selected") } },
         dismissButton = { TextButton(onClick = ::finishRestoration) { Text("Keep current routine") } },

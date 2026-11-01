@@ -44,7 +44,7 @@ class AlarmStore(private val context: Context) {
         val current = load().firstOrNull { it.id == draft.id }
         if (base != null && current == null) return@synchronized null
         val trialStore = ProTrialStore(context)
-        val trial = if (trialStore.internalTestingEnabled()) ProTrial() else trialStore.load()
+        val trial = if (trialStore.internalTestingEnabled() && !trialStore.internalTestTrialEnabled()) ProTrial() else trialStore.load()
         val hasPaidAccess = trialStore.hasPaidAccess(paid)
         val needsFreeReview = !hasPaidAccess && current != null && trial.needsFreeReview(current)
         if (!hasPaidAccess && !draft.customization.isFree) {

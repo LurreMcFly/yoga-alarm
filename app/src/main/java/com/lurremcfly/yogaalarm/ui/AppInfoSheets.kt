@@ -351,7 +351,7 @@ fun ProPaywallSheet(
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                     Text("Close", color = Forest)
                 }
-                if (previewOnly) Text("TEST MODE · Play ownership is unchanged. Turn off Test as non-paying user in Settings before purchase testing.", color = Forest)
+                if (previewOnly) Text("Trial test · checkout disabled. Turn Testing mode off in Settings to test purchases.", color = Forest)
                 Text(when {
                     trialExhausted -> "Keep your custom routine"
                     trialActive -> "Keep your morning routine yours"

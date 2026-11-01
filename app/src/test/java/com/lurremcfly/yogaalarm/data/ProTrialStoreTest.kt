@@ -559,6 +559,18 @@ class ProTrialStoreTest {
         assertFalse(failNextCommit)
         assertTrue(ProTrialStore(context).internalTestingEnabled())
         assertTrue(ProTrialStore(context).hasPaidAccess(false))
+        assertTrue(trials.setInternalTestProEnabled(false, { false }))
+        assertTrue(trials.setInternalTrialDaysRemaining(2, first.toLocalDate(), { false }))
+        val selected = trials.load()
+        failNextCommit = true
+        assertFalse(ProTrialStore(failingContext).setInternalTrialDaysRemaining(4, first.toLocalDate(), { false }))
+        assertFalse(failNextCommit)
+        assertEquals(selected, trials.load())
+        failNextCommit = true
+        assertFalse(ProTrialStore(failingContext).setInternalTrialDaysRemaining(null, first.toLocalDate(), { false }))
+        assertFalse(failNextCommit)
+        assertTrue(trials.internalTestTrialEnabled())
+        assertEquals(selected, trials.load())
     }
 
     @Test fun internalTestFreeDoesNotGrantPreviewEditingEvenWithActualPaidOwnership() {
@@ -575,6 +587,93 @@ class ProTrialStoreTest {
         assertTrue(trials.setInternalTestProEnabled(true, { false }))
         val uncheckedPaidEdit = premium.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10)), trialFallback = null, trialCustomization = null)
         assertEquals(uncheckedPaidEdit, alarms.saveEdited(uncheckedPaidEdit, base, paid = false))
+    }
+
+    @Test fun selectedTrialDayPersistsWithoutChangingNormalPreviewAlarmsOrHistory() {
+        val normalPreview = trials.enroll(true, true)
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        val progress = context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        for (remaining in 5 downTo 1) {
+            assertTrue(trials.setInternalTrialDaysRemaining(remaining, first.toLocalDate(), { false }))
+            val restarted = ProTrialStore(context)
+            assertTrue(restarted.internalTestTrialEnabled())
+            assertTrue(restarted.load().active)
+            assertEquals(remaining, restarted.load().remaining)
+            assertEquals(5 - remaining, restarted.load().dates.size)
+            assertFalse(first.toLocalDate() in restarted.load().dates)
+            assertEquals(restarted.load(), restarted.enroll(false))
+        }
+        val selected = trials.load()
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
+        assertFalse(trials.internalTestTrialEnabled())
+        assertEquals(normalPreview, trials.load())
+        assertTrue(trials.setInternalTestProEnabled(false, { false }))
+        assertEquals(selected, trials.load())
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertEquals(normalPreview, trials.load())
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertEquals(selected, trials.load())
+        assertTrue(trials.setInternalTrialDaysRemaining(null, first.toLocalDate(), { false }))
+        assertFalse(trials.internalTestTrialEnabled())
+        assertEquals(normalPreview, trials.load())
+        assertEquals(alarm, alarms.load().single())
+        assertEquals(progress, context.getSharedPreferences("wake_progress", Context.MODE_PRIVATE).all)
+        assertFalse(occurrences.hasInFlight())
+        assertTrue(occurrences.pendingCompletions().isEmpty())
+    }
+
+    @Test fun trialDaySelectionRejectsInvalidDisabledPaidBlockedAndInFlightChanges() {
+        assertFalse(trials.setInternalTrialDaysRemaining(5, first.toLocalDate(), { false }))
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(trials.setInternalTestProEnabled(true, { false }))
+        assertFalse(trials.setInternalTrialDaysRemaining(5, first.toLocalDate(), { false }))
+        assertTrue(trials.setInternalTestProEnabled(false, { false }))
+        assertTrue(trials.setInternalTrialDaysRemaining(3, first.toLocalDate(), { false }))
+        val selected = trials.load()
+        for (remaining in listOf(-1, 0, 6)) {
+            assertFalse(trials.setInternalTrialDaysRemaining(remaining, first.toLocalDate(), { false }))
+        }
+        assertFalse(trials.setInternalTrialDaysRemaining(2, first.toLocalDate(), { true }))
+        val occurrence = occurrences.begin(AlarmConfig.create(1), 1)
+        repeat(2) {
+            assertFalse(trials.setInternalTrialDaysRemaining(2, first.toLocalDate(), { false }))
+            assertFalse(trials.setInternalTrialDaysRemaining(null, first.toLocalDate(), { false }))
+            occurrences.snooze(occurrence.token, 0)
+        }
+        assertEquals(selected, trials.load())
+        occurrences.stop(occurrence.token)
+        assertTrue(trials.setInternalTrialDaysRemaining(2, first.toLocalDate(), { false }))
+    }
+
+    @Test fun selectedTrialCountsRealAlarmDatesAndExpiresWithConfirmedFutureFallback() {
+        val normalPreview = trials.enroll(true, true)
+        val alarm = customized(1)
+        alarms.save(listOf(alarm))
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(trials.setInternalTrialDaysRemaining(2, first.toLocalDate(), { false }))
+        val firstAlarm = occurrences.begin(alarm, 1)
+        assertTrue(trials.complete(firstAlarm.token, first, { true }, { true }))
+        assertEquals(1, trials.load().remaining)
+        assertTrue(trials.complete(firstAlarm.token, first.plusDays(1), { true }, { true }))
+        complete(alarm, first)
+        assertEquals(1, trials.load().remaining)
+        val lastAlarm = occurrences.begin(alarm, 1)
+        assertTrue(trials.complete(lastAlarm.token, first.plusDays(1), { true }, { true }))
+        val expired = ProTrialStore(context).load()
+        assertTrue(expired.exhausted)
+        assertEquals(5, expired.pendingMilestone)
+        assertFalse(expired.awaitingPurchaseResolution)
+        assertEquals(FreeTransition.APPLIED, expired.transition)
+        assertEquals(alarm.trialFallback, alarms.load().single().customization)
+        assertEquals(alarm.customization, alarms.load().single().trialOriginal)
+        assertEquals(alarm, occurrences.find(lastAlarm.token)!!.alarm)
+        assertEquals(expired, trials.reconcile(true, true, recoverablePaid = true))
+        assertTrue(trials.markPresented(5))
+        assertNull(trials.load().pendingMilestone)
+        assertTrue(trials.setInternalTestingEnabled(false, { false }))
+        assertEquals(normalPreview, trials.load())
     }
 
     private fun customized(id: Long): AlarmConfig {

@@ -90,4 +90,17 @@ class AlarmStoreTrialTest {
         val freeDraft = premium.copy(routine = free.routine, sound = free.sound)
         assertEquals(freeDraft, store.saveEdited(freeDraft, premium, paid = true))
     }
+
+    @Test fun selectedTestTrialUsesPreviewFallbackValidationEvenForARealProOwner() {
+        val trials = ProTrialStore(context)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(trials.setInternalTrialDaysRemaining(3, blocked = { false }))
+        val premium = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
+        assertNull(store.saveEdited(premium, null, paid = true))
+        val confirmed = premium.copy(trialFallback = premium.suggestedFreeFallback(), trialCustomization = premium.customization)
+        assertEquals(confirmed, store.saveEdited(confirmed, null, paid = true))
+        val changed = confirmed.copy(sound = AlarmSound.RICE_PAPER_DAWN)
+        assertNull(store.saveEdited(changed, confirmed, paid = true))
+        assertEquals(confirmed, store.load().single())
+    }
 }

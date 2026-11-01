@@ -36,8 +36,8 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 36
-        versionName = "1.0.35"
+        versionCode = 37
+        versionName = "1.0.38"
         manifestPlaceholders["appLabel"] = "Yoga Alarm"
         buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
         buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", proTrialRolloutEnabled.toString())

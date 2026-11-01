@@ -11,9 +11,11 @@ import java.time.ZonedDateTime
 
 class ProTrialStore(private val context: Context) {
     private val preferences = context.getSharedPreferences("yoga_alarm", Context.MODE_PRIVATE)
+    private val trialKey: String get() = if (internalTestTrialEnabled()) INTERNAL_TRIAL_KEY else KEY
 
     // Call before WakeProgressStore.load() or onboarding writes defaults.
     fun enroll(enabled: Boolean, treatment: Boolean = kotlin.random.Random.nextBoolean()): ProTrial = synchronized(AlarmStorageLock) {
+        if (internalTestTrialEnabled()) return@synchronized load()
         if (preferences.contains(KEY)) return@synchronized load()
         val existing = preferences.contains("alarms") ||
             context.getSharedPreferences("onboarding", Context.MODE_PRIVATE).all.isNotEmpty() ||
@@ -33,7 +35,7 @@ class ProTrialStore(private val context: Context) {
 
     fun load(): ProTrial = synchronized(AlarmStorageLock) {
         runCatching {
-            val json = JSONObject(preferences.getString(KEY, "{}")!!)
+            val json = JSONObject(preferences.getString(trialKey, "{}")!!)
             ProTrial(
                 enrollment = TrialEnrollment.valueOf(json.optString("enrollment", "INELIGIBLE")),
                 enrolledAt = json.optLong("enrolledAt"),
@@ -53,7 +55,8 @@ class ProTrialStore(private val context: Context) {
         val occurrence = occurrences.find(token) ?: return@synchronized false
         if (occurrence.completedAt != null) return@synchronized true
         if (occurrence.state != com.lurremcfly.yogaalarm.model.OccurrenceState.RINGING) return@synchronized false
-        recordCompletion(now.toLocalDate(), hasPaidAccess(paid()), verifying(), updatePreview = !internalTestingEnabled()) { editor ->
+        recordCompletion(now.toLocalDate(), hasPaidAccess(paid()), !internalTestingEnabled() && verifying(),
+            updatePreview = !internalTestingEnabled() || internalTestTrialEnabled()) { editor ->
             occurrences.stageCompleted(editor, token, now)
         }
     }
@@ -72,6 +75,29 @@ class ProTrialStore(private val context: Context) {
 
     fun internalTestProEnabled(): Boolean = synchronized(AlarmStorageLock) {
         internalTestingEnabled() && preferences.getBoolean("pro_preview_internal_paid", false)
+    }
+
+    fun internalTestTrialEnabled(): Boolean = synchronized(AlarmStorageLock) {
+        internalTestingEnabled() && !internalTestProEnabled() && preferences.getBoolean("pro_preview_internal_trial", false)
+    }
+
+    fun setInternalTrialDaysRemaining(remaining: Int?, now: LocalDate = LocalDate.now(), blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
+        if (!internalTestingEnabled() || internalTestProEnabled() || remaining != null && remaining !in 1..5 ||
+            blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        val previousEnabled = preferences.getBoolean("pro_preview_internal_trial", false)
+        val previousTrial = preferences.getString(INTERNAL_TRIAL_KEY, null)
+        val editor = preferences.edit().putBoolean("pro_preview_internal_trial", remaining != null)
+        if (remaining != null) stage(editor, ProTrial(
+            enrollment = TrialEnrollment.PREVIEW,
+            enrolledAt = System.currentTimeMillis(),
+            dates = (1..(5 - remaining)).map { now.minusDays(it.toLong()) }.toSet(),
+        ), INTERNAL_TRIAL_KEY)
+        val committed = editor.commit()
+        if (!committed) preferences.edit()
+            .putBoolean("pro_preview_internal_trial", previousEnabled)
+            .putString(INTERNAL_TRIAL_KEY, previousTrial)
+            .commit()
+        committed
     }
 
     fun setInternalTestProEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
@@ -170,14 +196,15 @@ class ProTrialStore(private val context: Context) {
 
     fun reconcile(paid: Boolean, verifying: Boolean, recoverablePaid: Boolean = false, ownershipResolved: Boolean = true): ProTrial = synchronized(AlarmStorageLock) {
         val previous = load()
-        if (internalTestingEnabled()) return@synchronized previous
+        if (internalTestingEnabled() && !internalTestTrialEnabled()) return@synchronized previous
         var trial = previous
         val store = AlarmStore(context)
         val current = store.load()
         var alarms = current
         val paidAccess = hasPaidAccess(paid)
         if (paidAccess && recoverablePaid) trial = trial.retire()
-        else if (!paidAccess && !verifying && (!trial.awaitingPurchaseResolution || ownershipResolved) && trial.exhausted && trial.transition != FreeTransition.APPLIED) {
+        else if (!paidAccess && (!verifying || internalTestTrialEnabled()) &&
+            (!trial.awaitingPurchaseResolution || ownershipResolved || internalTestTrialEnabled()) && trial.exhausted && trial.transition != FreeTransition.APPLIED) {
             alarms = convert(current)
             trial = trial.copy(awaitingPurchaseResolution = false, transition = if (alarms.any { !it.customization.isFree && it.trialOriginal == null }) FreeTransition.PENDING else FreeTransition.APPLIED)
         }
@@ -218,8 +245,8 @@ class ProTrialStore(private val context: Context) {
         else alarm.copy(routine = fallback.routine, sound = fallback.sound, trialOriginal = alarm.customization)
     }
 
-    private fun stage(editor: SharedPreferences.Editor, trial: ProTrial) {
-        editor.putString(KEY, JSONObject().put("version", 1)
+    private fun stage(editor: SharedPreferences.Editor, trial: ProTrial, key: String = trialKey) {
+        editor.putString(key, JSONObject().put("version", 1)
             .put("enrollment", trial.enrollment.name).put("enrolledAt", trial.enrolledAt)
             .put("dates", trial.dates.sorted().joinToString(",")).put("retired", trial.retired)
             .put("pending", trial.pendingMilestone ?: 0).put("presented", trial.presented.sorted().joinToString(","))
@@ -227,5 +254,8 @@ class ProTrialStore(private val context: Context) {
             .put("transition", trial.transition.name).toString())
     }
 
-    private companion object { const val KEY = "pro_preview_v1" }
+    private companion object {
+        const val KEY = "pro_preview_v1"
+        const val INTERNAL_TRIAL_KEY = "pro_preview_internal_trial_v1"
+    }
 }
