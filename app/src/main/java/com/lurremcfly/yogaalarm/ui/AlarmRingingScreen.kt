@@ -1,6 +1,5 @@
 package com.lurremcfly.yogaalarm.ui
 
-import android.text.format.DateFormat
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -29,9 +28,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -41,7 +41,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.lurremcfly.yogaalarm.model.AlarmConfig
-import java.util.Date
+import android.icu.util.Calendar
 import kotlinx.coroutines.delay
 
 @Composable
@@ -56,7 +56,8 @@ internal fun AlarmRingingScreen(
     onSnooze: () -> Unit,
     onEmergencyStop: () -> Unit,
 ) {
-    val context = LocalContext.current
+    val is24Hour = rememberIs24HourTime()
+    val clockFormatter = rememberClockFormatter(is24Hour)
     val lifecycleOwner = LocalLifecycleOwner.current
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lifecycleOwner) {
@@ -69,7 +70,7 @@ internal fun AlarmRingingScreen(
     }
     BoxWithConstraints(Modifier.fillMaxSize().background(SoftSurface).safeDrawingPadding()) {
         // Keep the already-large clock readable without clipping at larger system font scales.
-        val clockSize = (minOf(64f, (maxWidth.value - 48f) / 5f) / LocalDensity.current.fontScale).sp
+        val clockSize = (minOf(64f, (maxWidth.value - 48f) / if (is24Hour) 5f else 8f) / LocalDensity.current.fontScale).sp
         Column(
             modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 .heightIn(min = maxHeight).padding(24.dp),
@@ -89,7 +90,7 @@ internal fun AlarmRingingScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    DateFormat.getTimeFormat(context).format(Date(now)),
+                    clockFormatter.format(Calendar.getInstance().apply { timeInMillis = now }),
                     color = Forest,
                     fontSize = clockSize,
                     fontWeight = FontWeight.Bold,
@@ -111,19 +112,20 @@ internal fun AlarmRingingScreen(
             ) {
                 Text(
                     if (permissionDenied) "Allow camera access to validate your poses."
-                    else "Place your phone before starting the camera.",
+                    else "Place your phone where your full body fits on screen.",
                     color = MutedInk,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Button(
                     onClick = onStart,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                        .semantics { if (permissionDenied) contentDescription = "Allow camera access" },
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AlarmLime, contentColor = Ink),
                 ) {
                     Text(
-                        if (permissionDenied) "Allow camera" else "Start",
+                        if (permissionDenied) "Allow" else "Start",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )

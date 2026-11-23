@@ -47,6 +47,7 @@ class AlarmStoreTrialTest {
     }
 
     @Test fun explicitEditorSaveCanReenableAlarmDisabledSinceDraftOpened() {
+        org.robolectric.shadows.ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val base = AlarmConfig.create(1)
         store.save(listOf(base.copy(enabled = false)))
         val saved = store.saveEdited(base.copy(name = "Ready for tomorrow"), base, paid = false, enableOnSave = true)!!
@@ -55,15 +56,15 @@ class AlarmStoreTrialTest {
         assertEquals("Ready for tomorrow", saved.name)
     }
 
-    @Test fun activePreviewRequiresConfirmedFallbackBoundToCurrentCustomization() {
+    @Test fun activeTrialSaveComputesFallbackWithoutConfirmationAndIgnoresStaleMetadata() {
         ProTrialStore(context).enroll(true, true)
         val draft = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
-        assertNull(store.saveEdited(draft, null, false))
-        val mismatched = draft.copy(trialFallback = draft.suggestedFreeFallback(), trialCustomization = AlarmConfig.create(1).customization)
-        assertNull(store.saveEdited(mismatched, null, false))
-        val confirmed = mismatched.copy(trialCustomization = draft.customization)
-        assertEquals(confirmed, store.saveEdited(confirmed, null, false))
-        assertEquals(confirmed, AlarmStore(context).load().single())
+        val expected = draft.copy(trialFallback = draft.suggestedFreeFallback(), trialCustomization = draft.customization)
+        assertEquals(expected, store.saveEdited(draft, null, false))
+        val changed = expected.copy(routine = listOf(PoseStep(YogaPose.CHAIR, 10), PoseStep(YogaPose.TREE, 45)))
+        val saved = store.saveEdited(changed, expected, false)!!
+        assertEquals(changed.suggestedFreeFallback(), saved.trialFallback)
+        assertEquals(changed.customization, saved.trialCustomization)
     }
 
     @Test fun serializationPreservesFallbackOriginalAndScheduleWithoutNormalizingOrdinaryLoad() {
@@ -72,35 +73,5 @@ class AlarmStoreTrialTest {
         store.save(listOf(alarm))
         assertEquals(alarm, AlarmStore(context).load().single())
         assertEquals(alarm, store.decode(store.encode(alarm)))
-    }
-
-    @Test fun internalTestSwitchControlsEditingRegardlessOfPlayOwnershipAndPreservesSavedAlarms() {
-        val trials = ProTrialStore(context)
-        assertTrue(trials.setInternalTestingEnabled(true, { false }))
-        val premium = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
-        assertNull(store.saveEdited(premium, null, paid = true))
-        assertTrue(store.load().isEmpty())
-        assertTrue(trials.setInternalTestProEnabled(true, { false }))
-        assertEquals(premium, store.saveEdited(premium, null, paid = false))
-        assertTrue(trials.setInternalTestProEnabled(false, { false }))
-        assertEquals(premium, store.load().single())
-        assertNull(store.saveEdited(premium.copy(sound = AlarmSound.RICE_PAPER_DAWN), premium, paid = true))
-        assertEquals(premium, store.load().single())
-        val free = premium.suggestedFreeFallback()
-        val freeDraft = premium.copy(routine = free.routine, sound = free.sound)
-        assertEquals(freeDraft, store.saveEdited(freeDraft, premium, paid = true))
-    }
-
-    @Test fun selectedTestTrialUsesPreviewFallbackValidationEvenForARealProOwner() {
-        val trials = ProTrialStore(context)
-        assertTrue(trials.setInternalTestingEnabled(true, { false }))
-        assertTrue(trials.setInternalTrialDaysRemaining(3, blocked = { false }))
-        val premium = AlarmConfig.create(1).copy(sound = AlarmSound.LOTUS_SUNRISE_LOOP)
-        assertNull(store.saveEdited(premium, null, paid = true))
-        val confirmed = premium.copy(trialFallback = premium.suggestedFreeFallback(), trialCustomization = premium.customization)
-        assertEquals(confirmed, store.saveEdited(confirmed, null, paid = true))
-        val changed = confirmed.copy(sound = AlarmSound.RICE_PAPER_DAWN)
-        assertNull(store.saveEdited(changed, confirmed, paid = true))
-        assertEquals(confirmed, store.load().single())
     }
 }

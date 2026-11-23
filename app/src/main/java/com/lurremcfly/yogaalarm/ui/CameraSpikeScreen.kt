@@ -118,7 +118,7 @@ private fun StatusCard(uiState: PoseDebugUiState, modifier: Modifier = Modifier)
         }
         uiState.landmarks == null -> {
             statusColor = Color(0xFFFFD180)
-            title = "Finding you…"
+            title = "Move into view"
             guidance = "Stand where your full body is visible"
         }
         uiState.isFullBodyVisible -> {

@@ -62,6 +62,10 @@ data class BillingUiState(
     val offers: Map<ProPlan, BillingOffer> = emptyMap(),
     val message: String? = null,
 ) {
+    val deferTrialConversion: Boolean
+        get() = ownershipResolution != OwnershipResolution.RESOLVED || verifyingPurchases ||
+            purchasing || pendingPurchase || offlineAccessExpired
+
     val canPurchase: Boolean
         get() = connected && catalogSettled && !loadingOffers && !loading &&
             ownershipResolution == OwnershipResolution.RESOLVED && !purchasing &&

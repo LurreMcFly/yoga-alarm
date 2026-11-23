@@ -1,5 +1,6 @@
 package com.lurremcfly.yogaalarm.alarm
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -10,8 +11,9 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action !in supportedActions) return
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) AlarmOccurrenceStore(context).clearSnoozes()
-        AlarmStore(context).load().filter { it.enabled }.forEach {
-            AlarmScheduler.schedule(context, it, preserveSnooze = true)
+        val store = AlarmStore(context)
+        store.load().filter { it.enabled || it.scheduleNeedsRepair }.forEach {
+            store.schedule(it, retry = it.scheduleNeedsRepair)
         }
     }
 
@@ -21,6 +23,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED,
+            AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED,
         )
     }
 }

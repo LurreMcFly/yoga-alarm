@@ -64,11 +64,17 @@ import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.format.DateTimeFormatter
+import androidx.compose.ui.platform.LocalConfiguration
+import com.lurremcfly.yogaalarm.data.formatClock
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+internal const val PHONE_PLACEMENT_INSTRUCTION =
+    "Prop your phone upright on the floor facing you, take about two steps back, then follow the pose."
+
+
 internal enum class OnboardingStep {
-    Permissions, Welcome, Add, Time, Name, Days, Sound, SoundChoice, Routine,
+    Permissions, Welcome, Add, Time, Name, Days, Sound, SoundChoice, StopButton, Routine,
     Pose1, Pose2, Pose3, Placement, Save, Complete;
 
     val isPose: Boolean get() = this == Pose1 || this == Pose2 || this == Pose3
@@ -233,26 +239,30 @@ internal fun OnboardingOverlay(
                                 }
                             }
                             Text("Use the camera to follow your poses and stop the alarm.", Modifier.padding(vertical = 24.dp), color = MutedInk, fontSize = 14.sp)
-                            if (trialActive) Text("Try Pro for 5 successful alarm days. No payment details or automatic charge. Then your alarms use the free settings confirmed during setup unless you buy Pro.", Modifier.padding(bottom = 16.dp), color = Forest, fontSize = 14.sp)
+                            if (trialActive) Text("Your Pro trial lasts 5 successful alarm days. After that, your alarms automatically use free settings unless you buy Pro.", Modifier.padding(bottom = 16.dp), color = Forest, fontSize = 14.sp)
                             GuideButton("Set up an alarm") { transitionTo(OnboardingStep.Add) }
                         }
                         OnboardingStep.Placement -> {
                             Text(if (practised) "You’ve got it." else "Try your first pose.", color = Forest, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
-                            Text(if (practised) "Practice complete." else "Phone upright. Screen facing you.", Modifier.padding(vertical = 20.dp), color = MutedInk, fontSize = 14.sp)
-                            Image(painterResource(R.drawable.onboarding_phone_setup), "Place your phone upright, take about two steps back, then follow the pose.", Modifier.fillMaxWidth())
+                            Text(if (practised) "Practice complete." else PHONE_PLACEMENT_INSTRUCTION, Modifier.padding(vertical = 20.dp), color = MutedInk, fontSize = 14.sp)
+                            Image(painterResource(R.drawable.onboarding_phone_setup), null, Modifier.fillMaxWidth())
                             Text("5 seconds · sound off", Modifier.padding(top = 24.dp, bottom = 16.dp), color = Forest, fontWeight = FontWeight.SemiBold)
                             Text("Processed on your device. Never recorded.", color = MutedInk, fontSize = 12.sp)
                             GuideButton(if (practised) "Next" else "Try it now", Modifier.padding(top = 24.dp)) {
                                 if (practised) transitionTo(OnboardingStep.Save) else onPractice()
                             }
                             TextButton(onClick = { if (practised) onPractice() else transitionTo(OnboardingStep.Save) }, modifier = Modifier.fillMaxWidth()) {
-                                Text(if (practised) "Practise again" else "Skip practice", color = Forest)
+                                Text(if (practised) "Practice again" else "Skip practice", color = Forest)
                             }
                         }
                         OnboardingStep.Complete -> if (alarm != null) {
                             Text(if (alarm.enabled && alarmReady) "Your alarm is ready." else "Your alarm is saved.", color = Forest, fontSize = 32.sp, fontWeight = FontWeight.SemiBold)
                             Text(alarm.name, Modifier.padding(vertical = 18.dp), color = MutedInk, fontSize = 18.sp)
-                            Text(if (alarm.enabled && alarmReady) AlarmScheduler.nextOccurrence(alarm).format(DateTimeFormatter.ofPattern("EEEE HH:mm")) else "Finish alarm setup on the home screen.", color = Forest, fontSize = 22.sp)
+                            Text(if (alarm.enabled && alarmReady) AlarmScheduler.nextOccurrence(alarm).let {
+                                val clockFormatter = rememberClockFormatter()
+                                it.format(DateTimeFormatter.ofPattern("EEEE", LocalConfiguration.current.locales[0])) +
+                                    " " + clockFormatter.formatClock(it.hour, it.minute)
+                            } else "Finish alarm setup on the home screen.", color = Forest, fontSize = 22.sp)
                             Spacer(Modifier.height(24.dp))
                             alarm.routine.forEachIndexed { index, pose ->
                                 Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -294,11 +304,12 @@ internal fun OnboardingOverlay(
                     val (title, detail) = when (step) {
                         OnboardingStep.Add -> "Add an alarm" to "Tap Add alarm."
                         OnboardingStep.Time -> "Set the time" to "Scroll to choose."
-                        OnboardingStep.Name -> "Name your alarm" to "Pick a name you’ll recognise."
+                        OnboardingStep.Name -> "Name your alarm" to "Pick a name you’ll recognize."
                         OnboardingStep.Days -> "Choose repeat days" to "Green = selected. No days = once."
                         OnboardingStep.Sound -> "Choose your alarm sound" to "Tap Sound."
                         OnboardingStep.SoundChoice -> "Find your sound" to "Preview, then choose."
-                        OnboardingStep.Pose1 -> "Choose pose 1" to "Swipe to explore your four free poses."
+                        OnboardingStep.StopButton -> "Choose how to stop your alarm" to "Leave the Stop button on to end the alarm manually. Turn it off to require the full yoga routine."
+                        OnboardingStep.Pose1 -> "Choose pose 1" to "Swipe to explore your available poses."
                         OnboardingStep.Pose2 -> "Choose pose 2" to "Each pose lasts 20 seconds in Free."
                         OnboardingStep.Pose3 -> "Choose pose 3" to "Your routine plays from top to bottom."
                         else -> "Save your alarm" to "Keep your time, name and poses."

@@ -72,7 +72,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     private var latestScore = 0f
     private var latestFramed = false
     private var framingLostSinceMs: Long? = null
-    private var transitionEndsAtMs = 0L
+    private var transitionRemainingMs = 0L
     private var previousTickAtMs = 0L
     private var alarmLevel = 1f
 
@@ -87,6 +87,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
         started = true
         poseIndex = 0
         phase = RoutinePhase.FINDING
+        transitionRemainingMs = 0L
         holdMs = 0L
         alarmLevel = 1f
         resetTracking()
@@ -133,6 +134,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
     fun stop() {
         pause()
         started = false
+        transitionRemainingMs = 0L
         phase = RoutinePhase.FINDING
         poseIndex = 0
         holdMs = 0L
@@ -209,7 +211,8 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
 
     private fun tick(now: Long) {
         if (!started) return
-        val deltaMs = if (previousTickAtMs == 0L) 0L else (now - previousTickAtMs).coerceIn(0L, 100L)
+        val elapsedMs = (now - previousTickAtMs).coerceAtLeast(0L)
+        val deltaMs = elapsedMs.coerceAtMost(100L)
         previousTickAtMs = now
         if (lastFrameAtMs?.let { now - it > FRAME_TIMEOUT_MS } == true) {
             resetTracking()
@@ -219,8 +222,9 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
             mutableUiState.update { it.copy(error = "The camera didn’t start. Try the camera again.") }
         }
 
+        if (phase == RoutinePhase.TRANSITION) transitionRemainingMs = (transitionRemainingMs - elapsedMs).coerceAtLeast(0L)
         when (phase) {
-            RoutinePhase.TRANSITION -> if (now >= transitionEndsAtMs) {
+            RoutinePhase.TRANSITION -> if (transitionRemainingMs == 0L) {
                 poseIndex += 1
                 holdMs = 0L
                 detected = false
@@ -240,7 +244,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
                             phase = RoutinePhase.COMPLETE
                         } else {
                             phase = RoutinePhase.TRANSITION
-                            transitionEndsAtMs = now + TRANSITION_MS
+                            transitionRemainingMs = TRANSITION_MS
                         }
                     }
                 } else {
@@ -250,10 +254,10 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
             RoutinePhase.COMPLETE -> Unit
         }
         updateAlarmLevel(deltaMs)
-        publish(now)
+        publish()
     }
 
-    private fun publish(now: Long = nowMs()) {
+    private fun publish() {
         val durationMs = currentDurationMs().coerceAtLeast(1L)
         val holdProgress = (holdMs.toFloat() / durationMs).coerceIn(0f, 1f)
         val routineProgress = ((poseIndex + holdProgress) / alarm.routine.size.coerceAtLeast(1)).coerceIn(0f, 1f)
@@ -272,7 +276,7 @@ class RoutineViewModel(private val nowMs: () -> Long = SystemClock::elapsedRealt
                 framed = latestFramed,
                 detected = detected,
                 remainingSeconds = ceil((durationMs - holdMs).coerceAtLeast(0L) / 1_000f).toInt(),
-                transitionSeconds = ceil((transitionEndsAtMs - now).coerceAtLeast(0L) / 1_000f).toInt().coerceAtLeast(1),
+                transitionSeconds = ceil(transitionRemainingMs / 1_000f).toInt().coerceAtLeast(1),
                 soundEnabled = alarm.soundEnabled,
                 alarmSound = alarm.sound,
                 alarmHour = alarm.hour,

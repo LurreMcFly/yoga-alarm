@@ -29,6 +29,16 @@ class BillingUiStateTest {
         assertFalse(ready.copy(purchasing = true).canPurchase)
     }
 
+    @Test fun offlinePaidExpiryAndPendingOwnershipDeferTrialConversion() {
+        assertTrue(ready.copy(offlineAccessExpired = true).deferTrialConversion)
+        assertTrue(ready.copy(pendingPurchase = true).deferTrialConversion)
+        assertTrue(ready.copy(verifyingPurchases = true).deferTrialConversion)
+        assertTrue(ready.copy(purchasing = true).deferTrialConversion)
+        assertTrue(BillingUiState().deferTrialConversion)
+        assertTrue(ready.copy(ownershipResolution = OwnershipResolution.UNAVAILABLE).deferTrialConversion)
+        assertFalse(ready.deferTrialConversion)
+    }
+
     @Test fun incompleteCatalogRefreshAndDisconnectedStoreCannotPurchase() {
         assertFalse(ready.copy(catalogSettled = false).canPurchase)
         assertFalse(ready.copy(loadingOffers = true).canPurchase)

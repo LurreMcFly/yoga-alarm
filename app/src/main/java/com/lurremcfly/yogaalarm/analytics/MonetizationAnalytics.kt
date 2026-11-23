@@ -79,8 +79,8 @@ class MonetizationAnalytics(context: Context) {
         val EVENTS = setOf(
             "first_launch", "experiment_assigned", "first_alarm_saved", "first_real_alarm_completed", "alarm_day_completed",
             "trial_milestone_presented", "trial_customization_saved", "paywall_viewed", "offer_unavailable",
-            "plan_selected", "checkout_started", "checkout_outcome", "fallback_confirmed",
-            "free_transition_applied", "trial_routine_restored", "purchase_restored",
+            "plan_selected", "checkout_started", "checkout_outcome",
+            "free_transition_applied", "purchase_restored",
         )
     }
 }

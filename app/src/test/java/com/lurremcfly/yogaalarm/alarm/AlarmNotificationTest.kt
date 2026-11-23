@@ -12,10 +12,12 @@ import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.MainActivity
 import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.data.AlarmStore
 import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
+import com.lurremcfly.yogaalarm.data.ProTrialStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -24,6 +26,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,6 +63,24 @@ class AlarmNotificationTest {
     @After
     fun tearDown() {
         controller.destroy()
+    }
+
+    @Test
+    fun completingScheduledAlarmAfterPlaybackStopsAdvancesSelectedTrialAcrossRestart() {
+        assumeTrue("Selected trial days require the Debug build", BuildConfig.DEBUG)
+        val completedAt = java.time.ZonedDateTime.now()
+        val trials = ProTrialStore(context)
+        assertTrue(trials.setInternalTestingEnabled(true, { false }))
+        assertTrue(trials.setInternalTrialDaysRemaining(2, completedAt.toLocalDate().minusDays(1), { false }))
+        ring(alarm())
+        val token = AlarmForegroundService.ringingOccurrenceToken.value!!
+        service.finishRoutine(1L, token, persistStop = false)
+        controller.destroy()
+        controller = Robolectric.buildService(AlarmForegroundService::class.java).create()
+        service = controller.get()
+        assertTrue(trials.complete(token, completedAt, { true }, { true }))
+        assertEquals(1, ProTrialStore(context).load().remaining)
+        assertEquals(completedAt, AlarmOccurrenceStore(context).find(token)!!.completedAt)
     }
 
     @Test

@@ -66,6 +66,7 @@ data class AlarmConfig(
     val trialFallback: AlarmCustomization? = null,
     val trialCustomization: AlarmCustomization? = null,
     val trialOriginal: AlarmCustomization? = null,
+    val scheduleNeedsRepair: Boolean = false,
 ) : java.io.Serializable {
     val customization: AlarmCustomization get() = AlarmCustomization(routine, sound)
 

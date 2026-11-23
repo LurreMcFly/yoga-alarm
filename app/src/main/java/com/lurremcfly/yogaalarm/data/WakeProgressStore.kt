@@ -77,8 +77,8 @@ class WakeProgressStore(private val context: Context) {
         saveSchedule(createSchedule(alarms, readSchedule(), now))
     }
 
-    fun recordScheduledAlarm(alarm: AlarmConfig, occurrence: ZonedDateTime, now: ZonedDateTime) = synchronized(AlarmStorageLock) {
-        load(now)
+    fun recordScheduledAlarm(alarm: AlarmConfig, occurrence: ZonedDateTime) = synchronized(AlarmStorageLock) {
+        load()
         val schedule = StreakSchedule(alarm.id, occurrence.toLocalDateTime(), alarm.weekdays)
         saveSchedule(readSchedule().filterNot { it.alarmId == alarm.id } + schedule)
     }

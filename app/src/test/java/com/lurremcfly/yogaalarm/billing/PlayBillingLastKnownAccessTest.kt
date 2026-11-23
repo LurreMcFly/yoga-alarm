@@ -4,6 +4,7 @@ import android.content.Context
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingResult
 import com.android.billingclient.api.Purchase
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.data.ProTrialStore
 import com.lurremcfly.yogaalarm.model.ProPlan
 import kotlinx.coroutines.CompletableDeferred
@@ -23,6 +24,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -283,6 +285,7 @@ class PlayBillingLastKnownAccessTest {
     }
 
     @Test fun internalTestProOverridesGenuineCachedAccessWithoutChangingIt() = billingTest {
+        assumeTrue("Internal Pro overrides require the Debug build", BuildConfig.DEBUG)
         val original = LastKnownPaidAccess(ProEntitlement.LIFETIME, checkedAt)
         assertTrue(cache.save(original))
         val trials = ProTrialStore(context)

@@ -56,6 +56,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -103,6 +104,8 @@ import com.lurremcfly.yogaalarm.R
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.util.Locale
 import java.time.LocalDate
+import android.icu.text.DateFormat as IcuDateFormat
+import com.lurremcfly.yogaalarm.data.formatClock
 import java.time.format.DateTimeFormatter
 import androidx.compose.ui.semantics.contentDescription
 import kotlinx.coroutines.delay
@@ -144,7 +147,11 @@ internal fun AlarmHomeScreen(
     trialDaysRemaining: Int? = null,
     offlineAccessExpired: Boolean = false,
     onRestorePurchases: () -> Unit = {},
+    schedulingIds: Set<Long> = emptySet(),
+    schedulingFailures: Set<Long> = emptySet(),
+    onRetrySchedule: (Long) -> Unit = {},
 ) {
+    val clockFormatter = rememberClockFormatter()
     val listState = rememberLazyListState()
     var displayedAlarms by remember(alarms) { mutableStateOf(alarms) }
     var draggedAlarmId by remember { mutableStateOf<Long?>(null) }
@@ -410,6 +417,10 @@ internal fun AlarmHomeScreen(
                             }
                         },
                         alarm = alarm,
+                        clockFormatter = clockFormatter,
+                        scheduling = alarm.id in schedulingIds,
+                        needsAttention = alarm.scheduleNeedsRepair || alarm.id in schedulingFailures,
+                        onRetry = { onRetrySchedule(alarm.id) },
                         onClick = { onEditAlarm(alarm.id) },
                         onToggle = { onToggleAlarm(alarm.id, it) },
                     )
@@ -681,10 +692,10 @@ internal fun AlarmReadinessCard(
         colors = CardDefaults.cardColors(containerColor = Forest),
     ) {
         Column(Modifier.padding(horizontal = 22.dp, vertical = 20.dp)) {
-            Text("Finish alarm setup · $readyCount/4", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            Text("Finish alarm setup · $readyCount/${readiness.size}", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Tap every green button below so your alarm can wake you reliably.",
+                "So your alarm rings and the camera can check your poses.",
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp,
             )
@@ -697,11 +708,11 @@ internal fun AlarmReadinessCard(
                 if (nextIncompleteIndex == 1) pressedPointerIndex = 1
                 onFixNotifications()
             }
-            ReadinessRow("Full-screen alarms", "Opens over your lock screen", "Enable", fullScreenReady, nextIncompleteIndex == 2, { pointerOffset.value }) {
+            ReadinessRow("Full-screen alarms", "Opens over your lock screen", "Allow", fullScreenReady, nextIncompleteIndex == 2, { pointerOffset.value }) {
                 if (nextIncompleteIndex == 2) pressedPointerIndex = 2
                 onFixFullScreen()
             }
-            ReadinessRow("Exact alarms", "Keeps alarms on time", "Enable", exactAlarmsReady, nextIncompleteIndex == 3, { pointerOffset.value }) {
+            ReadinessRow("Exact alarms", "Keeps alarms on time", "Allow", exactAlarmsReady, nextIncompleteIndex == 3, { pointerOffset.value }) {
                 if (nextIncompleteIndex == 3) pressedPointerIndex = 3
                 onFixExactAlarms()
             }
@@ -724,7 +735,7 @@ private fun ReadinessRow(
         .padding(vertical = 4.dp)
 
     Surface(
-        modifier = if (completed) rowModifier else rowModifier.clickable(onClick = onClick),
+        modifier = if (completed) rowModifier else rowModifier.clickable(onClickLabel = "Allow $title", onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         color = Color.White.copy(alpha = 0.08f),
     ) {
@@ -788,6 +799,10 @@ private fun AlarmSummaryCard(
     alarm: AlarmConfig,
     onClick: () -> Unit,
     onToggle: (Boolean) -> Unit,
+    clockFormatter: IcuDateFormat,
+    scheduling: Boolean,
+    needsAttention: Boolean,
+    onRetry: () -> Unit,
 ) {
     val nameColor by animateColorAsState(
         if (alarm.enabled) Ink else MutedInk.copy(alpha = 0.55f), tween(250), label = "Alarm name color",
@@ -813,7 +828,9 @@ private fun AlarmSummaryCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = String.format(Locale.US, "%02d:%02d", alarm.hour, alarm.minute),
+                        text = remember(alarm.hour, alarm.minute, clockFormatter) {
+                            clockFormatter.formatClock(alarm.hour, alarm.minute)
+                        },
                         color = timeColor,
                         fontSize = 48.sp,
                         lineHeight = 54.sp,
@@ -822,6 +839,7 @@ private fun AlarmSummaryCard(
                 }
                 Switch(
                     checked = alarm.enabled,
+                    enabled = !scheduling,
                     onCheckedChange = onToggle,
                     colors = yogaSwitchColors(),
                 )
@@ -839,6 +857,18 @@ private fun AlarmSummaryCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (scheduling) {
+                Spacer(Modifier.height(8.dp))
+                Text("Alarm is being scheduled", color = MutedInk, fontSize = 13.sp)
+            } else if (needsAttention) {
+                Column {
+                    Text("Alarm needs attention", color = MutedInk, fontSize = 13.sp)
+                    Row {
+                        TextButton(onClick = { onToggle(false) }) { Text("Keep off") }
+                        TextButton(onClick = onRetry) { Text("Retry") }
+                    }
+                }
+            }
     }
 }
 

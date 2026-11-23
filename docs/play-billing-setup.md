@@ -59,7 +59,7 @@ Every Pro purchase unlocks:
 
 No Google Play free trial or introductory offer is configured. A local five-successful-alarm-day Pro preview is authored behind a disabled rollout gate. Only the first genuine yoga alarm completion on each local date counts; practice, tests, snoozes, and stops do not. Trial customization requires an accepted free fallback before saving. After the fifth qualifying day, future configurations switch to that fallback; already ringing/snoozed occurrences retain their snapshots. Paid ownership remains distinct from feature access.
 
-Settings exposes **Testing mode** in every build; enable it there to switch local Free/Pro access with **Test Pro access**. No build property or separate testing artifact is needed. Turn Testing mode off in the app for genuine purchase/restore acceptance. Public preview enrollment still requires `-PproTrialRolloutEnabled=true` and `-PmonetizationBillingReady=true` after acceptance of this client-only policy and device testing. Analytics is optional. See the [testing runbook](monetization-internal-testing.md).
+Debug Settings exposes **Testing mode**; enable it there to switch local Free/Pro access with **Test Pro access**. Public Release hides these controls, ignores persisted test overrides and rejects test mutations. Turn Testing mode off in Debug for genuine purchase/Restore purchases acceptance. Release always uses genuine ownership and the normal trial record. Public preview enrollment still requires `-PproTrialRolloutEnabled=true` and `-PmonetizationBillingReady=true` after acceptance of this client-only policy and device testing. Analytics is optional. See the [testing runbook](monetization-internal-testing.md).
 
 ## Purchase and entitlement rules
 

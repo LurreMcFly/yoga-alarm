@@ -14,15 +14,6 @@ class AlarmReceiver : BroadcastReceiver() {
         synchronized(AlarmStorageLock) {
             val alarmId = intent.getLongExtra(AlarmScheduler.EXTRA_ALARM_ID, -1L)
             val isSnooze = intent.getBooleanExtra(AlarmScheduler.EXTRA_IS_SNOOZE, false)
-            if (!isSnooze) {
-                // Recover only locally decidable conversion. An interrupted checkout remains
-                // pending until ownership resolves; a snooze always keeps its original snapshot.
-                val trialStore = com.lurremcfly.yogaalarm.data.ProTrialStore(context)
-                val trial = trialStore.load()
-                if (trial.exhausted && trial.transition == com.lurremcfly.yogaalarm.model.FreeTransition.PENDING) {
-                    trialStore.reconcile(paid = false, verifying = trial.awaitingPurchaseResolution, ownershipResolved = false)
-                }
-            }
             val store = AlarmStore(context)
             val savedAlarm = store.load().firstOrNull { it.id == alarmId } ?: return
             val occurrences = AlarmOccurrenceStore(context)
@@ -50,7 +41,7 @@ class AlarmReceiver : BroadcastReceiver() {
             if (alarm.weekdays.isEmpty()) {
                 store.update { current -> current.map { if (it.id == alarm.id) it.copy(enabled = false) else it } }
             } else {
-                AlarmScheduler.schedule(context, alarm, preserveSnooze = true)
+                store.schedule(savedAlarm)
             }
         }
     }

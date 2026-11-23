@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.lurremcfly.yogaalarm.MainActivity
-import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import java.time.Instant
@@ -14,15 +13,9 @@ import java.time.Duration
 import java.time.ZonedDateTime
 
 object AlarmScheduler {
-    fun schedule(context: Context, alarm: AlarmConfig, preserveSnooze: Boolean = false): Boolean {
-        if (preserveSnooze) {
-            context.getSystemService(AlarmManager::class.java).cancel(receiverIntent(context, alarm.id))
-        } else {
-            cancel(context, alarm.id)
-        }
-        if (!alarm.enabled) return false
+    fun register(context: Context, alarm: AlarmConfig): ZonedDateTime? {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) return null
         val operation = receiverIntent(context, alarm.id)
         // Use a separate action so notification updates cannot turn this shortcut into a ringing intent.
         val showIntent = PendingIntent.getActivity(
@@ -31,21 +24,21 @@ object AlarmScheduler {
             Intent(context, MainActivity::class.java).setAction(Intent.ACTION_MAIN),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val now = ZonedDateTime.now()
-        val occurrence = nextOccurrence(alarm, now)
-        val scheduled = runCatching {
-            alarmManager.setAlarmClock(
-                AlarmManager.AlarmClockInfo(occurrence.toInstant().toEpochMilli(), showIntent),
-                operation,
-            )
-        }.isSuccess
-        if (scheduled) WakeProgressStore(context).recordScheduledAlarm(alarm, occurrence, now)
-        return scheduled
+        val occurrence = nextOccurrence(alarm)
+        alarmManager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(occurrence.toInstant().toEpochMilli(), showIntent),
+            operation,
+        )
+        return occurrence
+    }
+
+    fun cancelRegular(context: Context, alarmId: Long) {
+        context.getSystemService(AlarmManager::class.java).cancel(receiverIntent(context, alarmId))
     }
 
     fun cancel(context: Context, alarmId: Long) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
-        alarmManager.cancel(receiverIntent(context, alarmId))
+        cancelRegular(context, alarmId)
         alarmManager.cancel(snoozeReceiverIntent(context, alarmId))
         AlarmOccurrenceStore(context).cancelAlarm(alarmId)
     }

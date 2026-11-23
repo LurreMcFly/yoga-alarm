@@ -2,6 +2,7 @@ package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
 import android.net.Uri
+import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import com.lurremcfly.yogaalarm.model.AlarmCustomization
 import com.lurremcfly.yogaalarm.model.AlarmSound
@@ -20,11 +21,11 @@ class AlarmStore(private val context: Context) {
 
     fun save(alarms: List<AlarmConfig>) = synchronized(AlarmStorageLock) {
         val previous = preferences.getString(KEY_ALARMS, null)
-        WakeProgressStore(context).updateSchedule(alarms)
         val committed = preferences.edit()
             .putString(KEY_ALARMS, alarms.joinToString("\n", transform = ::encode))
             .commit()
-        if (!committed) preferences.edit().putString(KEY_ALARMS, previous).commit()
+        if (committed) WakeProgressStore(context).updateSchedule(alarms)
+        else preferences.edit().putString(KEY_ALARMS, previous).commit()
         committed
     }
 
@@ -39,6 +40,33 @@ class AlarmStore(private val context: Context) {
         ids.distinct().mapNotNull { id -> current.firstOrNull { it.id == id } } + current.filter { it.id !in ids }
     }
 
+    data class ScheduleResult(val alarm: AlarmConfig, val accepted: Boolean, val persisted: Boolean)
+
+    // Serialize scheduling with edits/deletion so an old result cannot resurrect a record.
+    fun schedule(expected: AlarmConfig, retry: Boolean = false, enabled: Boolean? = null): ScheduleResult? = synchronized(AlarmStorageLock) {
+        val alarms = load()
+        val current = alarms.firstOrNull { it.id == expected.id } ?: return@synchronized null
+        if (current != expected || (retry && !current.scheduleNeedsRepair && !current.enabled)) return@synchronized null
+        val requested = current.copy(enabled = enabled ?: if (retry) true else current.enabled)
+        val occurrence = if (requested.enabled) runCatching { AlarmScheduler.register(context, requested) }.getOrNull() else null
+        val accepted = occurrence != null
+        val result = requested.copy(enabled = accepted, scheduleNeedsRepair = requested.enabled && !accepted)
+        val persisted = result == current || save(alarms.map { if (it.id == current.id) result else it })
+        when {
+            !persisted && accepted -> AlarmScheduler.cancelRegular(context, current.id)
+            persisted && !requested.enabled -> AlarmScheduler.cancel(context, current.id)
+            persisted && occurrence == null -> AlarmScheduler.cancelRegular(context, current.id)
+            persisted && occurrence != null -> WakeProgressStore(context).recordScheduledAlarm(result, occurrence)
+        }
+        ScheduleResult(if (persisted) result else current, accepted && persisted, persisted)
+    }
+
+    fun delete(id: Long): Boolean = synchronized(AlarmStorageLock) {
+        if (!save(load().filterNot { it.id == id })) return@synchronized false
+        AlarmScheduler.cancel(context, id)
+        true
+    }
+
     // Merge only fields edited by this draft; a receiver/expiry may have changed the rest.
     fun saveEdited(draft: AlarmConfig, base: AlarmConfig?, paid: Boolean, enableOnSave: Boolean = false): AlarmConfig? = synchronized(AlarmStorageLock) {
         val current = load().firstOrNull { it.id == draft.id }
@@ -46,19 +74,12 @@ class AlarmStore(private val context: Context) {
         val trialStore = ProTrialStore(context)
         val trial = if (trialStore.internalTestingEnabled() && !trialStore.internalTestTrialEnabled()) ProTrial() else trialStore.load()
         val hasPaidAccess = trialStore.hasPaidAccess(paid)
-        val needsFreeReview = !hasPaidAccess && current != null && trial.needsFreeReview(current)
-        if (!hasPaidAccess && !draft.customization.isFree) {
-            if (needsFreeReview && (enableOnSave || draft != base?.copy(enabled = false))) return@synchronized null
-            if (trial.active) {
-                if (draft.trialFallback?.isFree != true || draft.trialCustomization != draft.customization) return@synchronized null
-            } else if (current?.customization != draft.customization) return@synchronized null
-        }
+        if (!hasPaidAccess && !trial.active && !draft.customization.isFree &&
+            current?.customization != draft.customization) return@synchronized null
         if (base != null && current != null && current.customization != base.customization && draft.customization != current.customization) {
             return@synchronized null // Require the visible draft to rebase before saving a conflicting customization.
         }
-        val repairing = needsFreeReview && draft.customization.isFree
-        val metadata = if (trial.exhausted && !hasPaidAccess && current != null) current else draft
-        val saved = if (base == null || current == null) draft else draft.copy(
+        val merged = if (base == null || current == null) draft else draft.copy(
             enabled = if (enableOnSave) true else if (draft.enabled != base.enabled) draft.enabled else current.enabled,
             name = if (draft.name != base.name) draft.name else current.name,
             hour = if (draft.hour != base.hour) draft.hour else current.hour,
@@ -70,12 +91,20 @@ class AlarmStore(private val context: Context) {
             snoozeCount = if (draft.snoozeCount != base.snoozeCount) draft.snoozeCount else current.snoozeCount,
             snoozeMinutes = if (draft.snoozeMinutes != base.snoozeMinutes) draft.snoozeMinutes else current.snoozeMinutes,
             stopButtonDisabled = if (draft.stopButtonDisabled != base.stopButtonDisabled) draft.stopButtonDisabled else current.stopButtonDisabled,
-            trialFallback = if (repairing) draft.customization else metadata.trialFallback,
-            trialCustomization = if (repairing) current.customization else metadata.trialCustomization,
-            trialOriginal = current.trialOriginal ?: current.customization.takeIf { repairing },
+            scheduleNeedsRepair = if (enableOnSave || draft.enabled != base.enabled) false else current.scheduleNeedsRepair,
+            trialOriginal = current.trialOriginal,
         )
-        val result = update { list -> if (current == null) list + saved else list.map { if (it.id == saved.id) saved else it } }
-        result.firstOrNull { it.id == saved.id }?.takeIf { it == saved }
+        val named = merged.copy(name = merged.name.trim().take(40))
+        val saved = when {
+            !hasPaidAccess && trial.active && !named.customization.isFree -> named.copy(
+                trialFallback = named.suggestedFreeFallback(), trialCustomization = named.customization)
+            else -> named
+        }
+        // Persist an interrupted editor Save as repairable until AlarmManager accepts the new time.
+        val staged = if (enableOnSave) saved.copy(enabled = false, scheduleNeedsRepair = true) else saved
+        val result = update { list -> if (current == null) list + staged else list.map { if (it.id == staged.id) staged else it } }
+        if (result.firstOrNull { it.id == staged.id } != staged) return@synchronized null
+        if (enableOnSave) schedule(staged, retry = true)?.alarm else staged
     }
 
     internal fun stage(editor: android.content.SharedPreferences.Editor, alarms: List<AlarmConfig>) {
@@ -100,6 +129,7 @@ class AlarmStore(private val context: Context) {
         encodeCustomization(alarm.trialFallback),
         encodeCustomization(alarm.trialCustomization),
         encodeCustomization(alarm.trialOriginal),
+        alarm.scheduleNeedsRepair,
     ).joinToString("|")
 
     internal fun decode(encoded: String): AlarmConfig? = runCatching {
@@ -125,6 +155,7 @@ class AlarmStore(private val context: Context) {
             trialFallback = decodeCustomization(parts.getOrNull(14)),
             trialCustomization = decodeCustomization(parts.getOrNull(15)),
             trialOriginal = decodeCustomization(parts.getOrNull(16)),
+            scheduleNeedsRepair = parts.getOrNull(17)?.toBooleanStrictOrNull() ?: false,
         )
     }.getOrNull()
 

@@ -1,5 +1,6 @@
 package com.lurremcfly.yogaalarm.ui
 
+import com.lurremcfly.yogaalarm.data.TimeFormat
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.rememberScrollState
@@ -74,6 +75,8 @@ fun AppSettingsSheet(
     monetizationTesting: @Composable (() -> Unit)? = null,
     offlineAccessExpired: Boolean = false,
 ) {
+    val timeFormat = rememberTimeFormat()
+    val settingsContext = androidx.compose.ui.platform.LocalContext.current
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = SoftSurface,
@@ -132,6 +135,27 @@ fun AppSettingsSheet(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            Surface(shape = RoundedCornerShape(24.dp), color = Color.White, border = BorderStroke(1.dp, Hairline)) {
+                Column(Modifier.fillMaxWidth().padding(16.dp).selectableGroup()) {
+                    Text("Time format", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    TimeFormat.entries.forEach { format ->
+                        Row(
+                            Modifier.fillMaxWidth().selectable(
+                                selected = timeFormat == format,
+                                role = Role.RadioButton,
+                                onClick = {
+                                    settingsContext.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE)
+                                        .edit().putString(TimeFormat.PREFERENCE_KEY, format.storedValue).apply()
+                                },
+                            ).heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = timeFormat == format, onClick = null)
+                            Text(format.label, color = Ink, modifier = Modifier.padding(start = 12.dp))
                         }
                     }
                 }
@@ -247,7 +271,7 @@ fun AppSettingsSheet(
 @Composable
 fun PrivacyInfoSheet(
     onDismiss: () -> Unit,
-    onReadPolicy: () -> Unit,
+    onOpenLink: (String) -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -289,12 +313,13 @@ fun PrivacyInfoSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 54.dp),
-                onClick = onReadPolicy,
+                onClick = { onOpenLink(PRIVACY_POLICY_URL) },
                 shape = RoundedCornerShape(18.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Forest, contentColor = Color.White),
             ) {
-                Text("Read privacy policy", fontWeight = FontWeight.Bold)
+                Text("Privacy Policy", fontWeight = FontWeight.Bold)
             }
+            TextButton(onClick = { onOpenLink("https://www.yogaalarm.com/support") }) { Text("Support", color = Forest) }
         }
     }
 }
@@ -302,6 +327,7 @@ fun PrivacyInfoSheet(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProPaywallSheet(
+    onOpenLink: (String) -> Unit,
     entitlement: ProEntitlement?,
     subscriptionAutoRenewing: Boolean?,
     prices: Map<ProPlan, String>,
@@ -353,7 +379,7 @@ fun ProPaywallSheet(
                 }
                 if (previewOnly) Text("Trial test · checkout disabled. Turn Testing mode off in Settings to test purchases.", color = Forest)
                 Text(when {
-                    trialExhausted -> "Keep your custom routine"
+                    trialExhausted -> "Customize your morning routine"
                     trialActive -> "Keep your morning routine yours"
                     else -> "Make every morning yours"
                 }, color = Ink, fontSize = 30.sp, fontWeight = FontWeight.Bold)
@@ -449,6 +475,8 @@ fun ProPaywallSheet(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    TextButton(onClick = { onOpenLink(PRIVACY_POLICY_URL) }) { Text("Privacy Policy", color = Forest) }
+                    TextButton(onClick = { onOpenLink("https://www.yogaalarm.com/terms") }) { Text("Terms of Use", color = Forest) }
                     TextButton(onClick = onRestorePurchases, enabled = !purchaseInProgress) {
                         Text("Restore purchases", color = Forest, fontWeight = FontWeight.SemiBold)
                     }
@@ -541,3 +569,5 @@ fun ProPaywallSheet(
         }
     }
 }
+
+private const val PRIVACY_POLICY_URL = "https://www.yogaalarm.com/privacy"

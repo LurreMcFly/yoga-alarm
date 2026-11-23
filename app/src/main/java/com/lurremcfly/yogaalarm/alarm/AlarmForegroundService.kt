@@ -1,5 +1,6 @@
 package com.lurremcfly.yogaalarm.alarm
 
+import com.lurremcfly.yogaalarm.data.TimeFormat
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -20,7 +21,6 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.view.View
 import android.widget.RemoteViews
-import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.lurremcfly.yogaalarm.MainActivity
@@ -273,7 +273,7 @@ class AlarmForegroundService : Service() {
                     return
                 }
                 val endedAt = System.currentTimeMillis()
-                val timeFormat = DateFormat.getTimeFormat(this@AlarmForegroundService)
+                val timeFormat = TimeFormat.formatter(this@AlarmForegroundService)
                 val message = getString(
                     R.string.notification_missed_alarm_detail,
                     (now - startedAtElapsed) / 60_000L,

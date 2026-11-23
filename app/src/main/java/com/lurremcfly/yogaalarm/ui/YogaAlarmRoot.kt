@@ -56,8 +56,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lurremcfly.yogaalarm.alarm.AlarmForegroundService
 import com.lurremcfly.yogaalarm.alarm.AlarmScheduler
+import com.lurremcfly.yogaalarm.billing.OwnershipResolution
 import com.lurremcfly.yogaalarm.billing.PlayBillingManager
 import com.lurremcfly.yogaalarm.data.AlarmStore
+import com.lurremcfly.yogaalarm.data.AlarmStorageLock
 import com.lurremcfly.yogaalarm.data.AlarmOccurrenceStore
 import com.lurremcfly.yogaalarm.data.ProTrialStore
 import com.lurremcfly.yogaalarm.BuildConfig
@@ -65,12 +67,16 @@ import com.lurremcfly.yogaalarm.analytics.MonetizationAnalytics
 import com.lurremcfly.yogaalarm.data.WakeProgressStore
 import com.lurremcfly.yogaalarm.model.AlarmConfig
 import com.lurremcfly.yogaalarm.model.AlarmOccurrence
+import com.lurremcfly.yogaalarm.model.FreeTransition
+import com.lurremcfly.yogaalarm.model.TrialEnrollment
 import com.lurremcfly.yogaalarm.model.YogaPose
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+
+private class PendingSchedule(val editorSave: Boolean)
 
 @Composable
 internal fun YogaAlarmRoot(
@@ -124,14 +130,6 @@ internal fun YogaAlarmRoot(
     var cameraAlarm by rememberSaveable { mutableStateOf<AlarmConfig?>(null) }
     var routineOccurrenceToken by rememberSaveable { mutableStateOf<String?>(null) }
     var freeSettingsOpen by rememberSaveable { mutableStateOf(false) }
-    var restoreOpen by rememberSaveable { mutableStateOf(false) }
-    var restorationOffered by rememberSaveable { mutableStateOf(settingsPreferences.getBoolean("trial_restoration_handled", false)) }
-    fun finishRestoration() {
-        restoreOpen = false
-        restorationOffered = true
-        settingsPreferences.edit().putBoolean("trial_restoration_handled", true).apply()
-    }
-    var restoreSelected by remember { mutableStateOf<Set<Long>>(emptySet()) }
     var paywallEntry by rememberSaveable { mutableStateOf("manual") }
     var paywallFeature by rememberSaveable { mutableStateOf<String?>(null) }
     var testingBusy by remember { mutableStateOf(false) }
@@ -139,12 +137,10 @@ internal fun YogaAlarmRoot(
     val trialEnabled = !internalTestMode || internalTestTrial
     val activeTrial = trial.active && trialEnabled
     val effectivePro = (if (internalTestMode) internalTestPro else proEntitlement != null) || activeTrial
-    val hasUnreviewedAlarms = trialEnabled && !effectivePro && alarms.any(trial::needsFreeReview)
     val trialStatus = (if (proEntitlement != null || !trialEnabled) null else when {
-        activeTrial -> "Pro preview · ${trial.remaining} alarm days left"
-        hasUnreviewedAlarms -> "Pro preview complete. Review free settings for alarms that still use a Pro routine or sound."
-        trial.awaitingPurchaseResolution -> "Pro preview complete. Checking purchase status."
-        trial.exhausted -> "Your Pro preview is complete. Future alarms use your free settings."
+        activeTrial -> "Pro trial · ${trial.remaining} alarm ${if (trial.remaining == 1) "day" else "days"} left"
+        trial.awaitingPurchaseResolution -> "Pro trial complete. Checking purchase status."
+        trial.exhausted -> "Your Pro trial is complete. Future alarms use your free settings."
         else -> null
     })
     val onboardingPreferences = remember { context.getSharedPreferences("onboarding", Context.MODE_PRIVATE) }
@@ -171,18 +167,65 @@ internal fun YogaAlarmRoot(
     }
     val snackbarHost = remember { SnackbarHostState() }
     val snackbarScope = rememberCoroutineScope()
-    fun saveAlarm(config: AlarmConfig, base: AlarmConfig? = editorBase, enableOnSave: Boolean = false): AlarmConfig? {
-        val savedDraft = store.saveEdited(config, base, billingManager.state.value.entitlement != null, enableOnSave)
-        if (savedDraft == null) {
-            alarms = store.load()
-            snackbarScope.launch { snackbarHost.showSnackbar("Settings changed. Review your routine and free settings before saving.") }
+    var pendingSchedules by remember { mutableStateOf<Map<Long, PendingSchedule>>(emptyMap()) }
+    var schedulingFailures by remember { mutableStateOf<Map<Long, Boolean>>(emptyMap()) }
+    fun showScheduleResult(alarm: AlarmConfig, persisted: Boolean) {
+        val message = when {
+            !persisted -> "Couldn’t save the scheduling result. Alarm needs attention."
+            alarm.scheduleNeedsRepair -> "Couldn’t enable alarm. It’s saved and switched off. Check alarm permissions or retry."
+            alarm.enabled -> AlarmScheduler.confirmation(alarm)
+            else -> "Alarm switched off"
+        }
+        snackbarHost.currentSnackbarData?.dismiss()
+        snackbarScope.launch { snackbarHost.showSnackbar(message) }
+    }
+    fun scheduleAlarm(id: Long, expected: AlarmConfig? = null, retry: Boolean = false, enabled: Boolean? = null, showSuccess: Boolean = true) {
+        val operation = PendingSchedule(editorSave = false)
+        pendingSchedules = pendingSchedules + (id to operation)
+        schedulingFailures = schedulingFailures - id
+        snackbarScope.launch {
+            val (requested, result) = withContext(Dispatchers.IO) {
+                val latest = expected ?: store.load().firstOrNull { it.id == id }
+                latest to latest?.let { store.schedule(it, retry, enabled) }
+            }
+            if (pendingSchedules[id] !== operation) return@launch
+            val (latestAlarm, latestProgress) = withContext(Dispatchers.IO) {
+                store.load().firstOrNull { it.id == id } to wakeProgressStore.load()
+            }
+            if (pendingSchedules[id] !== operation) return@launch
+            wakeProgress = latestProgress
+            pendingSchedules = pendingSchedules - id
+            if (result == null || latestAlarm != result.alarm) return@launch
+            // Publish only this operation's fields; another alarm may have changed during IO.
+            alarms = alarms.map { if (it.id == id && (it == requested || it == result.alarm)) result.alarm else it }
+            if (!result.persisted) schedulingFailures = schedulingFailures + (id to (enabled ?: true))
+            if (!showSuccess && result.persisted && !result.alarm.scheduleNeedsRepair) return@launch
+            showScheduleResult(result.alarm, result.persisted)
+        }
+    }
+    suspend fun saveAlarm(config: AlarmConfig, base: AlarmConfig?): AlarmConfig? {
+        if (pendingSchedules[config.id]?.editorSave == true) return null
+        val operation = PendingSchedule(editorSave = true)
+        pendingSchedules = pendingSchedules + (config.id to operation)
+        val saved = withContext(Dispatchers.IO) {
+            store.saveEdited(config, base, billingManager.state.value.entitlement != null, enableOnSave = true)
+        }
+        val (current, progress) = withContext(Dispatchers.IO) {
+            store.load().firstOrNull { it.id == config.id } to wakeProgressStore.load()
+        }
+        if (pendingSchedules[config.id] !== operation) return null
+        pendingSchedules = pendingSchedules - config.id
+        wakeProgress = progress
+        alarms = when {
+            current == null -> alarms.filterNot { it.id == config.id }
+            alarms.any { it.id == config.id } -> alarms.map { if (it.id == config.id) current else it }
+            else -> alarms + current
+        }
+        if (saved == null) {
+            snackbarScope.launch { snackbarHost.showSnackbar("Couldn’t save alarm. Review your routine and try Save again.") }
             return null
         }
-        val repaired = trialEnabled && !effectivePro && base != null && trial.needsFreeReview(base) && savedDraft.customization.isFree
-        val scheduled = AlarmScheduler.schedule(context, savedDraft, preserveSnooze = repaired)
-        val saved = if (savedDraft.enabled && !scheduled) savedDraft.copy(enabled = false) else savedDraft
-        alarms = if (saved != savedDraft) store.update { list -> list.map { if (it.id == saved.id) it.copy(enabled = false) else it } } else store.load()
-        wakeProgress = wakeProgressStore.load()
+        if (current == null) return null
         if (base == null) analytics.recordOnce("first_alarm_saved", "installation")
         if (!internalTestMode && activeTrial && !saved.customization.isFree) {
             analytics.record("trial_customization_saved", mapOf(
@@ -190,16 +233,10 @@ internal fun YogaAlarmRoot(
                 "hold_customized" to saved.routine.any { it.durationSeconds != 20 }.toString(),
                 "sound_customized" to (!saved.sound.isFree).toString(),
             ))
-            if (base?.trialFallback != saved.trialFallback) analytics.record("fallback_confirmed")
         }
-        val message = when {
-            config.enabled && !scheduled -> "Couldn’t schedule alarm. It’s saved and switched off. Check alarm permissions."
-            saved.enabled -> AlarmScheduler.confirmation(saved)
-            else -> "Alarm switched off"
-        }
-        snackbarHost.currentSnackbarData?.dismiss()
-        snackbarScope.launch { snackbarHost.showSnackbar(message) }
-        return saved
+        schedulingFailures = schedulingFailures - saved.id
+        showScheduleResult(current, persisted = true)
+        return current
     }
     var firedRoutine by rememberSaveable { mutableStateOf(false) }
     var remainingSnoozes by rememberSaveable { mutableStateOf(0) }
@@ -213,6 +250,7 @@ internal fun YogaAlarmRoot(
         onAlarmPresentationFinished()
         firedRoutine = false
         remainingSnoozes = 0
+        trial = trialStore.load()
         alarms = store.load()
         wakeProgress = wakeProgressStore.load()
         pendingEditorAlarm = null
@@ -230,14 +268,13 @@ internal fun YogaAlarmRoot(
     ) { permissionFlowInFlight = false; readinessRefresh += 1 }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { permissionFlowInFlight = false; readinessRefresh += 1 }
+    ) { granted ->
+        recordCameraPermissionResult(context, granted)
+        permissionFlowInFlight = false
+        readinessRefresh += 1
+    }
     val fixCamera: () -> Unit = {
-        val activity = context as? Activity
-        val requested = permissionPreferences.getBoolean("camera_requested", false)
-        if (requested && activity?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == false) {
-            context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
-        } else {
-            permissionPreferences.edit().putBoolean("camera_requested", true).apply()
+        if (!openSettingsForDeniedCamera(context)) {
             permissionFlowInFlight = true
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
@@ -288,26 +325,41 @@ internal fun YogaAlarmRoot(
         trial = trialStore.load()
     }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { resumed = false }
+    LaunchedEffect(internalTestMode, trial.transition) {
+        val observed = trial
+        val testing = internalTestMode
+        withContext(Dispatchers.IO) {
+            if (!testing) {
+                val variant = if (observed.enrollment == TrialEnrollment.PREVIEW) "trial" else observed.enrollment.name.lowercase()
+                analytics.setAssignment(variant, 1, observed.enrolledAt)
+            }
+            analytics.recordOnce("first_launch", "installation")
+            if (!testing) {
+                analytics.recordOnce("experiment_assigned", "installation")
+                if (observed.exhausted && observed.transition == FreeTransition.APPLIED) {
+                    analytics.recordOnce("free_transition_applied", "preview_v1")
+                }
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            if (!internalTestMode) analytics.setAssignment(if (trial.enrollment == com.lurremcfly.yogaalarm.model.TrialEnrollment.PREVIEW) "trial" else trial.enrollment.name.lowercase(), 1, trial.enrolledAt)
-            analytics.recordOnce("first_launch", "installation")
-            if (!internalTestMode) analytics.recordOnce("experiment_assigned", "installation")
             occurrenceStore.pendingCompletions().sortedBy { it.completedAt }.forEach(::recordCompletionProgress)
         }
         wakeProgress = wakeProgressStore.load()
     }
-    LaunchedEffect(billingState.entitlement, billingState.verifyingPurchases, billingState.purchasing, billingState.pendingPurchase, billingState.checkoutCanceled, billingState.ownershipResolution, billingState.recoverablePaidAccess, trial.transition, internalTestMode, internalTestPro, internalTestTrial, hasUnreviewedAlarms) {
-        trial = withContext(Dispatchers.IO) {
-            val state = billingManager.state.value
-            trialStore.reconcile(state.entitlement != null, state.verifyingPurchases || state.purchasing, state.recoverablePaidAccess,
-                state.ownershipResolution == com.lurremcfly.yogaalarm.billing.OwnershipResolution.RESOLVED || state.pendingPurchase || state.checkoutCanceled)
+    LaunchedEffect(billingState.entitlement, billingState.deferTrialConversion, billingState.recoverablePaidAccess, trial.transition, internalTestMode, internalTestPro, internalTestTrial) {
+        withContext(Dispatchers.IO) {
+            synchronized(AlarmStorageLock) {
+                val state = billingManager.state.value
+                trialStore.reconcile(state.entitlement != null, state.deferTrialConversion, state.recoverablePaidAccess,
+                    state.ownershipResolution == OwnershipResolution.RESOLVED)
+            }
         }
+        trial = trialStore.load()
         alarms = store.load()
         if (trialStore.hasPaidAccess(billingManager.state.value.entitlement != null)) {
             proPaywallOpen = false
-            restoreSelected = alarms.filter { it.trialOriginal != null && it.customization == it.trialFallback }.map { it.id }.toSet()
-            if (!restorationOffered && restoreSelected.isNotEmpty()) restoreOpen = true
         }
     }
     LaunchedEffect(Unit) {
@@ -322,6 +374,9 @@ internal fun YogaAlarmRoot(
     }
     val cameraReady = remember(readinessRefresh) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+    }
+    LaunchedEffect(cameraReady) {
+        if (cameraReady) recordCameraPermissionResult(context, granted = true)
     }
     val notificationsReady = remember(readinessRefresh) {
         val channelEnabled = context.getSystemService(NotificationManager::class.java)
@@ -355,9 +410,10 @@ internal fun YogaAlarmRoot(
     }
 
     LaunchedEffect(exactAlarmsReady) {
-        if (exactAlarmsReady) {
-            alarms.filter { it.enabled }.forEach { AlarmScheduler.schedule(context, it, preserveSnooze = true) }
-        }
+        withContext(Dispatchers.IO) { store.load() }
+            .filter { it.enabled || (exactAlarmsReady && it.scheduleNeedsRepair) }
+            .filterNot { it.id in pendingSchedules }
+            .forEach { scheduleAlarm(it.id, expected = it, retry = it.scheduleNeedsRepair, showSuccess = false) }
     }
     LaunchedEffect(firedAlarmId, firedOccurrenceToken) {
         val alarmId = firedAlarmId ?: return@LaunchedEffect
@@ -372,7 +428,6 @@ internal fun YogaAlarmRoot(
         privacySheetOpen = false
         settingsSheetOpen = false
         freeSettingsOpen = false
-        restoreOpen = false
         onboardingPractice = false
         onboardingPracticeComplete = false
         onboardingPending = !onboardingPreferences.getBoolean("completed_v1", false)
@@ -394,12 +449,12 @@ internal fun YogaAlarmRoot(
     val safeHome = resumed && !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked &&
         route == "home" && !firedRoutine && firedAlarmId == null &&
         AlarmForegroundService.ringingAlarm.value == null && !occurrenceStore.hasInFlight() && !onboardingPending && onboardingStep == null &&
-        !onboardingInvitationOpen && !permissionFlowInFlight && !settingsSheetOpen && !privacySheetOpen && !freeSettingsOpen && !restoreOpen
+        !onboardingInvitationOpen && !permissionFlowInFlight && !settingsSheetOpen && !privacySheetOpen && !freeSettingsOpen
     fun testingBlocked(): Boolean {
         return !resumed || route != "home" ||
             firedRoutine || firedAlarmId != null || AlarmForegroundService.ringingAlarm.value != null ||
             occurrenceStore.hasInFlight() || onboardingPending || onboardingStep != null ||
-            onboardingInvitationOpen || permissionFlowInFlight || proPaywallOpen || restoreOpen ||
+            onboardingInvitationOpen || permissionFlowInFlight || proPaywallOpen ||
             context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
     }
     fun changeTestingState(change: () -> Boolean) {
@@ -480,7 +535,6 @@ internal fun YogaAlarmRoot(
                         weekStartsOnSunday = weekStartsOnSunday,
                         isPro = effectivePro,
                         trialActive = activeTrial && proEntitlement == null,
-                        needsFreeReview = trialEnabled && !effectivePro && current != null && trial.needsFreeReview(current),
                         onUpgrade = { feature ->
                             paywallEntry = "locked_feature"
                             paywallFeature = when (feature) {
@@ -497,13 +551,17 @@ internal fun YogaAlarmRoot(
                             route = "home"
                         },
                         onSave = { saved ->
-                            val actual = saveAlarm(saved.copy(enabled = true), enableOnSave = true) ?: return@AlarmEditorScreen
-                            savedAlarmId = saved.id
-                            pendingEditorAlarm = null
-                            route = "home"
-                            if (onboardingStep == OnboardingStep.Save) {
-                                onboardingSavedAlarm = actual
-                                onboardingStep = OnboardingStep.Complete
+                            val base = editorBase
+                            snackbarScope.launch {
+                                val actual = saveAlarm(saved, base) ?: return@launch
+                                if (route != "editor" || editingAlarmId != saved.id || firedRoutine) return@launch
+                                savedAlarmId = saved.id
+                                pendingEditorAlarm = null
+                                route = "home"
+                                if (onboardingStep == OnboardingStep.Save) {
+                                    onboardingSavedAlarm = actual
+                                    onboardingStep = OnboardingStep.Complete
+                                }
                             }
                         },
                         onTestRoutine = { draft ->
@@ -554,11 +612,10 @@ internal fun YogaAlarmRoot(
                             if (onboardingPractice) onboardingPracticeComplete = true
                             else if (firedRoutine && token != null && token == routineOccurrenceToken) {
                                 snackbarScope.launch {
-                                    val previousTrial = trialStore.load()
                                     val committed = withContext(Dispatchers.IO) {
                                         trialStore.complete(token, completedAt,
                                             paid = { billingManager.state.value.entitlement != null },
-                                            verifying = { billingManager.state.value.verifyingPurchases || billingManager.state.value.purchasing })
+                                            verifying = { billingManager.state.value.deferTrialConversion })
                                     }
                                     if (committed) {
                                         withContext(Dispatchers.IO) {
@@ -569,7 +626,6 @@ internal fun YogaAlarmRoot(
                                         alarms = store.load()
                                         analytics.recordOnce("first_real_alarm_completed", "installation")
                                         analytics.recordOnce("alarm_day_completed", completedAt.toLocalDate().toString())
-                                        if (!internalTestMode && trial.transition != previousTrial.transition && trial.transition == com.lurremcfly.yogaalarm.model.FreeTransition.APPLIED) analytics.recordOnce("free_transition_applied", "preview_v1")
                                     }
                                 }
                             }
@@ -627,6 +683,14 @@ internal fun YogaAlarmRoot(
                 }
                 else -> AlarmHomeScreen(
                     alarms = alarms,
+                    schedulingIds = pendingSchedules.keys,
+                    schedulingFailures = schedulingFailures.keys,
+                    onRetrySchedule = { id ->
+                        if (id !in pendingSchedules) {
+                            val enabled = schedulingFailures[id]
+                            scheduleAlarm(id, retry = enabled == null, enabled = enabled)
+                        }
+                    },
                     streakDays = wakeProgress.streakDays,
                     previousStreakDays = presentedStreakDays,
                     bestStreakDays = wakeProgress.bestStreakDays,
@@ -647,7 +711,10 @@ internal fun YogaAlarmRoot(
                         paywallFeature = null
                         proPaywallOpen = true
                     } },
-                    onOpenSettings = { if (onboardingStep == null) settingsSheetOpen = true },
+                    onOpenSettings = { if (onboardingStep == null) {
+                        trial = trialStore.load()
+                        settingsSheetOpen = true
+                    } },
                     cameraReady = cameraReady,
                     notificationsReady = notificationsReady,
                     fullScreenReady = fullScreenReady,
@@ -674,19 +741,20 @@ internal fun YogaAlarmRoot(
                         }
                     },
                     onToggleAlarm = { id, enabled ->
-                        if (onboardingStep == null) store.load().firstOrNull { it.id == id }?.let {
-                            val reviewExpired = trialEnabled && !effectivePro && trial.needsFreeReview(it)
-                            val reviewPreview = activeTrial && !it.customization.isFree && it.trialFallback == null
-                            if (enabled && (reviewExpired || reviewPreview)) {
-                                editorBase = it; editingAlarmId = it.id; pendingEditorAlarm = it; route = "editor"
-                            } else saveAlarm(it.copy(enabled = enabled), it)
+                        if (onboardingStep == null && id !in pendingSchedules) {
+                            scheduleAlarm(id, enabled = enabled)
                         }
                     },
                     onDeleteAlarm = { id ->
                         if (onboardingStep == null) {
-                            AlarmScheduler.cancel(context, id)
-                            alarms = store.update { list -> list.filterNot { it.id == id } }
-                            wakeProgress = wakeProgressStore.load()
+                            pendingSchedules = pendingSchedules - id
+                            schedulingFailures = schedulingFailures - id
+                            snackbarScope.launch {
+                                val deleted = withContext(Dispatchers.IO) { store.delete(id) }
+                                if (deleted) alarms = alarms.filterNot { it.id == id }
+                                else snackbarScope.launch { snackbarHost.showSnackbar("Couldn’t delete alarm. It remains saved.") }
+                                wakeProgress = withContext(Dispatchers.IO) { wakeProgressStore.load() }
+                            }
                         }
                     },
                     onReorderAlarms = { reordered ->
@@ -701,8 +769,9 @@ internal fun YogaAlarmRoot(
         }
         if (route == "home" && firedAlarmId == null && !firedRoutine) {
             onboardingStep?.let { step ->
-                OnboardingOverlay(step, onboardingTargets, onboardingSavedAlarm ?: pendingEditorAlarm,
-                    alarmReady = alarmReady,
+                val tourAlarm = onboardingSavedAlarm?.let { saved -> alarms.firstOrNull { it.id == saved.id } } ?: pendingEditorAlarm
+                OnboardingOverlay(step, onboardingTargets, tourAlarm,
+                    alarmReady = alarmReady && tourAlarm?.id !in pendingSchedules && tourAlarm?.id !in schedulingFailures,
                     trialActive = activeTrial && proEntitlement == null,
                     onCustomize = if (effectivePro) ({
                         val saved = onboardingSavedAlarm
@@ -758,8 +827,13 @@ internal fun YogaAlarmRoot(
         )
     }
 
+    fun openLink(url: String) {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    }
+
     if (paywallVisible) {
         ProPaywallSheet(
+            onOpenLink = ::openLink,
             entitlement = proEntitlement,
             subscriptionAutoRenewing = billingState.subscriptionAutoRenewing.takeUnless { internalTestMode },
             prices = billingState.offers.mapValues { it.value.formattedPrice },
@@ -776,7 +850,7 @@ internal fun YogaAlarmRoot(
             trialExhausted = trialEnabled && trial.exhausted && proEntitlement == null,
             entryFeature = paywallFeature,
             customizationSummary = if (trialEnabled && (trial.active || trial.exhausted)) {
-                if (alarms.none { it.trialCustomization != null || !it.customization.isFree }) "Your current routine can continue free unchanged."
+                if (alarms.all { it.customization.isFree }) "Your current routine can continue free unchanged."
                 else "Pro keeps your customized poses, timing and sounds. Your alarms and streak remain available free."
             } else null,
             onViewFreeSettings = { proPaywallOpen = false; freeSettingsOpen = true },
@@ -833,7 +907,7 @@ internal fun YogaAlarmRoot(
                 route = "home"
             },
             monetizationTesting = {
-                MonetizationTestingSection(
+                if (BuildConfig.DEBUG) MonetizationTestingSection(
                     testingMode = internalTestMode,
                     proAccess = internalTestPro,
                     trialDaysRemaining = trial.remaining.takeIf { internalTestTrial },
@@ -855,9 +929,7 @@ internal fun YogaAlarmRoot(
     if (privacySheetOpen) {
         PrivacyInfoSheet(
             onDismiss = { privacySheetOpen = false },
-            onReadPolicy = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_POLICY_URL)))
-            },
+            onOpenLink = ::openLink,
         )
     }
 
@@ -865,45 +937,36 @@ internal fun YogaAlarmRoot(
         onDismissRequest = { freeSettingsOpen = false },
         title = { Text("Your free settings") },
         text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text("Only the first successful real alarm on each local date counts. After five, future alarms use these settings. Practice and stops use no allowance. No payment details or automatic charge.")
+            Text("Only the first successful real alarm on each local date counts. After five, future alarms use these settings. Practice and stops use no allowance.")
             alarms.forEach { alarm ->
-                val free = alarm.customization.takeIf { it.isFree }
-                    ?: alarm.trialFallback?.takeIf { it.isFree && alarm.trialCustomization == alarm.customization }
-                val summary = if (!effectivePro && trial.needsFreeReview(alarm)) "Still uses the saved routine. Edit this alarm to confirm free settings."
-                    else free?.summary ?: "No confirmed free settings. Choose your free routine before continuing."
+                val summary = alarm.suggestedFreeFallback().summary
                 Text("${alarm.name}\n$summary")
                 TextButton(onClick = {
                     freeSettingsOpen = false
                     editorBase = alarm; editingAlarmId = alarm.id; pendingEditorAlarm = null; route = "editor"
                 }) { Text("Edit routine") }
             }
-            if (alarms.isEmpty()) Text("Three free poses at 20 seconds each, with a free sound. Confirm the exact routine when saving Pro customization.")
+            if (alarms.isEmpty()) Text("Three free poses at 20 seconds each, with a free sound. Free settings apply automatically when the trial ends.")
         } },
         confirmButton = { TextButton(onClick = { freeSettingsOpen = false }) { Text("Done") } },
     )
-    if (restoreOpen && proEntitlement != null && resumed && !permissionFlowInFlight && route != "camera" && !firedRoutine && firedAlarmId == null && onboardingStep == null &&
-        !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked && !proPaywallOpen && !settingsSheetOpen && !privacySheetOpen && !freeSettingsOpen) AlertDialog(
-        onDismissRequest = ::finishRestoration,
-        title = { Text("Restore your trial routine") },
-        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
-            alarms.filter { it.trialOriginal != null }.forEach { alarm ->
-                val unchanged = alarm.customization == alarm.trialFallback
-                Row {
-                    Checkbox(checked = alarm.id in restoreSelected, enabled = unchanged, onCheckedChange = { checked ->
-                        restoreSelected = if (checked) restoreSelected + alarm.id else restoreSelected - alarm.id
-                    })
-                    Text("${alarm.name}\n${alarm.trialOriginal!!.summary}" + if (unchanged) "" else "\nYour newer edits are kept.")
-                }
-            }
-        } },
-        confirmButton = { TextButton(onClick = {
-            alarms = trialStore.restore(restoreSelected) { billingManager.state.value.entitlement != null }
-            if (!internalTestMode) analytics.record("trial_routine_restored")
-            finishRestoration()
-        }) { Text("Restore selected") } },
-        dismissButton = { TextButton(onClick = ::finishRestoration) { Text("Keep current routine") } },
-    )
+
+}
+
+internal fun openSettingsForDeniedCamera(context: Context): Boolean {
+    val preferences = context.getSharedPreferences("alarm_readiness", Context.MODE_PRIVATE)
+    if (preferences.getBoolean("camera_denied", false) &&
+        (context as? Activity)?.shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) == false
+    ) {
+        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+        return true
+    }
+    return false
+}
+
+internal fun recordCameraPermissionResult(context: Context, granted: Boolean) {
+    val preferences = context.getSharedPreferences("alarm_readiness", Context.MODE_PRIVATE)
+    preferences.edit().putBoolean("camera_denied", !granted).apply()
 }
 
 private const val PLAY_SUBSCRIPTIONS_URL = "https://play.google.com/store/account/subscriptions?sku=yoga_alarm_pro&package=com.lurremcfly.yogaalarm"
-private const val PRIVACY_POLICY_URL = "https://www.yogaalarm.com/privacy"

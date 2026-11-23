@@ -2,6 +2,7 @@ package com.lurremcfly.yogaalarm.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.FreeTransition
 import com.lurremcfly.yogaalarm.model.ProTrial
 import com.lurremcfly.yogaalarm.model.TrialEnrollment
@@ -62,11 +63,11 @@ class ProTrialStore(private val context: Context) {
     }
 
     fun internalTestingEnabled(): Boolean = synchronized(AlarmStorageLock) {
-        preferences.getBoolean("pro_preview_internal_testing", false)
+        BuildConfig.DEBUG && preferences.getBoolean("pro_preview_internal_testing", false)
     }
 
     fun setInternalTestingEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
-        if (blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!BuildConfig.DEBUG || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = internalTestingEnabled()
         val committed = preferences.edit().putBoolean("pro_preview_internal_testing", enabled).commit()
         if (!committed) preferences.edit().putBoolean("pro_preview_internal_testing", previous).commit()
@@ -170,14 +171,17 @@ class ProTrialStore(private val context: Context) {
     ): Boolean {
         val previous = load()
         var trial = if (currentPaid || !updatePreview) previous else previous.complete(date)
-        if (updatePreview && trial.exhausted && currentVerifying) trial = trial.copy(awaitingPurchaseResolution = true)
         val store = AlarmStore(context)
         val current = store.load()
-        val canConvert = updatePreview && trial.exhausted && !currentPaid && !currentVerifying && !trial.awaitingPurchaseResolution
-        val converted = if (canConvert) convert(current) else current
-        if (canConvert) {
-            trial = trial.copy(transition = if (converted.any { !it.customization.isFree && it.trialOriginal == null }) FreeTransition.PENDING else FreeTransition.APPLIED)
-        }
+        val converted = if (previous.active && trial.exhausted) {
+            if (currentVerifying) {
+                trial = trial.copy(awaitingPurchaseResolution = true)
+                current
+            } else {
+                trial = trial.copy(transition = FreeTransition.APPLIED)
+                convert(current)
+            }
+        } else current
         val editor = preferences.edit()
         stageOutcome(editor)
         stage(editor, trial)
@@ -197,17 +201,22 @@ class ProTrialStore(private val context: Context) {
     fun reconcile(paid: Boolean, verifying: Boolean, recoverablePaid: Boolean = false, ownershipResolved: Boolean = true): ProTrial = synchronized(AlarmStorageLock) {
         val previous = load()
         if (internalTestingEnabled() && !internalTestTrialEnabled()) return@synchronized previous
-        var trial = previous
         val store = AlarmStore(context)
         val current = store.load()
         var alarms = current
         val paidAccess = hasPaidAccess(paid)
-        if (paidAccess && recoverablePaid) trial = trial.retire()
-        else if (!paidAccess && (!verifying || internalTestTrialEnabled()) &&
-            (!trial.awaitingPurchaseResolution || ownershipResolved || internalTestTrialEnabled()) && trial.exhausted && trial.transition != FreeTransition.APPLIED) {
-            alarms = convert(current)
-            trial = trial.copy(awaitingPurchaseResolution = false, transition = if (alarms.any { !it.customization.isFree && it.trialOriginal == null }) FreeTransition.PENDING else FreeTransition.APPLIED)
+        val trial = when {
+            paidAccess && recoverablePaid -> previous.retire()
+            !previous.exhausted -> previous
+            internalTestTrialEnabled() || (!paidAccess && ownershipResolved && !verifying) -> {
+                alarms = convert(current)
+                previous.copy(awaitingPurchaseResolution = false, transition = FreeTransition.APPLIED)
+            }
+            previous.transition != FreeTransition.APPLIED || current.any { !it.customization.isFree } ->
+                previous.copy(awaitingPurchaseResolution = true)
+            else -> previous
         }
+        if (trial == previous && alarms == current) return@synchronized previous
         val editor = preferences.edit()
         stage(editor, trial)
         store.stage(editor, alarms)
@@ -229,20 +238,13 @@ class ProTrialStore(private val context: Context) {
         committed
     }
 
-    fun restore(ids: Set<Long>, paid: () -> Boolean): List<com.lurremcfly.yogaalarm.model.AlarmConfig> = synchronized(AlarmStorageLock) {
-        val store = AlarmStore(context)
-        if (!hasPaidAccess(paid())) return@synchronized store.load()
-        store.update { current -> current.map { alarm ->
-            val original = alarm.trialOriginal
-            if (alarm.id !in ids || original == null || alarm.customization != alarm.trialFallback) alarm
-            else alarm.copy(routine = original.routine, sound = original.sound, trialOriginal = null, trialFallback = null, trialCustomization = null)
-        } }
-    }
-
     private fun convert(alarms: List<com.lurremcfly.yogaalarm.model.AlarmConfig>) = alarms.map { alarm ->
-        val fallback = alarm.trialFallback
-        if (alarm.trialCustomization == null || alarm.trialOriginal != null || fallback?.isFree != true || alarm.customization != alarm.trialCustomization) alarm
-        else alarm.copy(routine = fallback.routine, sound = fallback.sound, trialOriginal = alarm.customization)
+        if (alarm.customization.isFree) alarm else {
+            val fallback = alarm.suggestedFreeFallback()
+            alarm.copy(routine = fallback.routine, sound = fallback.sound,
+                trialFallback = fallback, trialCustomization = alarm.customization,
+                trialOriginal = alarm.trialOriginal ?: alarm.customization)
+        }
     }
 
     private fun stage(editor: SharedPreferences.Editor, trial: ProTrial, key: String = trialKey) {

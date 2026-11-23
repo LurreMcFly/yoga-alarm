@@ -4,16 +4,16 @@ This is a local preview and Play Billing acceptance runbook, not production appr
 
 ## Quick app testing
 
-Build and install the app normally, including a signed release. No testing build variable is needed.
+Use the Debug build as the current internal channel. Testing controls and saved test overrides are disabled in public Release builds, including Play internal-track installations. No signed internal Release capability is configured. Rollout and analytics gates remain independent.
 
 1. Open **Settings** and turn on **Testing mode** beneath Preferences.
 2. Switch **Test Pro access** on for Pro features or off for Free features, regardless of real purchase ownership.
-3. With **Test Pro access** off, enable **Test trial** and select **Day 1–5**. Day 1 has five alarm days left; Day 5 has one left. Home, Settings and the editor show the corresponding preview experience, including fallback review for Pro customizations.
+3. With **Test Pro access** off, enable **Test trial** and select **Day 1–5**. Day 1 has five alarm days left; Day 5 has one left. Home, Settings and the editor show the corresponding preview experience, including one-action Save for Pro customizations.
 4. Turn **Test trial** off for fully Free access, or turn **Testing mode** off to return to normal purchase and preview behavior.
 
-Testing mode and Test trial default off. Choices persist across restart. Pro testing temporarily hides the trial controls; switching Pro off resumes the selected test trial. Disabling/re-enabling Testing mode also preserves the test trial. Turning Test trial off and back on starts a new Day 1. The controls are present in debug and release builds. Changes are blocked during ringing, snooze, routines and other unsafe app flows. A failed save keeps the previous setting.
+Testing mode and Test trial default off. Choices persist across restart. Pro testing temporarily hides the trial controls; switching Pro off resumes the selected test trial. Disabling/re-enabling Testing mode also preserves the test trial. Turning Test trial off and back on starts a new Day 1. The controls are present only in Debug builds. Public Release ignores previously saved Testing mode, Test Pro access and Test trial flags, uses genuine ownership and the normal trial record, and rejects test mutations. Changes are blocked during ringing, snooze, routines and other unsafe app flows. A failed save keeps the previous setting.
 
-The test trial has its own saved record; your normal preview remains unchanged. Selecting a day seeds zero to four prior qualifying dates before today and clears only test-trial milestones. It does not create occurrences, add streak/history entries, reset onboarding, change purchase records, or edit saved alarms. A successful real alarm completion consumes one test-trial day per distinct local date; duplicate completions/replays on that date do not consume another. Alarm Test/practice does not count. You can reselect a day to repeat a scenario today. At zero, the normal expiry/fallback rules apply to future saved alarms, preserving already ringing/snoozed snapshots. This uses your saved alarms: matching confirmed free fallbacks can replace their future Pro customization. Selecting an earlier day does not automatically restore a converted routine. The normal preview stays paused throughout testing, including when simulating trial completion. Trial-test checkout is disabled; turn Testing mode off for genuine billing checks.
+The test trial has its own saved record; your normal preview remains unchanged. Selecting a day seeds zero to four prior qualifying dates before today and clears only test-trial milestones. It does not create occurrences, add streak/history entries, reset onboarding, change purchase records, or edit saved alarms. A successful real alarm completion consumes one test-trial day per distinct local date; duplicate completions/replays on that date do not consume another. Alarm Test/practice does not count. You can reselect a day to repeat a scenario today. At zero, the normal expiry/fallback rules apply to future saved alarms, preserving already ringing/snoozed snapshots. This uses your saved alarms: expiry derives free settings from each latest saved customization: retain free poses in the first three positions, replace Pro/missing positions with Mountain / Warrior II / Tree, use 20 seconds each, and keep free sound or replace Pro sound with Sunbird Morning Call. No confirmation or routine-restoration offer occurs. Duplicate free poses remain valid. Legacy missing/stale metadata and incorrectly APPLIED transitions are repaired through reconciliation. Selecting an earlier day does not automatically restore a converted routine. The normal preview stays paused throughout testing, including when simulating trial completion. Trial-test checkout is disabled; turn Testing mode off for genuine billing checks.
 
 Trial-day validation (2026-11-01, Android commit <pending>): debug/release Kotlin compilation and the same six focused JVM suites passed, 62 tests per variant, with no failures or skips. Added checks for all five selections, restart and normal-record isolation, real-owner/verification overrides, same-date completion/replay protection, confirmed future fallback at expiry, trial-aware editor validation, invalid/in-flight changes and failed-write rollback. Device UI and real Google Play delivery remain unverified.
 
@@ -21,9 +21,11 @@ Validation (2026-10-31, Android commit <pending>): debug and release Kotlin comp
 
 ## Build and signing
 
-Use the existing Android Studio **Build > Generate Signed Bundle / APK > Android App Bundle > release** workflow with the existing upload key. No property edit or separate testing artifact is needed. The old `proTrialInternalTesting` property and `PRO_TRIAL_INTERNAL_TESTING` build gate have been removed. Public preview rollout and analytics remain separate settings.
+Investigation (2026-11-02, Android commit <pending>): a tester reports a scheduled routine updating history while selected Day 4 remains at two days left after restarting. This is unresolved. A new service-lifecycle test and the existing isolated-trial completion test both pass, and debug/release Kotlin compilation passed. UI now reloads persisted trial state after billing reconciliation, when returning Home and when opening Settings, fixing a possible stale-display race; that does not establish the cause of a count that remains unchanged after restart. The local release bundle contains the isolated test-trial completion logic. Installed-build/completion-state evidence is still needed; no phone was connected.
 
-The debug variant still installs beside the regular app as **Yoga Alarm (test)** with package `com.lurremcfly.yogaalarm.debug`; release uses the normal package. Both include the runtime controls.
+Use Debug for local access/trial simulation. For genuine Play Billing acceptance, use the existing Android Studio **Build > Generate Signed Bundle / APK > Android App Bundle > release** workflow with the existing upload key. Release has no local testing controls. The old `proTrialInternalTesting` property and `PRO_TRIAL_INTERNAL_TESTING` build gate have been removed. Public preview rollout and analytics remain separate settings.
+
+The debug variant still installs beside the regular app as **Yoga Alarm (test)** with package `com.lurremcfly.yogaalarm.debug`; release uses the normal package. Only Debug includes the runtime controls.
 
 Command-line bundle generation remains:
 
@@ -35,7 +37,7 @@ Output: `app/build/outputs/bundle/release/app-release.aab`. This repository has 
 
 ## Google Play checks
 
-Turn **Testing mode** off in Settings when verifying real purchase-driven feature access and restoration. The local access switches do not validate checkout or ownership.
+In Debug, turn **Testing mode** off in Settings when verifying real purchase-driven feature access and Restore purchases. Release always uses genuine purchase/trial policy. The local access switches do not validate checkout or ownership.
 
 Use the signed Play-installed app and a license tester for billing acceptance. Internal-track membership and license testing are separate settings; confirm checkout identifies a test payment method before paying. See [Google's billing testing guide](https://developer.android.com/google/play/billing/test), [license tester setup](https://support.google.com/googleplay/android-developer/answer/6062777), and the [billing acceptance checklist](play-billing-setup.md#internal-testing-acceptance-checklist).
 
@@ -43,7 +45,7 @@ The notes below predate the runtime Testing mode switch. References to testing b
 
 ## Historical preview controls
 
-The detailed controls and phone sequence below describe the previous internal UI and are retained as historical test notes. The current simple workflow is **Quick app testing** above.
+The detailed controls and phone sequence below describe the previous internal UI and are retained as historical test notes. Their confirmation, routine restoration and Release-testing instructions are superseded by the current workflow above; they must not be used as current acceptance requirements. The current simple workflow is **Quick app testing** above.
 
 - **Test as non-paying user** lets an existing lifetime/subscription owner exercise the free/preview flow without refunding the purchase or changing Play accounts. It defaults off and persists in testing-enabled builds; builds with the testing flag false ignore a stale saved value. While on, preview UI, editing access, and real/synthetic preview-day accounting ignore paid access locally, and checkout is disabled. Actual Play entitlement, token verification, and ownership remain unchanged. This does not simulate a paid purchase or offline restoration. Use the license-test lifetime purchase described above for real paid/offline testing.
 - Reset deterministically starts a fresh preview at zero of five days. It preserves current routines, sounds, schedules, alarms, confirmed fallback/customization metadata, purchases, occurrence history, and wake progress. The old trial-original restoration snapshot and the previous restoration-offer dismissal marker are cleared, allowing a later real purchase to offer restoration again. It never restores expired Pro configurations; to test another fallback conversion after expiry, re-edit through the normal editor and review the fallback again.

@@ -15,6 +15,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -57,10 +58,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -256,6 +259,7 @@ internal fun CameraPermissionRoute(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
         permissionRequestInFlight = false
+        recordCameraPermissionResult(context, granted)
         permissionDenied = !granted
         permissionRefresh += 1
         if (granted) cameraStarted = true
@@ -265,8 +269,12 @@ internal fun CameraPermissionRoute(
         if (hasPermission) {
             cameraStarted = true
         } else if (!permissionRequestInFlight) {
-            permissionRequestInFlight = true
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            if (openSettingsForDeniedCamera(context)) {
+                permissionDenied = true
+            } else {
+                permissionRequestInFlight = true
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
         }
     }
     LaunchedEffect(cameraStartRequested, foreground, alarmService) {
@@ -322,29 +330,28 @@ internal fun CameraPermissionRoute(
                 showStop = isFiredAlarm && !alarm.stopButtonDisabled,
                 showEmergencyStop = isFiredAlarm && alarm.stopButtonDisabled,
                 showTechnicalStop = isFiredAlarm,
-                completionStreakDays = streakDays,
+                isTest = !isFiredAlarm,
+                completionStreakDays = if (isFiredAlarm) streakDays else 0,
                 onBack = onBack,
                 onStop = onStopAlarm,
                 onEmergencyStop = { emergencyStopOpen = true },
                 onTechnicalStop = onTechnicalStopAlarm,
+            )
+        } else if (isFiredAlarm) {
+            val needsPermission = permissionDenied && !hasPermission
+            AlarmRingingScreen(
+                alarm = alarm,
+                permissionDenied = needsPermission,
+                showStop = needsPermission || !alarm.stopButtonDisabled,
+                showSnooze = remainingSnoozes > 0,
+                showEmergencyStop = alarm.stopButtonDisabled && !needsPermission,
+                onStart = ::startCamera,
+                onStop = if (needsPermission) onTechnicalStopAlarm else onStopAlarm,
+                onSnooze = onSnooze,
+                onEmergencyStop = { emergencyStopOpen = true },
             )
         } else {
-            CameraReadyScreen(
-                ringingAlarm = alarm.takeIf { isFiredAlarm },
-                permissionDenied = permissionDenied,
-                showBack = !isFiredAlarm,
-                showStop = isFiredAlarm && !alarm.stopButtonDisabled,
-                snoozeMinutes = alarm.snoozeMinutes,
-                showSnooze = isFiredAlarm && remainingSnoozes > 0,
-                showEmergencyStop = isFiredAlarm && alarm.stopButtonDisabled && !permissionDenied,
-                showTechnicalStop = isFiredAlarm && permissionDenied,
-                onSnooze = onSnooze,
-                onStartCamera = ::startCamera,
-                onBack = onBack,
-                onStop = onStopAlarm,
-                onEmergencyStop = { emergencyStopOpen = true },
-                onTechnicalStop = onTechnicalStopAlarm,
-            )
+            TestPreparationScreen(permissionDenied && !hasPermission, ::startCamera, onBack)
         }
     }
 
@@ -363,36 +370,11 @@ internal fun CameraPermissionRoute(
 }
 
 @Composable
-private fun CameraReadyScreen(
-    ringingAlarm: AlarmConfig?,
+private fun TestPreparationScreen(
     permissionDenied: Boolean,
-    showBack: Boolean,
-    showStop: Boolean,
-    showSnooze: Boolean,
-    snoozeMinutes: Int,
-    showEmergencyStop: Boolean,
-    showTechnicalStop: Boolean,
-    onSnooze: () -> Unit,
     onStartCamera: () -> Unit,
     onBack: () -> Unit,
-    onStop: () -> Unit,
-    onEmergencyStop: () -> Unit,
-    onTechnicalStop: () -> Unit,
 ) {
-    if (ringingAlarm != null) {
-        AlarmRingingScreen(
-            alarm = ringingAlarm,
-            permissionDenied = permissionDenied,
-            showStop = showTechnicalStop || showStop,
-            showSnooze = showSnooze,
-            showEmergencyStop = showEmergencyStop,
-            onStart = onStartCamera,
-            onStop = if (showTechnicalStop) onTechnicalStop else onStop,
-            onSnooze = onSnooze,
-            onEmergencyStop = onEmergencyStop,
-        )
-        return
-    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -406,20 +388,17 @@ private fun CameraReadyScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (showBack) {
-                    TextButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .align(Alignment.Start),
-                    ) {
-                        Text("‹ Back", color = Color.White)
-                    }
+                TextButton(onClick = onBack, modifier = Modifier.align(Alignment.Start)) {
+                    Text("‹ Back", color = Color.White)
                 }
                 Column(
                     modifier = Modifier
                         .padding(top = 24.dp, bottom = 24.dp, start = 20.dp, end = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Image(painterResource(R.drawable.onboarding_phone_setup), contentDescription = null,
+                        modifier = Modifier.widthIn(max = 360.dp).fillMaxWidth())
+                    Spacer(Modifier.height(16.dp))
                     Text(
                         text = if (permissionDenied) "Camera permission is needed" else "Move when you’re ready",
                         color = Color.White,
@@ -428,11 +407,7 @@ private fun CameraReadyScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = if (permissionDenied) {
-                            "Allow camera access to validate your poses."
-                        } else {
-                            "Place your phone before starting the camera."
-                        },
+                        text = PHONE_PLACEMENT_INSTRUCTION,
                         color = Color.White.copy(alpha = 0.72f),
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
@@ -443,6 +418,7 @@ private fun CameraReadyScreen(
             Button(
                 onClick = onStartCamera,
                 modifier = Modifier
+                    .semantics { if (permissionDenied) contentDescription = "Allow camera access" }
                     .widthIn(max = 270.dp).fillMaxWidth()
                     .heightIn(min = 68.dp),
                 shape = RoundedCornerShape(999.dp),
@@ -452,54 +428,12 @@ private fun CameraReadyScreen(
                 ),
             ) {
                 Text(
-                    if (permissionDenied) "Allow camera" else "Start camera",
+                    if (permissionDenied) "Allow" else "Start camera",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                 )
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 24.dp, bottom = 18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (showSnooze) {
-                    Button(
-                        onClick = onSnooze,
-                        modifier = Modifier
-                            .widthIn(max = 240.dp).fillMaxWidth()
-                            .heightIn(min = 54.dp),
-                        shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.12f),
-                            contentColor = Color.White,
-                        ),
-                    ) {
-                        Text("Snooze $snoozeMinutes minutes", fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(14.dp))
-                }
-                if (showTechnicalStop) {
-                    TextButton(onClick = onTechnicalStop) {
-                        Text("Stop alarm", color = Color.White.copy(alpha = 0.72f))
-                    }
-                } else if (showStop) {
-                    TextButton(onClick = onStop) {
-                        Text("Stop alarm", color = Color.White.copy(alpha = 0.72f))
-                    }
-                } else if (showEmergencyStop) {
-                    TextButton(onClick = onEmergencyStop) {
-                        Text("Emergency stop", color = Color.White.copy(alpha = 0.58f))
-                    }
-                }
-                Text(
-                    "Camera off · Processed on-device · Never recorded",
-                    color = Color.White.copy(alpha = 0.52f),
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                )
-            }
         }
     }
 }

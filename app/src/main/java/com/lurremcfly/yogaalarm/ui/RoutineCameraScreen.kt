@@ -93,6 +93,7 @@ fun RoutineCameraScreen(
     showStop: Boolean,
     showEmergencyStop: Boolean,
     showTechnicalStop: Boolean,
+    isTest: Boolean,
     completionStreakDays: Int,
     onBack: () -> Unit,
     onStop: () -> Unit,
@@ -116,7 +117,7 @@ fun RoutineCameraScreen(
         val bottomInset = with(density) { WindowInsets.safeDrawing.getBottom(this).toDp() }
         val glyphSize = if (compactLandscape) 72.dp else 96.dp
         if (uiState.phase == RoutinePhase.COMPLETE) {
-            RoutineCompletion(uiState, completionStreakDays, showBack, onBack)
+            RoutineCompletion(uiState, completionStreakDays, isTest, showBack, onBack)
             return@BoxWithConstraints
         }
         if (uiState.phase != RoutinePhase.COMPLETE) {
@@ -195,6 +196,7 @@ fun RoutineCameraScreen(
                 Column(Modifier.align(Alignment.TopCenter).padding(top = if (compactLandscape) 48.dp else 0.dp),
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.size(glyphSize))
+                    Text("Pose ${guidePoseIndex + 1} of ${uiState.poseCount}", color = Color.White, fontSize = 12.sp)
                     Text(guidePose.displayName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                 }
             }
@@ -242,7 +244,7 @@ fun RoutineCameraScreen(
                                 when (phase) {
                                     RoutinePhase.PAUSED -> "${uiState.remainingSeconds} sec remaining · your time is saved"
                                     RoutinePhase.TRANSITION -> "${poseInstruction(uiState.nextPose ?: uiState.pose)}\nStarts in ${uiState.transitionSeconds}"
-                                    else -> "Stay with it while the alarm fades"
+                                    else -> if (uiState.soundEnabled) "Stay with it while the alarm fades" else "Keep holding the pose."
                                 },
                                 color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp,
                                 textAlign = TextAlign.Center,
@@ -415,7 +417,7 @@ private fun RoutineCountdown(progress: StateFlow<RoutineProgress>, seconds: Int,
 }
 
 @Composable
-private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: Boolean, onBack: () -> Unit) {
+private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, isTest: Boolean, showBack: Boolean, onBack: () -> Unit) {
     var presented by rememberSaveable(streakDays) { mutableStateOf(false) }
     val sunrise = remember(streakDays) { Animatable(if (presented) 1f else 0f) }
     val entrance = remember(streakDays) { Animatable(if (presented) 1f else 0f) }
@@ -488,7 +490,7 @@ private fun RoutineCompletion(state: RoutineUiState, streakDays: Int, showBack: 
             Text(statusTitle(state, true), color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center, modifier = Modifier.graphicsLayer { alpha = sunrise.value })
             Spacer(Modifier.height(8.dp))
-            Text(statusDetail(state), color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp,
+            Text(if (isTest) "Test complete. Your streak did not change." else statusDetail(state), color = Color.White.copy(alpha = 0.75f), fontSize = 14.sp,
                 modifier = Modifier.graphicsLayer { alpha = sunrise.value })
             if (streakDays > 0) {
                 Spacer(Modifier.height(22.dp))
@@ -561,10 +563,10 @@ private fun statusTitle(state: RoutineUiState, previewReady: Boolean): String = 
 
 private fun statusDetail(state: RoutineUiState): String = when {
     state.error != null -> state.error
-    state.phase == RoutinePhase.COMPLETE -> "${state.poseCount} poses completed"
+    state.phase == RoutinePhase.COMPLETE -> if (state.poseCount == 1) "1 pose completed" else "${state.poseCount} poses completed"
     state.phase == RoutinePhase.TRANSITION -> "${poseInstruction(state.nextPose ?: state.pose)}\nStarts in ${state.transitionSeconds}"
     !state.cameraReady && state.phase != RoutinePhase.PAUSED -> "Keep the phone where you can comfortably see yourself"
-    state.phase == RoutinePhase.HOLDING -> "Stay with it while the alarm fades"
+    state.phase == RoutinePhase.HOLDING -> if (state.soundEnabled) "Stay with it while the alarm fades" else "Keep holding the pose."
     state.phase == RoutinePhase.PAUSED -> "Your time is saved"
     !state.framed -> state.framingHint
     else -> poseInstruction(state.pose)
