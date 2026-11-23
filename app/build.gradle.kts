@@ -13,7 +13,6 @@ buildscript {
 
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
@@ -69,18 +68,13 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
     buildFeatures {
         compose = true
         buildConfig = true
     }
 
-    sourceSets.getByName("main").java.srcDir(
-        if (monetizationAnalyticsEnabled) "src/analyticsEnabled/java" else "src/analyticsDisabled/java",
-    )
+    sourceSets.getByName("main").kotlin.directories +=
+        if (monetizationAnalyticsEnabled) "src/analyticsEnabled/java" else "src/analyticsDisabled/java"
     if (!monetizationAnalyticsEnabled) {
         sourceSets.getByName("debug").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
         sourceSets.getByName("release").manifest.srcFile("src/analyticsDisabled/AndroidManifest.xml")
