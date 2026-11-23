@@ -907,7 +907,7 @@ internal fun YogaAlarmRoot(
                 route = "home"
             },
             monetizationTesting = {
-                if (BuildConfig.DEBUG) MonetizationTestingSection(
+                if (BuildConfig.PAYMENT_FLOW_TESTING) MonetizationTestingSection(
                     testingMode = internalTestMode,
                     proAccess = internalTestPro,
                     trialDaysRemaining = trial.remaining.takeIf { internalTestTrial },

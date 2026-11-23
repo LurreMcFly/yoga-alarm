@@ -285,7 +285,7 @@ class PlayBillingLastKnownAccessTest {
     }
 
     @Test fun internalTestProOverridesGenuineCachedAccessWithoutChangingIt() = billingTest {
-        assumeTrue("Internal Pro overrides require the Debug build", BuildConfig.DEBUG)
+        assumeTrue("Internal Pro overrides require -PpaymentFlowTesting=true", BuildConfig.PAYMENT_FLOW_TESTING)
         val original = LastKnownPaidAccess(ProEntitlement.LIFETIME, checkedAt)
         assertTrue(cache.save(original))
         val trials = ProTrialStore(context)

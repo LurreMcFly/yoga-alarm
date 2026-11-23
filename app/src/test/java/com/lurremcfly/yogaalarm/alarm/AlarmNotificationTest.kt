@@ -67,7 +67,7 @@ class AlarmNotificationTest {
 
     @Test
     fun completingScheduledAlarmAfterPlaybackStopsAdvancesSelectedTrialAcrossRestart() {
-        assumeTrue("Selected trial days require the Debug build", BuildConfig.DEBUG)
+        assumeTrue("Selected trial days require -PpaymentFlowTesting=true", BuildConfig.PAYMENT_FLOW_TESTING)
         val completedAt = java.time.ZonedDateTime.now()
         val trials = ProTrialStore(context)
         assertTrue(trials.setInternalTestingEnabled(true, { false }))

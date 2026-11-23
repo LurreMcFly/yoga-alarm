@@ -2,9 +2,9 @@
 
 This is a local preview and Play Billing acceptance runbook, not production approval. The release policy accepts client-side last-known Pro: subscriptions for seven days after a successful online ownership refresh, lifetime until a successful online refresh changes ownership. Backend verification is future hardening, not a release prerequisite. Client evidence cannot independently validate subscription expiry, refunds, revocations, or tampering, and a validated network does not prove Play returned fresh server data. Device/Play acceptance remains required; do not enable `monetizationBillingReady` merely to run these tests.
 
-## Quick app testing
+## Archived payment-flow testing
 
-Use the Debug build as the current internal channel. Testing controls and saved test overrides are disabled in public Release builds, including Play internal-track installations. No signed internal Release capability is configured. Rollout and analytics gates remain independent.
+Ordinary Debug and Release builds hide the testing controls, ignore saved test overrides and default to public enrollment policy. To replay the archived scenarios locally, build Debug with `-PpaymentFlowTesting=true` (also required for the simulation-specific unit tests). Testing controls and saved test overrides are disabled in public Release builds, including Play internal-track installations. No signed internal Release capability is configured. Rollout and analytics gates remain independent.
 
 1. Open **Settings** and turn on **Testing mode** beneath Preferences.
 2. Switch **Test Pro access** on for Pro features or off for Free features, regardless of real purchase ownership.
@@ -25,7 +25,7 @@ Investigation (2026-11-02, Android commit <pending>): a tester reports a schedul
 
 Use Debug for local access/trial simulation. For genuine Play Billing acceptance, use the existing Android Studio **Build > Generate Signed Bundle / APK > Android App Bundle > release** workflow with the existing upload key. Release has no local testing controls. The old `proTrialInternalTesting` property and `PRO_TRIAL_INTERNAL_TESTING` build gate have been removed. Public preview rollout and analytics remain separate settings.
 
-The debug variant still installs beside the regular app as **Yoga Alarm (test)** with package `com.lurremcfly.yogaalarm.debug`; release uses the normal package. Only Debug includes the runtime controls.
+The debug variant still installs beside the regular app as **Yoga Alarm (test)** with package `com.lurremcfly.yogaalarm.debug`; release uses the normal package. Only explicitly opted-in Debug builds expose the runtime controls.
 
 Command-line bundle generation remains:
 

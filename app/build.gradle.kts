@@ -36,9 +36,10 @@ android {
         applicationId = "com.lurremcfly.yogaalarm"
         minSdk = 26
         targetSdk = 36
-        versionCode = 38
-        versionName = "1.0.39"
+        versionCode = 39
+        versionName = "1.0.40"
         manifestPlaceholders["appLabel"] = "Yoga Alarm"
+        buildConfigField("boolean", "PAYMENT_FLOW_TESTING", "false")
         buildConfigField("boolean", "MONETIZATION_ANALYTICS_ENABLED", monetizationAnalyticsEnabled.toString())
         buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", proTrialRolloutEnabled.toString())
     }
@@ -48,7 +49,10 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             manifestPlaceholders["appLabel"] = "Yoga Alarm (test)"
-            buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
+            if (providers.gradleProperty("paymentFlowTesting").orNull == "true") {
+                buildConfigField("boolean", "PAYMENT_FLOW_TESTING", "true")
+                buildConfigField("boolean", "PRO_TRIAL_ROLLOUT_ENABLED", "true")
+            }
         }
         release {
             isMinifyEnabled = true

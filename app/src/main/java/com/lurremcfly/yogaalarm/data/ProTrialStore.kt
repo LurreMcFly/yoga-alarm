@@ -63,11 +63,11 @@ class ProTrialStore(private val context: Context) {
     }
 
     fun internalTestingEnabled(): Boolean = synchronized(AlarmStorageLock) {
-        BuildConfig.DEBUG && preferences.getBoolean("pro_preview_internal_testing", false)
+        BuildConfig.PAYMENT_FLOW_TESTING && preferences.getBoolean("pro_preview_internal_testing", false)
     }
 
     fun setInternalTestingEnabled(enabled: Boolean, blocked: () -> Boolean): Boolean = synchronized(AlarmStorageLock) {
-        if (!BuildConfig.DEBUG || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
+        if (!BuildConfig.PAYMENT_FLOW_TESTING || blocked() || AlarmOccurrenceStore(context).hasInFlight()) return@synchronized false
         val previous = internalTestingEnabled()
         val committed = preferences.edit().putBoolean("pro_preview_internal_testing", enabled).commit()
         if (!committed) preferences.edit().putBoolean("pro_preview_internal_testing", previous).commit()

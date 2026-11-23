@@ -3,7 +3,10 @@ package com.lurremcfly.yogaalarm.data
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.SharedPreferences
+import com.lurremcfly.yogaalarm.BuildConfig
 import com.lurremcfly.yogaalarm.model.*
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,6 +16,10 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class InternalProTrialStoreTest : ProTrialStoreFixture() {
+    @Before fun requirePaymentFlowTesting() {
+        assumeTrue(BuildConfig.PAYMENT_FLOW_TESTING)
+    }
+
     @Test fun internalResetForcesPreviewAndPreservesLatestAlarmSettingsAndOtherData() {
         assertTrue(trials.setInternalTestingEnabled(true, { false }))
         val alarm = customized(1)
